@@ -3,9 +3,10 @@ mod app;
 mod config;
 mod i18n;
 mod menu;
+mod options;
 mod session_manager;
 mod status_bar;
-#[allow(dead_code)] // wired in by the tabs (next commit)
+mod tabs;
 mod term;
 mod toolbar;
 

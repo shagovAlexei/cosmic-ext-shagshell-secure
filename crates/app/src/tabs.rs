@@ -1,0 +1,543 @@
+//! Tabs and tab groups (SecureCRT "tab groups"): a `pane_grid` of groups, each a tab strip over
+//! its active tab's terminal. Tabs are kept by id; a group's model holds the ids in order.
+
+use crate::app::Message;
+use crate::config::Config;
+use crate::fl;
+use crate::menu::Action;
+use crate::term::{self, Events, Outcome, TabId, terminal::Terminal};
+use alacritty_terminal::grid::Dimensions;
+use cosmic::app::Task;
+use cosmic::iced::{Length, keyboard::Key, keyboard::Modifiers};
+use cosmic::widget::segmented_button::{Entity, ReorderEvent, SingleSelectModel};
+use cosmic::widget::{self, menu, pane_grid, tab_bar};
+use cosmic::{Element, iced};
+use shagshell_core::tabs as rules;
+use std::collections::HashMap;
+use std::sync::Mutex;
+
+const TAB_MIME: &str = "application/x-shagshell-tab";
+
+pub struct Tab {
+    pub terminal: Mutex<Terminal>,
+    /// «Local Shell (2)»: ours, shown while the program sets none.
+    base: String,
+    /// OSC 0 / 2 from the program; empty: none.
+    program_title: String,
+    pub alive: bool,
+    widget_id: widget::Id,
+}
+
+impl Tab {
+    fn title(&self) -> String {
+        let t = match self.program_title.is_empty() {
+            true => &self.base,
+            false => &self.program_title,
+        };
+        format!("{} {t}", if self.alive { "✓" } else { "✗" })
+    }
+}
+
+#[derive(Default)]
+pub struct Group {
+    model: SingleSelectModel,
+}
+
+impl Group {
+    fn active_id(&self) -> Option<TabId> {
+        self.model.data::<TabId>(self.model.active()).copied()
+    }
+}
+
+/// How a terminal looks: text style, dark theme or not, window background (0xAARRGGBB).
+pub type Look = (term::style::Style, bool, u32);
+
+#[derive(Clone, Debug)]
+pub enum TabsMsg {
+    Activate(pane_grid::Pane, Entity),
+    Close(pane_grid::Pane, Entity),
+    CloseConfirmed,
+    CloseCancelled,
+    Context(pane_grid::Pane, Entity),
+    Reorder(pane_grid::Pane, ReorderEvent),
+    PaneClicked(pane_grid::Pane),
+    Resized(pane_grid::ResizeEvent),
+    Paste(Option<String>),
+}
+
+#[derive(Default)]
+pub struct Tabs {
+    grid: Option<pane_grid::State<Group>>,
+    focus: Option<pane_grid::Pane>,
+    tabs: HashMap<TabId, Tab>,
+    next_id: TabId,
+    tx: Option<Events>,
+    /// A live tab asked to close: waits for the dialog.
+    confirm: Option<(pane_grid::Pane, Entity)>,
+    /// The tab right-clicked last: the tab menu's actions are about it.
+    context: Option<(pane_grid::Pane, Entity)>,
+}
+
+impl Tabs {
+    pub fn set_sender(&mut self, tx: Events) {
+        self.tx = Some(tx);
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.grid.is_none()
+    }
+
+    /// Active tab: (connected, cols, rows).
+    pub fn status(&self) -> Option<(bool, usize, usize)> {
+        let tab = self.tabs.get(&self.active()?.2)?;
+        let t = tab.terminal.lock().unwrap_or_else(|e| e.into_inner());
+        let term = t.term.lock();
+        Some((tab.alive, term.columns(), term.screen_lines()))
+    }
+
+    /// Focused group, its active entity and that tab's id.
+    fn active(&self) -> Option<(pane_grid::Pane, Entity, TabId)> {
+        let pane = self.focus?;
+        let group = self.grid.as_ref()?.get(pane)?;
+        Some((pane, group.model.active(), group.active_id()?))
+    }
+
+    fn target(&mut self) -> Option<(pane_grid::Pane, Entity, TabId)> {
+        if let Some((pane, e)) = self.context.take() {
+            let id = *self.grid.as_ref()?.get(pane)?.model.data::<TabId>(e)?;
+            return Some((pane, e, id));
+        }
+        self.active()
+    }
+
+    fn terminal(&self, id: TabId) -> Option<&Mutex<Terminal>> {
+        self.tabs.get(&id).map(|t| &t.terminal)
+    }
+
+    /// A new local shell tab in the focused group (the first group if none).
+    fn new_local(&mut self, look: &Look) -> Task<Message> {
+        let taken: Vec<&str> = self.tabs.values().map(|t| t.base.as_str()).collect();
+        let base = rules::numbered(&fl!("tab-local-shell"), &taken);
+        let id = self.next_id;
+        let Some(terminal) = self.spawn(id, look) else {
+            return Task::none();
+        };
+        self.next_id += 1;
+        let widget_id = widget::Id::unique();
+        let tab = Tab {
+            terminal: Mutex::new(terminal),
+            base,
+            program_title: String::new(),
+            alive: true,
+            widget_id: widget_id.clone(),
+        };
+        let title = tab.title();
+        self.tabs.insert(id, tab);
+        let pane = match (&mut self.grid, self.focus) {
+            (Some(_), Some(p)) => p,
+            _ => {
+                let (grid, pane) = pane_grid::State::new(Group::default());
+                (self.grid, self.focus) = (Some(grid), Some(pane));
+                pane
+            }
+        };
+        if let Some(group) = self.grid.as_mut().and_then(|g| g.get_mut(pane)) {
+            group
+                .model
+                .insert()
+                .text(title)
+                .data(id)
+                .closable()
+                .activate();
+        }
+        focus(widget_id)
+    }
+
+    fn spawn(&self, id: TabId, look: &Look) -> Option<Terminal> {
+        let tx = self.tx.clone()?;
+        let shell = shagshell_core::shell::pick(std::env::var_os("SHELL").as_deref());
+        let (style, dark, bg) = look;
+        term::start(id, tx, &shell, *dark, *bg, style)
+            .inspect_err(|e| log::error!("start {}: {e}", shell.display()))
+            .ok()
+    }
+
+    /// Start the program again in a tab whose program ended (SecureCRT's Reconnect / Enter).
+    fn restart(&mut self, id: TabId, look: &Look) -> Task<Message> {
+        if self.tabs.get(&id).is_none_or(|t| t.alive) {
+            return Task::none();
+        }
+        let Some(terminal) = self.spawn(id, look) else {
+            return Task::none();
+        };
+        let Some(tab) = self.tabs.get_mut(&id) else {
+            return Task::none();
+        };
+        (tab.terminal, tab.alive) = (Mutex::new(terminal), true);
+        tab.program_title.clear();
+        let widget_id = tab.widget_id.clone();
+        self.retitle(id);
+        focus(widget_id)
+    }
+
+    fn retitle(&mut self, id: TabId) {
+        let Some(title) = self.tabs.get(&id).map(Tab::title) else {
+            return;
+        };
+        for (_, group) in self.grid.iter_mut().flat_map(|g| g.iter_mut()) {
+            if let Some(e) = entity_of(&group.model, id) {
+                group.model.text_set(e, title.clone());
+            }
+        }
+    }
+
+    /// Close without asking.
+    fn close_now(&mut self, pane: pane_grid::Pane, e: Entity) -> Task<Message> {
+        let Some(grid) = self.grid.as_mut() else {
+            return Task::none();
+        };
+        let Some(group) = grid.get_mut(pane) else {
+            return Task::none();
+        };
+        let pos = group.model.position(e).unwrap_or(0) as usize;
+        let len = group.model.len();
+        if let Some(id) = group.model.data::<TabId>(e).copied() {
+            self.tabs.remove(&id); // its Drop ends the program
+        }
+        group.model.remove(e);
+        match rules::after_close(pos, len) {
+            Some(next) => {
+                group.model.activate_position(next as u16);
+                return self.focus_active();
+            }
+            None if grid.len() > 1 => {
+                if let Some((_, sibling)) = grid.close(pane) {
+                    self.focus = Some(sibling);
+                }
+            }
+            None => (self.grid, self.focus) = (None, None),
+        }
+        self.focus_active()
+    }
+
+    fn focus_active(&self) -> Task<Message> {
+        match self.active().and_then(|(_, _, id)| self.tabs.get(&id)) {
+            Some(t) => focus(t.widget_id.clone()),
+            None => Task::none(),
+        }
+    }
+
+    /// The target tab into a new group beside its own; refused when it is alone in its group.
+    fn split(&mut self, axis: pane_grid::Axis) -> Task<Message> {
+        let Some((pane, e, id)) = self.target() else {
+            return Task::none();
+        };
+        let Some(grid) = self.grid.as_mut() else {
+            return Task::none();
+        };
+        let title = self.tabs.get(&id).map(Tab::title).unwrap_or_default();
+        let Some(group) = grid.get_mut(pane) else {
+            return Task::none();
+        };
+        if group.model.len() < 2 {
+            return Task::none();
+        }
+        let pos = group.model.position(e).unwrap_or(0) as usize;
+        let len = group.model.len();
+        group.model.remove(e);
+        if let Some(next) = rules::after_close(pos, len) {
+            group.model.activate_position(next as u16);
+        }
+        let mut new = Group::default();
+        new.model
+            .insert()
+            .text(title)
+            .data(id)
+            .closable()
+            .activate();
+        if let Some((new_pane, _)) = grid.split(axis, pane, new) {
+            self.focus = Some(new_pane);
+        }
+        self.focus_active()
+    }
+
+    /// Actions about tabs (menu, keys, tab menu); `None`: not ours.
+    pub fn act(&mut self, action: Action, look: &Look) -> Option<Task<Message>> {
+        let task = match action {
+            Action::NewLocalShell => self.new_local(look),
+            Action::Clone => {
+                self.context = None;
+                self.new_local(look)
+            }
+            Action::CloseTab => match self.target() {
+                Some((pane, e, _)) => self.update(TabsMsg::Close(pane, e)),
+                None => Task::none(),
+            },
+            Action::Reconnect => match self.target() {
+                Some((_, _, id)) => self.restart(id, look),
+                None => Task::none(),
+            },
+            Action::NextTab | Action::PrevTab => {
+                if let Some(group) = self.focused_group_mut() {
+                    let len = group.model.len();
+                    let pos = group.model.position(group.model.active()).unwrap_or(0) as usize;
+                    let next = rules::cycle(pos, len, action == Action::NextTab);
+                    group.model.activate_position(next as u16);
+                }
+                self.focus_active()
+            }
+            Action::SelectTab(n) => {
+                if let Some(group) = self.focused_group_mut()
+                    && usize::from(n) < group.model.len()
+                {
+                    group.model.activate_position(u16::from(n));
+                }
+                self.focus_active()
+            }
+            Action::SplitRight => self.split(pane_grid::Axis::Vertical),
+            Action::SplitDown => self.split(pane_grid::Axis::Horizontal),
+            Action::Copy => {
+                let text = self.active().and_then(|(_, _, id)| {
+                    let t = self.terminal(id)?.lock().unwrap_or_else(|e| e.into_inner());
+                    t.term.lock().selection_to_string()
+                });
+                match text {
+                    Some(text) => cosmic::iced::clipboard::write(text),
+                    None => Task::none(),
+                }
+            }
+            Action::Paste => cosmic::iced::clipboard::read()
+                .map(|t| cosmic::Action::App(Message::Tabs(TabsMsg::Paste(t)))),
+            Action::SelectAll => {
+                if let Some((_, _, id)) = self.active()
+                    && let Some(t) = self.terminal(id)
+                {
+                    t.lock().unwrap_or_else(|e| e.into_inner()).select_all();
+                }
+                Task::none()
+            }
+            _ => return None,
+        };
+        Some(task)
+    }
+
+    fn focused_group_mut(&mut self) -> Option<&mut Group> {
+        let pane = self.focus?;
+        self.grid.as_mut()?.get_mut(pane)
+    }
+
+    /// Enter on a tab whose program ended: start it again. `false`: not such a tab.
+    pub fn enter_on_dead(&self) -> bool {
+        self.active()
+            .and_then(|(_, _, id)| self.tabs.get(&id))
+            .is_some_and(|t| !t.alive)
+    }
+
+    pub fn on_term(&mut self, id: TabId, event: alacritty_terminal::event::Event) -> Task<Message> {
+        let Some(tab) = self.tabs.get_mut(&id) else {
+            return Task::none();
+        };
+        match term::on_event(&tab.terminal, event) {
+            Outcome::None => {}
+            Outcome::Copy(text) => return cosmic::iced::clipboard::write(text),
+            Outcome::Title(title) => {
+                tab.program_title = title;
+                self.retitle(id);
+            }
+            // ChildExit then Exit: told once.
+            Outcome::Exit(code) if tab.alive => {
+                tab.alive = false;
+                let code = code.map(|c| format!(" with code {c}")).unwrap_or_default();
+                term::print(
+                    &tab.terminal,
+                    &format!("\r\n[Process exited{code} — press Enter to restart]\r\n"),
+                );
+                self.retitle(id);
+            }
+            Outcome::Exit(_) => {}
+        }
+        Task::none()
+    }
+
+    pub fn restyle(&self, look: &Look) {
+        let (style, dark, bg) = look;
+        for t in self.tabs.values() {
+            term::restyle(&t.terminal, style, *dark, *bg);
+        }
+    }
+
+    pub fn update(&mut self, msg: TabsMsg) -> Task<Message> {
+        match msg {
+            TabsMsg::Activate(pane, e) => {
+                self.focus = Some(pane);
+                if let Some(group) = self.grid.as_mut().and_then(|g| g.get_mut(pane)) {
+                    group.model.activate(e);
+                }
+                return self.focus_active();
+            }
+            TabsMsg::Close(pane, e) => {
+                let alive = (self.grid.as_ref())
+                    .and_then(|g| g.get(pane)?.model.data::<TabId>(e).copied())
+                    .and_then(|id| self.tabs.get(&id))
+                    .is_some_and(|t| t.alive);
+                if alive {
+                    self.confirm = Some((pane, e));
+                } else {
+                    return self.close_now(pane, e);
+                }
+            }
+            TabsMsg::CloseConfirmed => {
+                if let Some((pane, e)) = self.confirm.take() {
+                    return self.close_now(pane, e);
+                }
+            }
+            TabsMsg::CloseCancelled => {
+                self.confirm = None;
+                return self.focus_active();
+            }
+            TabsMsg::Context(pane, e) => self.context = Some((pane, e)),
+            TabsMsg::Reorder(pane, ev) => {
+                if let Some(group) = self.grid.as_mut().and_then(|g| g.get_mut(pane)) {
+                    group.model.reorder(ev.dragged, ev.target, ev.position);
+                }
+            }
+            TabsMsg::PaneClicked(pane) => {
+                self.focus = Some(pane);
+                return self.focus_active();
+            }
+            TabsMsg::Resized(ev) => {
+                if let Some(grid) = self.grid.as_mut() {
+                    grid.resize(ev.split, ev.ratio);
+                }
+            }
+            TabsMsg::Paste(Some(text)) => {
+                if let Some((_, _, id)) = self.active()
+                    && let Some(t) = self.terminal(id)
+                {
+                    t.lock().unwrap_or_else(|e| e.into_inner()).paste(text);
+                }
+            }
+            TabsMsg::Paste(None) => {}
+        }
+        Task::none()
+    }
+
+    /// Asks before closing a live tab, as SecureCRT's "Confirm disconnect".
+    pub fn dialog(&self) -> Option<Element<'_, Message>> {
+        let (pane, e) = self.confirm?;
+        let id = *self.grid.as_ref()?.get(pane)?.model.data::<TabId>(e)?;
+        let name = self.tabs.get(&id)?.title();
+        let name = name.trim_start_matches(['✓', '✗', ' ']).to_string();
+        let msg = |m| Message::Tabs(m);
+        Some(
+            widget::dialog()
+                .title(fl!("close-tab-title", name = name))
+                .body(fl!("close-tab-body"))
+                .primary_action(
+                    widget::button::destructive(fl!("close"))
+                        .on_press(msg(TabsMsg::CloseConfirmed)),
+                )
+                .secondary_action(
+                    widget::button::standard(fl!("cancel")).on_press(msg(TabsMsg::CloseCancelled)),
+                )
+                .into(),
+        )
+    }
+
+    pub fn view(&self, config: &Config, window: iced::window::Id) -> Option<Element<'_, Message>> {
+        let grid = self.grid.as_ref()?;
+        let focus = self.focus;
+        let many = grid.len() > 1;
+        let copy = config.copy_on_select;
+        let middle = config.paste_on_middle_click;
+        let pg = pane_grid::PaneGrid::new(grid, move |pane, group, _| {
+            let m =
+                move |f: fn(pane_grid::Pane, Entity) -> TabsMsg| move |e| Message::Tabs(f(pane, e));
+            let bar = tab_bar::horizontal(&group.model)
+                .on_activate(m(TabsMsg::Activate))
+                .on_close(m(TabsMsg::Close))
+                .on_middle_press(m(TabsMsg::Close))
+                .on_context(m(TabsMsg::Context))
+                .context_menu(Some(tab_menu(group.model.len())))
+                .window_id(window)
+                .on_surface_action(Message::Surface)
+                .enable_tab_drag(TAB_MIME.to_string())
+                .on_reorder(move |ev| Message::Tabs(TabsMsg::Reorder(pane, ev)));
+            let body: Element<'_, Message> =
+                match group.active_id().and_then(|id| self.tabs.get(&id)) {
+                    Some(tab) => term::terminal_box::terminal_box(&tab.terminal, is_app_key)
+                        .id(tab.widget_id.clone())
+                        .copy_on_select(copy)
+                        .paste_on_middle(middle)
+                        // An ended program takes no keys (its PTY is gone): Enter reaches the app.
+                        .disabled(!tab.alive)
+                        .padding(4)
+                        .into(),
+                    None => widget::Space::new()
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .into(),
+                };
+            let active = many && focus == Some(pane);
+            let content = widget::container(widget::column::with_children(vec![bar.into(), body]))
+                .padding(1)
+                .class(cosmic::theme::Container::custom(move |theme| {
+                    let mut s = widget::container::Style::default();
+                    if active {
+                        s.border.color = theme.cosmic().accent_color().into();
+                        s.border.width = 1.0;
+                    }
+                    s
+                }));
+            pane_grid::Content::new(content)
+        })
+        .on_click(|p| Message::Tabs(TabsMsg::PaneClicked(p)))
+        .on_resize(10, |ev| Message::Tabs(TabsMsg::Resized(ev)))
+        .spacing(4);
+        Some(pg.into())
+    }
+}
+
+fn entity_of(model: &SingleSelectModel, id: TabId) -> Option<Entity> {
+    model.iter().find(|&e| model.data::<TabId>(e) == Some(&id))
+}
+
+fn focus(id: widget::Id) -> Task<Message> {
+    cosmic::iced::runtime::widget::operation::focus(id)
+}
+
+/// Right click on a tab: about that tab (`TabsMsg::Context` came first). libcosmic wants one
+/// root whose children are the tabs' menus, one per tab in order; ours are all the same.
+fn tab_menu(tabs: usize) -> Vec<menu::Tree<Message>> {
+    use menu::Item::{Button, Divider};
+    let one = || {
+        let items = vec![
+            Button(fl!("menu-reconnect"), None, Action::Reconnect),
+            Button(fl!("menu-clone"), None, Action::Clone),
+            Divider,
+            Button(fl!("menu-split-right"), None, Action::SplitRight),
+            Button(fl!("menu-split-down"), None, Action::SplitDown),
+            Divider,
+            Button(fl!("menu-close-tab"), None, Action::CloseTab),
+        ];
+        let blank = || Element::from(widget::Space::new());
+        menu::Tree::with_children(blank(), menu::items(&HashMap::new(), items))
+    };
+    let blank = Element::from(widget::Space::new());
+    vec![menu::Tree::with_children(
+        blank,
+        (0..tabs).map(|_| one()).collect::<Vec<_>>(),
+    )]
+}
+
+/// Keys the terminal leaves to the app (`app::route_key` acts on them), on either layout.
+/// Everything else, every Ctrl+letter and Alt+letter, is the terminal's.
+pub fn is_app_key(mods: Modifiers, key: &Key) -> bool {
+    use cosmic::iced::keyboard::key::Named;
+    let ch = |set: &[&str]| matches!(key.as_ref(), Key::Character(c) if set.contains(&c));
+    let (ctrl, shift, alt) = (mods.control(), mods.shift(), mods.alt());
+    (ctrl && !alt && matches!(key, Key::Named(Named::Tab)))
+        || (ctrl && shift && !alt && ch(&["t", "T", "е", "Е", "w", "W", "ц", "Ц"]))
+        || (alt && !ctrl && !shift && ch(&["1", "2", "3", "4", "5", "6", "7", "8", "9"]))
+        || (alt && !ctrl && !shift && ch(&["m", "M", "ь", "Ь"]))
+}

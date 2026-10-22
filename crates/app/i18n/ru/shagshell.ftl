@@ -40,5 +40,21 @@ menu-about = О программе
 
 sessions-empty = Нет сессий
 no-sessions = Нет открытых сессий
-no-sessions-hint = Используйте быстрое подключение (Alt+Q)
+no-sessions-hint = Используйте быстрое подключение (Alt+Q) или Ctrl+Shift+T — локальный shell
 status-disconnected = Не подключено
+
+menu-new-local-shell = Новый локальный shell
+menu-close-tab = Закрыть вкладку
+menu-clone = Клонировать
+menu-split-right = В новую группу — справа
+menu-split-down = В новую группу — снизу
+tab-local-shell = Local Shell
+close-tab-title = Закрыть вкладку «{ $name }»?
+close-tab-body = Запущенная в ней программа будет завершена.
+close = Закрыть
+cancel = Отмена
+status-connected = Подключено
+status-ended = Отключено
+options-terminal = Терминал
+options-copy-on-select = Копировать при выделении
+options-paste-on-middle = Вставлять средней кнопкой мыши

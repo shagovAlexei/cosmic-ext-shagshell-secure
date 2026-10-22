@@ -1,10 +1,11 @@
 //! Header menu bar as in SecureCRT, and `Action`: every user action, whatever triggers it
-//! (menu, key, toolbar, later Button Bar "Menu Function").
+//! (menu, key, toolbar, tab menu, later Button Bar "Menu Function").
 
 use crate::app::Message;
 use crate::fl;
 use cosmic::Element;
 use cosmic::iced::keyboard::Key;
+use cosmic::iced::keyboard::key::Named;
 use cosmic::widget::menu::key_bind::Modifier;
 use cosmic::widget::menu::{self, ItemHeight, ItemWidth, KeyBind};
 use std::collections::HashMap;
@@ -14,14 +15,27 @@ pub enum Action {
     Exit,
     ToggleSessionManager,
     About,
+    GlobalOptions,
+    NewLocalShell,
+    CloseTab,
+    Clone,
+    NextTab,
+    PrevTab,
+    /// Alt+1…9: the n-th tab (0-based) of the focused group.
+    SelectTab(u8),
+    SplitRight,
+    SplitDown,
+    Copy,
+    Paste,
+    SelectAll,
+    /// The tab's program ended: start it again.
+    Reconnect,
     // Shown, not working yet (later phases).
     Connect,
     QuickConnect,
-    Reconnect,
     Disconnect,
     ConnectSftp,
     SessionOptions,
-    GlobalOptions,
     Pending,
 }
 
@@ -32,28 +46,40 @@ impl menu::Action for Action {
     }
 }
 
-/// The keys the menu shows. Only Alt+M works in this phase (`app::route_key`).
+/// The keys the menu shows; `app::route_key` is what acts on them.
 fn key_binds() -> HashMap<KeyBind, Action> {
-    HashMap::from([(
-        KeyBind {
-            modifiers: vec![Modifier::Alt],
-            key: Key::Character("m".into()),
-        },
-        Action::ToggleSessionManager,
-    )])
+    use Modifier::{Alt, Ctrl, Shift};
+    let bind = |modifiers: Vec<Modifier>, key: Key, a| (KeyBind { modifiers, key }, a);
+    let c = |s: &str| Key::Character(s.into());
+    HashMap::from([
+        bind(vec![Alt], c("m"), Action::ToggleSessionManager),
+        bind(vec![Ctrl, Shift], c("t"), Action::NewLocalShell),
+        bind(vec![Ctrl, Shift], c("w"), Action::CloseTab),
+        bind(vec![Ctrl, Shift], c("c"), Action::Copy),
+        bind(vec![Ctrl, Shift], c("v"), Action::Paste),
+        bind(vec![Ctrl], Key::Named(Named::Tab), Action::NextTab),
+        bind(vec![Ctrl, Shift], Key::Named(Named::Tab), Action::PrevTab),
+    ])
 }
 
-pub fn bar(session_manager: bool) -> Element<'static, Message> {
+/// `tabs`: any tab open (tab items enabled).
+pub fn bar(session_manager: bool, tabs: bool) -> Element<'static, Message> {
     use menu::Item::{Button, ButtonDisabled, CheckBox, Divider};
     let off = |label: String| ButtonDisabled(label, None, Action::Pending);
+    let tab = |label: String, a| match tabs {
+        true => Button(label, None, a),
+        false => ButtonDisabled(label, None, a),
+    };
     let roots = [
         (
             fl!("menu-file"),
             vec![
                 ButtonDisabled(fl!("menu-connect"), None, Action::Connect),
                 ButtonDisabled(fl!("menu-quick-connect"), None, Action::QuickConnect),
-                ButtonDisabled(fl!("menu-reconnect"), None, Action::Reconnect),
+                Button(fl!("menu-new-local-shell"), None, Action::NewLocalShell),
+                tab(fl!("menu-reconnect"), Action::Reconnect),
                 ButtonDisabled(fl!("menu-disconnect"), None, Action::Disconnect),
+                tab(fl!("menu-close-tab"), Action::CloseTab),
                 Divider,
                 Button(fl!("menu-exit"), None, Action::Exit),
             ],
@@ -61,9 +87,9 @@ pub fn bar(session_manager: bool) -> Element<'static, Message> {
         (
             fl!("menu-edit"),
             vec![
-                off(fl!("menu-copy")),
-                off(fl!("menu-paste")),
-                off(fl!("menu-select-all")),
+                tab(fl!("menu-copy"), Action::Copy),
+                tab(fl!("menu-paste"), Action::Paste),
+                tab(fl!("menu-select-all"), Action::SelectAll),
                 off(fl!("menu-find")),
             ],
         ),
@@ -84,7 +110,7 @@ pub fn bar(session_manager: bool) -> Element<'static, Message> {
             fl!("menu-options"),
             vec![
                 ButtonDisabled(fl!("menu-session-options"), None, Action::SessionOptions),
-                ButtonDisabled(fl!("menu-global-options"), None, Action::GlobalOptions),
+                Button(fl!("menu-global-options"), None, Action::GlobalOptions),
             ],
         ),
         (
@@ -105,10 +131,11 @@ pub fn bar(session_manager: bool) -> Element<'static, Message> {
         (
             fl!("menu-window"),
             vec![
-                off(fl!("menu-tile-h")),
-                off(fl!("menu-tile-v")),
-                off(fl!("menu-next-tab")),
-                off(fl!("menu-prev-tab")),
+                tab(fl!("menu-split-right"), Action::SplitRight),
+                tab(fl!("menu-split-down"), Action::SplitDown),
+                Divider,
+                tab(fl!("menu-next-tab"), Action::NextTab),
+                tab(fl!("menu-prev-tab"), Action::PrevTab),
             ],
         ),
         (
@@ -125,7 +152,7 @@ pub fn bar(session_manager: bool) -> Element<'static, Message> {
         .collect();
     menu::bar(roots)
         .item_height(ItemHeight::Dynamic(40))
-        .item_width(ItemWidth::Uniform(280))
+        .item_width(ItemWidth::Uniform(320))
         .spacing(4.0)
         .into()
 }

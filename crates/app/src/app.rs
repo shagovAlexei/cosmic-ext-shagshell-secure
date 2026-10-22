@@ -2,31 +2,47 @@
 
 use crate::config::{self, Config};
 use crate::menu::Action;
-use crate::{about, fl, menu, session_manager, status_bar, toolbar};
+use crate::tabs::{self, Tabs, TabsMsg};
+use crate::{about, fl, menu, options, session_manager, status_bar, toolbar};
 use cosmic::app::{Core, Task};
 use cosmic::cosmic_config::CosmicConfigEntry;
-use cosmic::iced::keyboard::{self, key::Code, key::Physical};
+use cosmic::iced::keyboard::{self, Modifiers, key::Code, key::Physical};
 use cosmic::iced::{Length, Subscription, event};
 use cosmic::widget::{self, about::About};
 use cosmic::{Application, Element};
 
 pub const APP_ID: &str = "io.github.shagovalexei.ShagShellSecure";
 
+/// What the context drawer shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Drawer {
+    About,
+    Options,
+}
+
 pub struct App {
     core: Core,
     config: Config,
     config_handler: Option<cosmic::cosmic_config::Config>,
     about: About,
+    drawer: Option<Drawer>,
+    tabs: Tabs,
 }
 
 #[derive(Clone, Debug)]
 pub enum Message {
     Action(Action),
     Config(Config),
+    /// Global Options: a changed value, written to the config.
+    SetConfig(Config),
     OpenUrl(String),
     CloseDrawer,
+    Tabs(TabsMsg),
     TermTx(crate::term::Events),
     Term(crate::term::TabId, alacritty_terminal::event::Event),
+    /// Enter while the active tab's program has ended.
+    EnterKey,
+    Surface(cosmic::surface::Action),
 }
 
 impl Application for App {
@@ -51,17 +67,20 @@ impl Application for App {
             config: config::read(config_handler.as_ref()),
             config_handler,
             about: about::about(),
+            drawer: None,
+            tabs: Tabs::default(),
         };
         (app, Task::none())
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::Action(Action::Exit) => return cosmic::iced::exit(),
-            Message::Action(Action::ToggleSessionManager) => self.toggle_session_manager(),
-            Message::Action(Action::About) => self.core.window.show_context = true,
-            Message::Action(_) => {}
+            Message::Action(a) => return self.act(a),
             Message::Config(c) => self.config = c,
+            Message::SetConfig(c) => {
+                self.config = c;
+                self.save_config();
+            }
             Message::OpenUrl(url) => {
                 match std::process::Command::new("xdg-open").arg(url).spawn() {
                     // Reaped off the UI thread, or each click leaves a zombie until exit.
@@ -69,83 +88,192 @@ impl Application for App {
                     Err(e) => log::warn!("xdg-open: {e}"),
                 }
             }
-            Message::CloseDrawer => self.core.window.show_context = false,
-            Message::TermTx(_) | Message::Term(..) => {}
+            Message::CloseDrawer => self.set_drawer(None),
+            Message::Tabs(m) => return self.tabs.update(m),
+            Message::TermTx(tx) => self.tabs.set_sender(tx),
+            Message::Term(id, e) => return self.tabs.on_term(id, e),
+            Message::EnterKey if self.tabs.enter_on_dead() => return self.act(Action::Reconnect),
+            Message::EnterKey => {}
+            Message::Surface(a) => {
+                return cosmic::task::message(cosmic::Action::Cosmic(
+                    cosmic::app::Action::Surface(a),
+                ));
+            }
         }
         Task::none()
     }
 
     fn subscription(&self) -> Subscription<Message> {
         Subscription::batch([
-            // Not a key a focused widget took (the terminal's Meta-m later), not a held key's repeat.
+            // Not a key a focused widget took (the terminal takes all but `tabs::is_app_key`),
+            // not a held key's repeat.
             event::listen_with(|e, status, _| match e {
                 cosmic::iced::Event::Keyboard(keyboard::Event::KeyPressed {
                     physical_key,
                     modifiers,
                     repeat: false,
                     ..
-                }) if status == event::Status::Ignored => {
-                    route_key(physical_key, modifiers).map(Message::Action)
-                }
+                }) if status == event::Status::Ignored => route_key(physical_key, modifiers),
                 _ => None,
             }),
+            crate::term::subscription(),
             self.core()
                 .watch_config::<Config>(APP_ID)
                 .map(|u| Message::Config(u.config)),
         ])
     }
 
+    fn system_theme_update(
+        &mut self,
+        _: &[&'static str],
+        _: &cosmic::cosmic_theme::Theme,
+    ) -> Task<Message> {
+        self.tabs.restyle(&look());
+        Task::none()
+    }
+
+    fn system_theme_mode_update(
+        &mut self,
+        _: &[&'static str],
+        _: &cosmic::cosmic_theme::ThemeMode,
+    ) -> Task<Message> {
+        self.tabs.restyle(&look());
+        Task::none()
+    }
+
     fn context_drawer(&self) -> Option<cosmic::app::context_drawer::ContextDrawer<'_, Message>> {
-        self.core
-            .window
-            .show_context
-            .then(|| about::view(&self.about))
+        match self.drawer? {
+            Drawer::About => Some(about::view(&self.about)),
+            Drawer::Options => Some(options::view(&self.config)),
+        }
+    }
+
+    /// Popups (menus) are windows too; libcosmic draws them itself, only asking here.
+    fn view_window(&self, _: cosmic::iced::window::Id) -> Element<'_, Message> {
+        widget::Space::new().into()
+    }
+
+    fn dialog(&self) -> Option<Element<'_, Message>> {
+        self.tabs.dialog()
     }
 
     fn header_start(&self) -> Vec<Element<'_, Message>> {
-        vec![menu::bar(self.config.session_manager_visible)]
+        vec![menu::bar(
+            self.config.session_manager_visible,
+            !self.tabs.is_empty(),
+        )]
     }
 
     fn view(&self) -> Element<'_, Message> {
-        let placeholder = widget::container(
-            widget::column::with_children(vec![
-                widget::text::title3(fl!("no-sessions")).into(),
-                widget::text(fl!("no-sessions-hint")).into(),
-            ])
-            .spacing(8)
-            .align_x(cosmic::iced::Alignment::Center),
-        )
-        .center(Length::Fill);
+        let center = match self.tabs.view(
+            &self.config,
+            self.core
+                .main_window_id()
+                .unwrap_or(cosmic::iced::window::Id::RESERVED),
+        ) {
+            Some(tabs) => tabs,
+            None => widget::container(
+                widget::column::with_children(vec![
+                    widget::text::title3(fl!("no-sessions")).into(),
+                    widget::text(fl!("no-sessions-hint")).into(),
+                ])
+                .spacing(8)
+                .align_x(cosmic::iced::Alignment::Center),
+            )
+            .center(Length::Fill)
+            .into(),
+        };
         let mut middle = widget::row::with_capacity(2).spacing(8);
         if self.config.session_manager_visible {
             middle = middle.push(session_manager::view());
         }
         widget::column::with_children(vec![
             toolbar::view(),
-            middle.push(placeholder).height(Length::Fill).into(),
-            status_bar::view(),
+            middle.push(center).height(Length::Fill).into(),
+            status_bar::view(self.tabs.status()),
         ])
         .into()
     }
 }
 
 impl App {
-    fn toggle_session_manager(&mut self) {
-        self.config.session_manager_visible = !self.config.session_manager_visible;
+    fn act(&mut self, action: Action) -> Task<Message> {
+        if let Some(task) = self.tabs.act(action, &look()) {
+            return task;
+        }
+        match action {
+            Action::Exit => return cosmic::iced::exit(),
+            Action::ToggleSessionManager => {
+                self.config.session_manager_visible = !self.config.session_manager_visible;
+                self.save_config();
+            }
+            Action::About => self.toggle_drawer(Drawer::About),
+            Action::GlobalOptions => self.toggle_drawer(Drawer::Options),
+            _ => {}
+        }
+        Task::none()
+    }
+
+    fn save_config(&self) {
         if let Some(h) = &self.config_handler
             && let Err(e) = self.config.write_entry(h)
         {
             log::warn!("config: {e}");
         }
     }
+
+    fn set_drawer(&mut self, d: Option<Drawer>) {
+        self.core.window.show_context = d.is_some();
+        self.drawer = d;
+    }
+
+    /// The same item again closes its drawer.
+    fn toggle_drawer(&mut self, d: Drawer) {
+        let open = (self.drawer != Some(d)).then_some(d);
+        self.set_drawer(open);
+    }
 }
 
-/// App keys, by physical key so they work in any layout (Alt+M in the Russian one too).
-fn route_key(key: Physical, mods: keyboard::Modifiers) -> Option<Action> {
-    match key {
-        Physical::Code(Code::KeyM) if mods == keyboard::Modifiers::ALT => {
-            Some(Action::ToggleSessionManager)
+/// The terminals' look: cosmic-term's style, the theme's darkness and window background.
+fn look() -> tabs::Look {
+    let theme = cosmic::theme::active();
+    let c = theme.cosmic();
+    let bg = c.bg_color();
+    let byte = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u32;
+    let bg = 0xFF00_0000 | byte(bg.red) << 16 | byte(bg.green) << 8 | byte(bg.blue);
+    (Default::default(), c.is_dark, bg)
+}
+
+/// App keys, by physical key so they work in any layout. The terminal passes exactly these on
+/// (`tabs::is_app_key`); Ctrl+Shift+C / V it handles itself.
+fn route_key(key: Physical, mods: Modifiers) -> Option<Message> {
+    let Physical::Code(code) = key else {
+        return None;
+    };
+    let ctrl_shift = Modifiers::CTRL | Modifiers::SHIFT;
+    let action = match (code, mods) {
+        (Code::KeyM, Modifiers::ALT) => Action::ToggleSessionManager,
+        (Code::KeyT, m) if m == ctrl_shift => Action::NewLocalShell,
+        (Code::KeyW, m) if m == ctrl_shift => Action::CloseTab,
+        (Code::Tab, Modifiers::CTRL) => Action::NextTab,
+        (Code::Tab, m) if m == ctrl_shift => Action::PrevTab,
+        (Code::Enter | Code::NumpadEnter, m) if m.is_empty() => return Some(Message::EnterKey),
+        (_, Modifiers::ALT) => {
+            let digits = [
+                Code::Digit1,
+                Code::Digit2,
+                Code::Digit3,
+                Code::Digit4,
+                Code::Digit5,
+                Code::Digit6,
+                Code::Digit7,
+                Code::Digit8,
+                Code::Digit9,
+            ];
+            let n = digits.iter().position(|d| *d == code)?;
+            Action::SelectTab(n as u8)
         }
-        _ => None,
-    }
+        _ => return None,
+    };
+    Some(Message::Action(action))
 }
