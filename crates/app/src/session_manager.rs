@@ -19,6 +19,8 @@ pub const MAX_WIDTH: f32 = 600.0;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SmCmd {
     Connect,
+    /// Session Options for the session.
+    Edit,
     Rename,
     Delete,
     NewSession,
@@ -93,8 +95,10 @@ pub struct Outcome {
     pub open: Vec<String>,
     /// Width or open folders changed: save the config.
     pub save: bool,
-    /// «New session…»: Quick Connect with «Save» on, into this folder.
+    /// «New session…»: Session Options for a new one in this folder.
     pub new_session: Option<String>,
+    /// «Edit…»: Session Options for this session.
+    pub edit: Option<String>,
 }
 
 pub struct SessionManager {
@@ -395,6 +399,15 @@ impl SessionManager {
         }
     }
 
+    /// The one selected row, if it is a session (Options → Session Options… with no tab).
+    pub fn one_session(&self) -> Option<String> {
+        let mut it = self.selected.iter();
+        match (it.next(), it.next()) {
+            (Some(id), None) if !self.store.is_folder(id) => Some(id.clone()),
+            _ => None,
+        }
+    }
+
     /// The selected sessions, folders standing for everything in them (SecureCRT "Connect all").
     pub fn connect(&self) -> Vec<String> {
         rows::sessions_under(&self.tree, &self.selected)
@@ -405,6 +418,7 @@ impl SessionManager {
         let one = self.anchor.clone().filter(|a| self.selected.contains(a));
         match cmd {
             SmCmd::Connect => out.open = self.connect(),
+            SmCmd::Edit => out.edit = one.filter(|id| !self.store.is_folder(id)),
             SmCmd::NewSession => out.new_session = Some(self.target_folder()),
             SmCmd::NewFolder => {
                 self.dialog = Some(SmDialog::NewFolder {
@@ -567,6 +581,11 @@ impl SessionManager {
                 Some(m(SmMsg::Menu(SmCmd::NewFolder))),
             ),
             tool(
+                "document-edit-symbolic",
+                fl!("sm-edit"),
+                self.one_session().map(|_| m(SmMsg::Menu(SmCmd::Edit))),
+            ),
+            tool(
                 "edit-delete-symbolic",
                 fl!("sm-delete"),
                 any.then(|| m(SmMsg::Menu(SmCmd::Delete))),
@@ -688,12 +707,17 @@ impl SessionManager {
     }
 }
 
-fn row_menu(_folder: bool) -> Vec<menu::Tree<Message>> {
-    use menu::Item::{Button, Divider};
+fn row_menu(folder: bool) -> Vec<menu::Tree<Message>> {
+    use menu::Item::{Button, ButtonDisabled, Divider};
+    let edit = match folder {
+        true => ButtonDisabled(fl!("sm-edit-menu"), None, SmCmd::Edit),
+        false => Button(fl!("sm-edit-menu"), None, SmCmd::Edit),
+    };
     menu::items(
         &HashMap::new(),
         vec![
             Button(fl!("sm-connect"), None, SmCmd::Connect),
+            edit,
             Divider,
             Button(fl!("sm-rename-menu"), None, SmCmd::Rename),
             Button(fl!("sm-delete-menu"), None, SmCmd::Delete),

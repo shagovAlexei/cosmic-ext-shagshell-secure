@@ -98,3 +98,22 @@ qc-connect = Connect
 qc-host-required = Enter a hostname (no spaces, not starting with “-”)
 qc-bad-port = The port is a number from 1 to 65535
 name-invalid = That name can't be used
+
+# Session Options
+menu-edit-default = Edit Default Session…
+sm-edit = Session Options
+sm-edit-menu = Edit…
+so-title = Session Options — { $name }
+so-title-new = New Session
+so-title-default = Default Session
+so-connection = Connection
+so-ssh2 = SSH2
+so-name = Name
+so-identity = Private key
+so-identity-agent = (ssh-agent / ~/.ssh defaults)
+so-browse = Browse…
+so-keepalive = Keepalive, seconds (ServerAliveInterval)
+so-extra = More ssh options
+so-bad-keepalive = Keepalive is a number of seconds
+so-nothing = Select a session in the tree, or open its tab
+ok = OK

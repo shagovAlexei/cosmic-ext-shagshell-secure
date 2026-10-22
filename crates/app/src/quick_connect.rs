@@ -12,9 +12,8 @@ pub struct QuickConnect {
     pub port: String,
     pub user: String,
     pub save: bool,
+    /// Saved into the tree's root.
     pub name: String,
-    /// Where a saved session goes ("" = root).
-    pub folder: String,
     pub error: Option<String>,
     host_id: widget::Id,
 }
@@ -37,15 +36,13 @@ pub struct Request {
 }
 
 impl QuickConnect {
-    /// `folder`: «New session…» opens it with «Save» on, into that folder.
-    pub fn new(folder: Option<String>) -> Self {
+    pub fn new() -> Self {
         Self {
             host: String::new(),
             port: String::new(),
             user: String::new(),
-            save: folder.is_some(),
+            save: false,
             name: String::new(),
-            folder: folder.unwrap_or_default(),
             error: None,
             host_id: widget::Id::unique(),
         }
@@ -80,7 +77,7 @@ impl QuickConnect {
 
     fn request(&self) -> Result<Request, String> {
         let host = self.host.trim();
-        if host.is_empty() || host.contains(char::is_whitespace) || host.starts_with('-') {
+        if !shagshell_core::session::form::valid_host(host) {
             return Err(fl!("qc-host-required"));
         }
         let port = match self.port.trim() {
@@ -101,7 +98,7 @@ impl QuickConnect {
         };
         let save_as = self
             .save
-            .then(|| (self.folder.clone(), self.name.trim().to_string()));
+            .then(|| (String::new(), self.name.trim().to_string()));
         Ok(Request { session, save_as })
     }
 
@@ -139,10 +136,7 @@ impl QuickConnect {
         ])
         .spacing(10);
         if self.save {
-            let folder = match self.folder.as_str() {
-                "" => fl!("qc-root"),
-                f => f.to_string(),
-            };
+            let folder = fl!("qc-root");
             let name = widget::text_input("", self.name.clone())
                 .on_input(|v| Message::QuickConnect(QcMsg::Name(v)))
                 .on_submit(|_| Message::QuickConnect(QcMsg::Connect));

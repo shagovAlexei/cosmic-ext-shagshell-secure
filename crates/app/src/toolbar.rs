@@ -21,7 +21,11 @@ pub fn view() -> Element<'static, Message> {
         ("view-refresh-symbolic", fl!("menu-reconnect"), None),
         ("process-stop-symbolic", fl!("menu-disconnect"), None),
         ("folder-remote-symbolic", fl!("menu-connect-sftp"), None),
-        ("emblem-system-symbolic", fl!("menu-session-options"), None),
+        (
+            "emblem-system-symbolic",
+            fl!("menu-session-options"),
+            Some(Action::SessionOptions),
+        ),
     ];
     let row = buttons
         .into_iter()

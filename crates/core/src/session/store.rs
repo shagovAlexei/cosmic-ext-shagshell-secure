@@ -6,7 +6,8 @@ use std::io::{self, ErrorKind};
 use std::path::{Path, PathBuf};
 
 const EXT: &str = "toml";
-const DEFAULT: &str = "Default";
+/// The template's id.
+pub const DEFAULT: &str = "Default";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NameError {

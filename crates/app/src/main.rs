@@ -6,6 +6,7 @@ mod menu;
 mod options;
 mod quick_connect;
 mod session_manager;
+mod session_options;
 mod status_bar;
 mod tabs;
 mod term;

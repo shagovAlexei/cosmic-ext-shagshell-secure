@@ -33,10 +33,12 @@ pub enum Action {
     Connect,
     QuickConnect,
     ImportSshConfig,
+    SessionOptions,
+    /// Options → Edit Default Session…: the template new sessions copy.
+    EditDefault,
     // Shown, not working yet (later phases).
     Disconnect,
     ConnectSftp,
-    SessionOptions,
     Pending,
 }
 
@@ -119,7 +121,8 @@ pub fn bar(
         (
             fl!("menu-options"),
             vec![
-                ButtonDisabled(fl!("menu-session-options"), None, Action::SessionOptions),
+                Button(fl!("menu-session-options"), None, Action::SessionOptions),
+                Button(fl!("menu-edit-default"), None, Action::EditDefault),
                 Button(fl!("menu-global-options"), None, Action::GlobalOptions),
             ],
         ),
