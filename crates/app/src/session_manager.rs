@@ -9,7 +9,7 @@ use cosmic::iced::{Length, mouse};
 use cosmic::widget::{self, menu};
 use cosmic::{Element, iced};
 use shagshell_core::session::rows::{self, Row};
-use shagshell_core::session::store::{NameError, Node, Store, valid_name};
+use shagshell_core::session::store::{NameError, Node, Store, name_of, valid_name};
 use std::collections::{BTreeSet, HashMap};
 
 pub const MIN_WIDTH: f32 = 160.0;
@@ -99,6 +99,8 @@ pub struct Outcome {
     pub new_session: Option<String>,
     /// «Edit…»: Session Options for this session.
     pub edit: Option<String>,
+    /// A session or folder renamed / moved (old id, new id): its open tabs follow.
+    pub moved: Option<(String, String)>,
 }
 
 pub struct SessionManager {
@@ -308,6 +310,7 @@ impl SessionManager {
                         match self.store.move_to(&id, &into) {
                             Ok(new) => {
                                 self.retarget_expanded(&id, &new);
+                                out.moved = Some((id.clone(), new.clone()));
                                 if !into.is_empty() {
                                     self.expanded.insert(into);
                                 }
@@ -501,6 +504,7 @@ impl SessionManager {
                 match new {
                     Some((old, id)) => {
                         self.retarget_expanded(&old, &id);
+                        out.moved = Some((old, id.clone()));
                         self.select(&id);
                     }
                     None => self.reload(),
@@ -736,10 +740,6 @@ fn unfocus() -> Task<Message> {
 
 fn parent(id: &str) -> &str {
     id.rsplit_once('/').map_or("", |(p, _)| p)
-}
-
-fn name_of(id: &str) -> &str {
-    id.rsplit_once('/').map_or(id, |(_, n)| n)
 }
 
 pub fn check(name: &str, at_root: bool) -> Result<(), String> {

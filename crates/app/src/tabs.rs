@@ -152,6 +152,11 @@ impl Tabs {
         Some((tab.alive, label, term.columns(), term.screen_lines()))
     }
 
+    /// What every tab runs (again on Reconnect / Clone).
+    pub fn launches_mut(&mut self) -> impl Iterator<Item = &mut Launch> {
+        self.tabs.values_mut().map(|t| &mut t.launch)
+    }
+
     /// The saved session the active tab was opened from.
     pub fn active_session(&self) -> Option<String> {
         match &self.tabs.get(&self.active()?.2)?.launch.protocol {

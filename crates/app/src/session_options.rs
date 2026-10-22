@@ -8,6 +8,7 @@ use cosmic::widget::{self, segmented_button};
 use cosmic::{Element, theme};
 use shagshell_core::session::Session;
 use shagshell_core::session::form::{Form, FormError};
+use shagshell_core::session::store::name_of;
 
 /// What OK writes.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -45,8 +46,8 @@ pub enum SoMsg {
     Field(Field, String),
     Category(segmented_button::Entity),
     Browse,
-    /// The file chooser's pick (`None`: cancelled).
-    Browsed(Option<String>),
+    /// The file chooser's pick (`None`: cancelled), for the window that asked.
+    Browsed(window::Id, Option<String>),
     Drag,
     Ok,
     Cancel,
@@ -98,9 +99,9 @@ impl SessionOptions {
         self.form.name.trim().to_string()
     }
 
-    /// The fields as a session, or why not (shown in the window).
-    pub fn checked(&mut self) -> Option<Session> {
-        let r = self.form.apply(self.target != Target::Default);
+    /// `base` with the fields put in, or why not (shown in the window).
+    pub fn checked(&mut self, base: &Session) -> Option<Session> {
+        let r = self.form.apply(base, self.target != Target::Default);
         self.error = r.as_ref().err().map(|e| match e {
             FormError::Host => fl!("qc-host-required"),
             FormError::Port => fl!("qc-bad-port"),
@@ -123,7 +124,7 @@ impl SessionOptions {
                 Field::Extra => f.extra = v,
             },
             SoMsg::Category(e) => self.categories.activate(e),
-            SoMsg::Browsed(Some(path)) => f.identity = path,
+            SoMsg::Browsed(w, Some(path)) if w == self.window => f.identity = path,
             _ => {}
         }
     }
@@ -239,8 +240,4 @@ pub async fn browse(title: String) -> Option<String> {
         Ok(rest) => format!("~/{}", rest.display()),
         Err(_) => path.display().to_string(),
     })
-}
-
-fn name_of(id: &str) -> &str {
-    id.rsplit_once('/').map_or(id, |(_, n)| n)
 }

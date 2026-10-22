@@ -145,6 +145,9 @@ impl Application for App {
                 if let Some(folder) = out.new_session {
                     tasks.push(self.open_options(Target::New { folder }));
                 }
+                if let Some((old, new)) = &out.moved {
+                    self.sessions_changed(old, new);
+                }
                 if let Some(id) = out.edit {
                     tasks.push(self.open_options(Target::Edit { id }));
                 }
@@ -160,6 +163,12 @@ impl Application for App {
             Message::SessionOptions(m) => return self.session_options(m),
             Message::Input(w, m) if Some(w) == self.core.main_window_id() => {
                 return self.update(*m);
+            }
+            // Esc in Session Options (no field took it): Cancel, as SecureCRT's dialogs.
+            Message::Input(w, m) if self.options.as_ref().is_some_and(|o| o.window == w) => {
+                if let Message::Sessions(SmMsg::Key(TreeKey::Clear)) = *m {
+                    return self.session_options(SoMsg::Cancel);
+                }
             }
             Message::Input(..) => {}
             Message::CloseRequested(w) if self.options.as_ref().is_some_and(|o| o.window == w) => {
@@ -199,10 +208,11 @@ impl Application for App {
                     },
                 )
             }),
-            // Ctrl / Shift for clicks in the session tree.
-            event::listen_with(|e, _, w| match e {
+            // Ctrl / Shift for clicks in the session tree; from any window, or a Ctrl let go in
+            // Session Options would stay held for the tree.
+            event::listen_with(|e, _, _| match e {
                 cosmic::iced::Event::Keyboard(keyboard::Event::ModifiersChanged(m)) => {
-                    input(w, Some(Message::Sessions(SmMsg::Mods(m))))
+                    Some(Message::Sessions(SmMsg::Mods(m)))
                 }
                 _ => None,
             }),
@@ -356,8 +366,8 @@ impl App {
         for id in ids {
             match self.sessions.store.get(id) {
                 Ok(s) => {
-                    let name = id.rsplit_once('/').map_or(id.as_str(), |(_, n)| n);
-                    match self.ssh_launch(&s, name.to_string(), Some(id)) {
+                    let name = shagshell_core::session::store::name_of(id).to_string();
+                    match ssh_launch(&self.control_dir, &s, name, Some(id)) {
                         Ok(l) => tasks.push(self.tabs.open(l, &look())),
                         Err(e) => self.sessions.notice = Some(e),
                     }
@@ -368,25 +378,33 @@ impl App {
         Task::batch(tasks)
     }
 
-    fn ssh_launch(
-        &self,
-        s: &shagshell_core::session::Session,
-        title: String,
-        session: Option<&str>,
-    ) -> Result<tabs::Launch, String> {
-        let home = std::env::home_dir().unwrap_or_default();
-        let mut argv = shagshell_core::launch::ssh_argv(s, &self.control_dir, &home)
-            .map_err(|_| fl!("bad-extra"))?;
-        let program = argv.remove(0);
-        Ok(tabs::Launch {
-            program,
-            args: argv,
-            title,
-            protocol: tabs::Protocol::Ssh {
-                host: s.host.clone(),
-                session: session.map(str::to_string),
-            },
-        })
+    /// Session files changed (`old` saved, or renamed / moved to `new`): the tabs opened from
+    /// it follow, and Reconnect / Clone run it as saved now (SecureCRT re-reads the session).
+    fn sessions_changed(&mut self, old: &str, new: &str) {
+        let store = &self.sessions.store;
+        for l in self.tabs.launches_mut() {
+            let tabs::Protocol::Ssh {
+                session: Some(id), ..
+            } = &l.protocol
+            else {
+                continue;
+            };
+            let Some(id) = shagshell_core::session::store::retarget(id, old, new) else {
+                continue;
+            };
+            let relaunch = store
+                .get(&id)
+                .ok()
+                .and_then(|s| ssh_launch(&self.control_dir, &s, l.title.clone(), Some(&id)).ok());
+            match relaunch {
+                Some(n) => *l = n,
+                None => {
+                    if let tabs::Protocol::Ssh { session, .. } = &mut l.protocol {
+                        *session = Some(id);
+                    }
+                }
+            }
+        }
     }
 
     fn quick_connect(&mut self) -> Task<Message> {
@@ -412,13 +430,10 @@ impl App {
                 return Task::none();
             }
             let store = &self.sessions.store;
-            let saved = store
-                .create(folder, name, &req.session.host)
-                .and_then(|id| {
-                    let mut s = store.get(&id)?;
-                    (s.port, s.user) = (req.session.port, req.session.user.clone());
-                    store.save(&id, &s).map(|()| (id, s))
-                });
+            let mut s = store.template();
+            s.host = req.session.host.clone();
+            (s.port, s.user) = (req.session.port, req.session.user.clone());
+            let saved = store.add(folder, name, &s).map(|id| (id, s));
             match saved {
                 // Opened as saved: the Default template's key / keepalive / options too.
                 Ok((id, s)) => {
@@ -438,7 +453,7 @@ impl App {
             }
         }
         self.quick = None;
-        match self.ssh_launch(&session, title, saved_id.as_deref()) {
+        match ssh_launch(&self.control_dir, &session, title, saved_id.as_deref()) {
             Ok(l) => self.tabs.open(l, &look()),
             Err(e) => {
                 self.sessions.notice = Some(e);
@@ -455,17 +470,16 @@ impl App {
         let store = &self.sessions.store;
         let loaded = match &target {
             // As SecureCRT: a new session starts as a copy of Default.
-            Target::New { .. } | Target::Default => store.get(DEFAULT),
+            Target::New { .. } => Ok(store.template()),
             Target::Edit { id } => store.get(id),
+            // A broken Default.toml is said, not overwritten with an empty one.
+            Target::Default => match store.get(DEFAULT) {
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Default::default()),
+                r => r,
+            },
         };
         let session = match loaded {
             Ok(s) => s,
-            Err(e)
-                if e.kind() == std::io::ErrorKind::NotFound
-                    && !matches!(target, Target::Edit { .. }) =>
-            {
-                Default::default()
-            }
             Err(e) => {
                 self.sessions.notice = Some(crate::session_manager::io_text(&e));
                 return Task::none();
@@ -496,12 +510,26 @@ impl App {
             SoMsg::Drag => return cosmic::iced::window::drag(o.window),
             SoMsg::Browse => {
                 let title = fl!("so-identity");
-                return Task::perform(crate::session_options::browse(title), |p| {
-                    cosmic::Action::App(Message::SessionOptions(SoMsg::Browsed(p)))
+                let w = o.window;
+                return Task::perform(crate::session_options::browse(title), move |p| {
+                    cosmic::Action::App(Message::SessionOptions(SoMsg::Browsed(w, p)))
                 });
             }
             SoMsg::Ok => {
-                let Some(s) = o.checked() else {
+                // What the window doesn't show is kept from the file as it is now.
+                let base = match &o.target {
+                    Target::Edit { id } => match self.sessions.store.get(id) {
+                        Ok(s) => s,
+                        // Renamed or deleted meanwhile: said, not written back under the old name.
+                        Err(e) => {
+                            o.error = Some(crate::session_manager::io_text(&e));
+                            return Task::none();
+                        }
+                    },
+                    Target::New { .. } => self.sessions.store.template(),
+                    Target::Default => self.sessions.store.get(DEFAULT).unwrap_or_default(),
+                };
+                let Some(s) = o.checked(&base) else {
                     return Task::none();
                 };
                 if let Err(e) = self.save_options(&s) {
@@ -510,7 +538,6 @@ impl App {
                     }
                     return Task::none();
                 }
-                self.sessions.reload();
                 return self.session_options(SoMsg::Cancel);
             }
             m => o.update(m),
@@ -529,16 +556,16 @@ impl App {
             Target::New { folder } => {
                 let name = o.name();
                 crate::session_manager::check(&name, folder.is_empty())?;
-                let id = store.create(folder, &name, &s.host).map_err(io)?;
-                store.save(&id, s).map_err(io)?;
-                self.sessions.select(&id);
+                let id = store.add(folder, &name, s).map_err(io)?;
+                self.sessions.select(&id); // reloads the tree
                 self.config.expanded = self.sessions.expanded.iter().cloned().collect();
                 self.save_config();
             }
-            // Renamed or deleted meanwhile: said, not written back under the old name.
             Target::Edit { id } => {
-                store.get(id).map_err(io)?;
-                store.save(id, s).map_err(io)?;
+                let id = id.clone();
+                store.save(&id, s).map_err(io)?;
+                self.sessions.reload();
+                self.sessions_changed(&id, &id);
             }
             Target::Default => store.save(DEFAULT, s).map_err(io)?,
         }
@@ -581,6 +608,27 @@ impl App {
         let open = (self.drawer != Some(d)).then_some(d);
         self.set_drawer(open);
     }
+}
+
+fn ssh_launch(
+    control_dir: &std::path::Path,
+    s: &shagshell_core::session::Session,
+    title: String,
+    session: Option<&str>,
+) -> Result<tabs::Launch, String> {
+    let home = std::env::home_dir().unwrap_or_default();
+    let mut argv =
+        shagshell_core::launch::ssh_argv(s, control_dir, &home).map_err(|_| fl!("bad-extra"))?;
+    let program = argv.remove(0);
+    Ok(tabs::Launch {
+        program,
+        args: argv,
+        title,
+        protocol: tabs::Protocol::Ssh {
+            host: s.host.clone(),
+            session: session.map(str::to_string),
+        },
+    })
 }
 
 /// A key or pointer event, tagged with the window it came from (`Message::Input`).

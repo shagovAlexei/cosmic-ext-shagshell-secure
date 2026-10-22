@@ -40,9 +40,9 @@ impl Form {
         }
     }
 
-    /// The session the fields describe. `need_host`: false for the Default template, which has
-    /// none.
-    pub fn apply(&self, need_host: bool) -> Result<Session, FormError> {
+    /// `base` with the fields put in (what the form doesn't show kept). `need_host`: false for
+    /// the Default template, which has none.
+    pub fn apply(&self, base: &Session, need_host: bool) -> Result<Session, FormError> {
         let opt = |v: &str| Some(v.trim().to_string()).filter(|v| !v.is_empty());
         let host = self.host.trim();
         if (need_host || !host.is_empty()) && !valid_host(host) {
@@ -65,6 +65,7 @@ impl Form {
             identity: opt(&self.identity),
             keepalive,
             extra,
+            ..base.clone()
         })
     }
 }
@@ -89,11 +90,12 @@ mod tests {
             identity: Some("~/.ssh/k".into()),
             keepalive: Some(30),
             extra: "-o A=1".into(),
+            ..Default::default()
         };
         let f = Form::from_session("n", &s);
         assert_eq!(f.name, "n");
         assert_eq!(f.port, "2222");
-        assert_eq!(f.apply(true), Ok(s));
+        assert_eq!(f.apply(&Session::default(), true), Ok(s));
     }
 
     #[test]
@@ -104,12 +106,19 @@ mod tests {
             ..form(" h ")
         };
         assert_eq!(
-            f.apply(true),
+            f.apply(&Session::default(), true),
             Ok(Session {
                 host: "h".into(),
                 ..Default::default()
             })
         );
+    }
+
+    #[test]
+    fn keeps_what_the_form_does_not_show() {
+        let mut base = Session::default();
+        base.rest.insert("jump".into(), "bastion".into());
+        assert_eq!(form("h").apply(&base, true).unwrap().rest, base.rest);
     }
 
     #[test]
@@ -119,7 +128,11 @@ mod tests {
                 port: p.into(),
                 ..form("h")
             };
-            assert_eq!(f.apply(true), Err(FormError::Port), "{p}");
+            assert_eq!(
+                f.apply(&Session::default(), true),
+                Err(FormError::Port),
+                "{p}"
+            );
         }
     }
 
@@ -129,7 +142,10 @@ mod tests {
             keepalive: "10s".into(),
             ..form("h")
         };
-        assert_eq!(f.apply(true), Err(FormError::Keepalive));
+        assert_eq!(
+            f.apply(&Session::default(), true),
+            Err(FormError::Keepalive)
+        );
     }
 
     #[test]
@@ -138,19 +154,28 @@ mod tests {
             extra: "-o 'A=1".into(),
             ..form("h")
         };
-        assert_eq!(f.apply(true), Err(FormError::Extra));
+        assert_eq!(f.apply(&Session::default(), true), Err(FormError::Extra));
     }
 
     #[test]
     fn host_required_unless_default() {
-        assert_eq!(form("").apply(true), Err(FormError::Host));
-        assert_eq!(form("").apply(false), Ok(Session::default()));
-        assert_eq!(form("a b").apply(false), Err(FormError::Host));
+        assert_eq!(
+            form("").apply(&Session::default(), true),
+            Err(FormError::Host)
+        );
+        assert_eq!(
+            form("").apply(&Session::default(), false),
+            Ok(Session::default())
+        );
+        assert_eq!(
+            form("a b").apply(&Session::default(), false),
+            Err(FormError::Host)
+        );
     }
 
     #[test]
     fn host_with_dash_rejected() {
         let f = form("-oProxyCommand=x");
-        assert_eq!(f.apply(true), Err(FormError::Host));
+        assert_eq!(f.apply(&Session::default(), true), Err(FormError::Host));
     }
 }

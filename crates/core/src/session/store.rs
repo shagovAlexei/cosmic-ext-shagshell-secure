@@ -78,14 +78,24 @@ impl Store {
 
     /// A new session `name` in `folder` ("" = root), from the Default template; its id.
     pub fn create(&self, folder: &str, name: &str, host: &str) -> io::Result<String> {
+        let mut s = self.template();
+        s.host = host.to_string();
+        self.add(folder, name, &s)
+    }
+
+    /// What a new session starts as: Default.toml (missing or unreadable: empty).
+    pub fn template(&self) -> Session {
+        self.get(DEFAULT).unwrap_or_default()
+    }
+
+    /// A new session `name` in `folder` written as `s`, in one write; its id.
+    pub fn add(&self, folder: &str, name: &str, s: &Session) -> io::Result<String> {
         check_name(name, folder.is_empty())?;
         let id = join(folder, name);
         if self.exists(&id) {
             return Err(ErrorKind::AlreadyExists.into());
         }
-        let mut s = self.get(DEFAULT).unwrap_or_default();
-        s.host = host.to_string();
-        self.save(&id, &s)?;
+        self.save(&id, s)?;
         Ok(id)
     }
 
@@ -202,6 +212,18 @@ fn join(folder: &str, name: &str) -> String {
     }
 }
 
+/// `id` after `old` was renamed / moved to `new`: itself or something under it moves along;
+/// anything else (`lab/web2` when `lab/web` moved) is `None`.
+pub fn retarget(id: &str, old: &str, new: &str) -> Option<String> {
+    let rest = id.strip_prefix(old)?;
+    (rest.is_empty() || rest.starts_with('/')).then(|| format!("{new}{rest}"))
+}
+
+/// A session's or folder's own name: the id's last segment.
+pub fn name_of(id: &str) -> &str {
+    id.rsplit_once('/').map_or(id, |(_, n)| n)
+}
+
 fn parent(id: &str) -> &str {
     id.rsplit_once('/').map_or("", |(p, _)| p)
 }
@@ -290,6 +312,64 @@ mod tests {
     }
 
     #[test]
+    fn retarget_follows_the_moved_one_only() {
+        assert_eq!(
+            retarget("lab/web", "lab/web", "prod/web").as_deref(),
+            Some("prod/web")
+        );
+        assert_eq!(
+            retarget("lab/a/b", "lab", "old").as_deref(),
+            Some("old/a/b")
+        );
+        assert_eq!(retarget("lab/web2", "lab/web", "x"), None);
+        assert_eq!(retarget("other", "lab", "x"), None);
+    }
+
+    #[test]
+    fn add_writes_the_session_as_given() {
+        let (_d, s) = store();
+        let mut x = host("h");
+        x.port = Some(2222);
+        assert_eq!(s.add("lab", "a", &x).unwrap(), "lab/a");
+        assert_eq!(s.get("lab/a").unwrap(), x);
+        assert_eq!(
+            s.add("lab", "a", &x).unwrap_err().kind(),
+            ErrorKind::AlreadyExists
+        );
+        assert_eq!(
+            s.add("", "Default", &x).unwrap_err().kind(),
+            ErrorKind::InvalidFilename
+        );
+    }
+
+    #[test]
+    fn template_missing_or_broken_is_empty() {
+        let (_d, s) = store();
+        assert_eq!(s.template(), Session::default());
+        std::fs::create_dir_all(&s.root).unwrap();
+        std::fs::write(s.root.join("Default.toml"), "port = \"x").unwrap();
+        assert_eq!(s.template(), Session::default());
+    }
+
+    #[test]
+    fn unknown_fields_survive_a_save() {
+        let (_d, s) = store();
+        std::fs::create_dir_all(&s.root).unwrap();
+        let text = "host = \"h\"\njump = \"bastion\"\n\n[terminal]\nfont = \"Mono\"\n";
+        std::fs::write(s.root.join("x.toml"), text).unwrap();
+        let mut x = s.get("x").unwrap();
+        x.port = Some(1);
+        s.save("x", &x).unwrap();
+        let back = std::fs::read_to_string(s.root.join("x.toml")).unwrap();
+        assert!(back.contains("jump = \"bastion\""), "{back}");
+        assert!(
+            back.contains("[terminal]") && back.contains("font = \"Mono\""),
+            "{back}"
+        );
+        assert_eq!(s.get("x").unwrap(), x);
+    }
+
+    #[test]
     fn create_copies_default() {
         let (_d, s) = store();
         let mut def = host("");
@@ -326,7 +406,9 @@ mod tests {
         let (_d, s) = store();
         std::fs::create_dir_all(&s.root).unwrap();
         std::fs::write(s.root.join("x.toml"), "host = \"h\"\nfuture = 1\n").unwrap();
-        assert_eq!(s.get("x").unwrap(), host("h"));
+        let x = s.get("x").unwrap();
+        assert_eq!(x.host, "h");
+        assert_eq!(x.rest.get("future"), Some(&toml::Value::Integer(1)));
     }
 
     #[test]
