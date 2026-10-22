@@ -5,6 +5,8 @@ mod i18n;
 mod menu;
 mod session_manager;
 mod status_bar;
+#[allow(dead_code)] // wired in by the tabs (next commit)
+mod term;
 mod toolbar;
 
 use shagshell_core::check;

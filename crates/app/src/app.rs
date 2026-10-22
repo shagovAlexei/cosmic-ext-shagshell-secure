@@ -25,6 +25,8 @@ pub enum Message {
     Config(Config),
     OpenUrl(String),
     CloseDrawer,
+    TermTx(crate::term::Events),
+    Term(crate::term::TabId, alacritty_terminal::event::Event),
 }
 
 impl Application for App {
@@ -68,6 +70,7 @@ impl Application for App {
                 }
             }
             Message::CloseDrawer => self.core.window.show_context = false,
+            Message::TermTx(_) | Message::Term(..) => {}
         }
         Task::none()
     }

@@ -42,9 +42,9 @@
 - Виджет и эмулятор из cosmic-term через shagoff-commander (`term/`), xterm-256color, true color, мышь, гиперссылки, IME.
 - Прокрутка: 10 000 строк; колесо; Shift+PgUp/PgDn.
 - Шрифт — моноширинный COSMIC, 14 px; цвета — палитра COSMIC тёмная/светлая по теме системы, меняется на лету.
-- **Все Ctrl+буква и Alt+буква уходят в терминал**, кроме клавиш приложения ниже. Клавиши приложения: Ctrl+Shift+T/W/C/V, Ctrl+Insert, Shift+Insert, Ctrl+Tab, Ctrl+Shift+Tab, Alt+1…9, Alt+M.
+- **Все Ctrl+буква и Alt+буква уходят в терминал**, кроме клавиш приложения ниже. Клавиши приложения: Ctrl+Shift+T/W/C/V, Ctrl+Tab, Ctrl+Shift+Tab, Alt+1…9, Alt+M.
 - **Копирование / вставка:**
-  - Ctrl+Insert / Ctrl+Shift+C — копировать выделение; Shift+Insert / Ctrl+Shift+V — вставить; Edit → Copy / Paste / Select All активны.
+  - Ctrl+Shift+C — копировать выделение; Ctrl+Shift+V — вставить; Edit → Copy / Paste / Select All активны. Ctrl+Insert / Shift+Insert не занимаем: в системе пользователя на них другие функции (уходят в терминал как обычные клавиши).
   - **Копирование при выделении** (по умолчанию вкл.): отпустил мышь после выделения — текст в буфере обмена.
   - **Вставка средней кнопкой** (по умолчанию вкл.): вставляет буфер обмена.
   - Вставка — bracketed paste, если программа его включила.
@@ -65,7 +65,7 @@
 - `crates/app/src/term/` — копия `CMD/crates/app/src/term/{terminal,terminal_box,terminal_theme,mouse_reporter,style}.rs` с пометкой источника. Изменения:
   - `EventProxy` несёт `TabId`, события приходят как `(TabId, Event)`;
   - убрать `shell_pid`/follow и commander-специфичный `pass` (Ctrl+O);
-  - `terminal_box`: Ctrl+Insert / Shift+Insert, колбэк копирования при выделении.
+  - `terminal_box`: флаги копирования при выделении и вставки средней кнопкой.
 - `crates/app/src/tabs.rs` — модуль вкладок и групп: свой `Message`, `update`, `view`; `pane_grid::State<Group>`, у `Group` — `segmented_button` модель с `Tab` (терминал, заголовок, статус).
 - `crates/app/src/options.rs` — боковая панель Global Options.
 - `crates/core/src/tabs.rs` — чистая логика без UI, с тестами: нумерация заголовков («Local Shell (2)», свободный наименьший номер), порядок переключения (следующая/предыдущая по кругу, Alt+N за пределами → нет действия), выбор следующей активной вкладки после закрытия (соседняя справа, иначе слева), можно ли разделить группу.
@@ -88,4 +88,4 @@
 
 - `cargo test -p shagshell-core`: `tabs` (нумерация, переключение по кругу, Alt+N вне диапазона, вкладка после закрытия, split), `shell` (`$SHELL` пуст / не исполняемый / нет → `/bin/sh`).
 - headless: Ctrl+Shift+T → shell, `echo hi` виден; ещё вкладка → «Local Shell (2)»; Ctrl+Tab; `exit` → ✗ и строка про Enter, Enter → снова ✓; Window → Split Right (через вкладку ПКМ или клавишу — меню в headless не кликается) → две группы; Ctrl+Shift+W на живой → диалог; ru-раскладка: Ctrl+Shift+T работает.
-- `TESTING.md` — чек-лист этапа 2 (копирование при выделении, средняя кнопка, Ctrl+Insert/Shift+Insert, светлая/тёмная тема, mc/htop/vim рисуются правильно, изменение размера окна).
+- `TESTING.md` — чек-лист этапа 2 (копирование при выделении, средняя кнопка, светлая/тёмная тема, mc/htop/vim рисуются правильно, изменение размера окна).

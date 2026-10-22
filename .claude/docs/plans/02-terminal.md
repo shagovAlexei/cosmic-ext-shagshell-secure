@@ -14,7 +14,7 @@
 
 ## Global Constraints
 
-- All Ctrl+letter / Alt+letter go to the terminal except the app keys: Ctrl+Shift+T/W/C/V, Ctrl+Insert, Shift+Insert, Ctrl+Tab, Ctrl+Shift+Tab, Alt+1…9, Alt+M — matched by physical key (ru layout works).
+- All Ctrl+letter / Alt+letter go to the terminal except the app keys: Ctrl+Shift+T/W/C/V, Ctrl+Tab, Ctrl+Shift+Tab, Alt+1…9, Alt+M — matched by physical key (ru layout works).
 - Scrollback 10 000 lines; `TERM=xterm-256color`; font 14 px.
 - Copy on select and paste on middle click: config fields, default `true`.
 - Exit line written into the terminal: `\r\n[Process exited with code N — press Enter to restart]\r\n` (en) — fixed English, it is terminal content, not UI.
@@ -57,7 +57,7 @@
 - `term::restyle(&Mutex<Terminal>, &Style, dark, bg)`, `term::on_event(&Mutex<Terminal>, Event) -> Outcome { None, Exit(Option<i32>), Copy(String), Title(String) }` (Title from `Event::Title`, `ResetTitle` → `Title(String::new())`).
 - `term::subscription() -> Subscription<Message>` → `Message::TermTx(UnboundedSender<(TabId, Event)>)` first, then `Message::Term(TabId, Event)`.
 - `terminal_box(&Mutex<Terminal>, app_key: fn(Modifiers, &Key) -> bool)` with `.on_copy_selection(Fn(String) -> Message)` (fired on left release when a selection exists and copy-on-select is on — the box takes a `copy_on_select: bool`) and existing `.on_middle_click`, `.on_focus`.
-- Keys inside the box: Ctrl+Insert = copy, Shift+Insert = paste (alongside the existing Ctrl+Shift+C/V); `app_key` keys are not consumed.
+- Keys inside the box: the existing Ctrl+Shift+C/V only (Ctrl+Insert / Shift+Insert are the user's system keys — never bound); `app_key` keys are not consumed.
 
 - [ ] Step 1: copy files, apply the changes above; delete commander-only parts (`follow`, `waiting_tick`, `stop_waiting`, `shell_pid` users, `shell.rs` calls, Ctrl+O pass).
 - [ ] Step 2: `cargo build -p shagshell` → OK (module unused for now: `#[allow(dead_code)]` only on `mod term;` until Task 3)
