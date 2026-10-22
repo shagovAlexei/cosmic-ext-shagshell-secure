@@ -58,3 +58,5 @@ status-ended = Отключено
 options-terminal = Терминал
 options-copy-on-select = Копировать при выделении
 options-paste-on-middle = Вставлять средней кнопкой мыши
+term-exited = Процесс завершился — Enter, чтобы запустить заново
+term-exited-code = Процесс завершился с кодом { $code } — Enter, чтобы запустить заново

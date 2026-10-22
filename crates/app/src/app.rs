@@ -89,7 +89,7 @@ impl Application for App {
                 }
             }
             Message::CloseDrawer => self.set_drawer(None),
-            Message::Tabs(m) => return self.tabs.update(m),
+            Message::Tabs(m) => return self.tabs.update(m, &look()),
             Message::TermTx(tx) => self.tabs.set_sender(tx),
             Message::Term(id, e) => return self.tabs.on_term(id, e),
             Message::EnterKey if self.tabs.enter_on_dead() => return self.act(Action::Reconnect),
@@ -113,7 +113,7 @@ impl Application for App {
                     modifiers,
                     repeat: false,
                     ..
-                }) if status == event::Status::Ignored => route_key(physical_key, modifiers),
+                }) if status == event::Status::Ignored => route_key(&physical_key, modifiers),
                 _ => None,
             }),
             crate::term::subscription(),
@@ -160,7 +160,7 @@ impl Application for App {
     fn header_start(&self) -> Vec<Element<'_, Message>> {
         vec![menu::bar(
             self.config.session_manager_visible,
-            !self.tabs.is_empty(),
+            self.tabs.menu_state(),
         )]
     }
 
@@ -244,36 +244,79 @@ fn look() -> tabs::Look {
     (Default::default(), c.is_dark, bg)
 }
 
-/// App keys, by physical key so they work in any layout. The terminal passes exactly these on
-/// (`tabs::is_app_key`); Ctrl+Shift+C / V it handles itself.
-fn route_key(key: Physical, mods: Modifiers) -> Option<Message> {
-    let Physical::Code(code) = key else {
+/// Keys reaching the app (the terminal took none of them): Enter restarts an ended tab.
+fn route_key(key: &Physical, mods: Modifiers) -> Option<Message> {
+    match (key, mods) {
+        (Physical::Code(Code::Enter | Code::NumpadEnter), m) if m.is_empty() => {
+            Some(Message::EnterKey)
+        }
+        _ => key_action(key, mods).map(Message::Action),
+    }
+}
+
+/// The app's keys, by physical key so they work in any layout. The one list: the terminal
+/// lets exactly these through (`tabs::is_app_key`), everything else is the program's.
+pub fn key_action(key: &Physical, mods: Modifiers) -> Option<Action> {
+    let Physical::Code(code) = *key else {
         return None;
     };
     let ctrl_shift = Modifiers::CTRL | Modifiers::SHIFT;
-    let action = match (code, mods) {
+    let digits = [
+        Code::Digit1,
+        Code::Digit2,
+        Code::Digit3,
+        Code::Digit4,
+        Code::Digit5,
+        Code::Digit6,
+        Code::Digit7,
+        Code::Digit8,
+        Code::Digit9,
+    ];
+    Some(match (code, mods) {
         (Code::KeyM, Modifiers::ALT) => Action::ToggleSessionManager,
         (Code::KeyT, m) if m == ctrl_shift => Action::NewLocalShell,
         (Code::KeyW, m) if m == ctrl_shift => Action::CloseTab,
+        (Code::KeyC, m) if m == ctrl_shift => Action::Copy,
+        (Code::KeyV, m) if m == ctrl_shift => Action::Paste,
         (Code::Tab, Modifiers::CTRL) => Action::NextTab,
         (Code::Tab, m) if m == ctrl_shift => Action::PrevTab,
-        (Code::Enter | Code::NumpadEnter, m) if m.is_empty() => return Some(Message::EnterKey),
-        (_, Modifiers::ALT) => {
-            let digits = [
-                Code::Digit1,
-                Code::Digit2,
-                Code::Digit3,
-                Code::Digit4,
-                Code::Digit5,
-                Code::Digit6,
-                Code::Digit7,
-                Code::Digit8,
-                Code::Digit9,
-            ];
-            let n = digits.iter().position(|d| *d == code)?;
-            Action::SelectTab(n as u8)
-        }
+        (_, Modifiers::ALT) => Action::SelectTab(digits.iter().position(|d| *d == code)? as u8),
         _ => return None,
-    };
-    Some(Message::Action(action))
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn terminal_keys_stay_in_the_terminal() {
+        for (code, mods) in [
+            (Code::KeyC, Modifiers::CTRL),
+            (Code::KeyD, Modifiers::CTRL),
+            (Code::KeyW, Modifiers::CTRL),
+            (Code::KeyB, Modifiers::ALT),
+            (Code::KeyF, Modifiers::ALT),
+            (Code::Insert, Modifiers::CTRL),
+            (Code::Insert, Modifiers::SHIFT),
+            (Code::Digit0, Modifiers::ALT),
+            (Code::Enter, Modifiers::empty()),
+        ] {
+            assert_eq!(
+                key_action(&Physical::Code(code), mods),
+                None,
+                "{code:?} {mods:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn app_keys() {
+        let k = |code, mods| key_action(&Physical::Code(code), mods);
+        let cs = Modifiers::CTRL | Modifiers::SHIFT;
+        assert_eq!(k(Code::KeyT, cs), Some(Action::NewLocalShell));
+        assert_eq!(k(Code::Digit1, Modifiers::ALT), Some(Action::SelectTab(0)));
+        assert_eq!(k(Code::Digit9, Modifiers::ALT), Some(Action::SelectTab(8)));
+        assert_eq!(k(Code::Tab, cs), Some(Action::PrevTab));
+    }
 }

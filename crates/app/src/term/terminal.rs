@@ -24,8 +24,7 @@ use cosmic_text::{
 use indexmap::IndexSet;
 use std::{
     borrow::Cow,
-    fs, io, mem,
-    path::PathBuf,
+    io, mem,
     sync::{
         Arc, Weak,
         atomic::{AtomicU32, Ordering},
@@ -188,7 +187,6 @@ pub struct Terminal {
     notifier: Notifier,
     search_regex_opt: Option<RegexSearch>,
     search_value: String,
-    shell_pid: Option<u32>,
     size: Size,
     use_bright_bold: bool,
     zoom_adj: i8,
@@ -258,11 +256,6 @@ impl Terminal {
 
         let window_id = 0;
         let pty = tty::new(&options, size.into(), window_id)?;
-        #[cfg(not(windows))]
-        let shell_pid = Some(pty.child().id());
-        #[cfg(windows)]
-        let shell_pid = pty.child_watcher().pid().map(|pid| pid.get());
-
         let pty_event_loop =
             EventLoop::new(term.clone(), event_proxy, pty, options.drain_on_exit, false)?;
         let notifier = Notifier(pty_event_loop.channel());
@@ -284,18 +277,12 @@ impl Terminal {
             notifier,
             search_regex_opt: None,
             search_value: String::new(),
-            shell_pid,
             size,
             term,
             use_bright_bold,
             zoom_adj: Default::default(),
             is_focused: true,
         })
-    }
-
-    /// The shell's pid: whether it waits at its prompt (`core::shell::idle`).
-    pub fn shell_pid(&self) -> Option<u32> {
-        self.shell_pid
     }
 
     pub fn buffer_weak(&self) -> Weak<Buffer> {
@@ -372,19 +359,6 @@ impl Terminal {
 
     pub fn input_no_scroll<I: Into<Cow<'static, [u8]>>>(&self, input: I) {
         self.notifier.notify(input);
-    }
-
-    pub fn working_directory(&self) -> Option<PathBuf> {
-        #[cfg(target_os = "linux")]
-        {
-            let shell_pid = self.shell_pid?;
-            fs::read_link(format!("/proc/{shell_pid}/cwd")).ok()
-        }
-
-        #[cfg(not(target_os = "linux"))]
-        {
-            None
-        }
     }
 
     pub fn input_scroll<I: Into<Cow<'static, [u8]>>>(&self, input: I) {

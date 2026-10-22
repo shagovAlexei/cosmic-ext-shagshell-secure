@@ -33,6 +33,8 @@ pub static LANGUAGE_LOADER: LazyLock<FluentLanguageLoader> = LazyLock::new(|| {
     loader
         .load_fallback_language(&Localizations)
         .expect("Error while loading fallback language");
+    // No bidi isolation marks around `{ $arg }`: they show up as stray glyphs in the terminal.
+    loader.set_use_isolating(false);
 
     loader
 });

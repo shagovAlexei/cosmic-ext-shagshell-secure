@@ -49,7 +49,8 @@ use std::{
 use super::terminal::{Metadata, Terminal, TerminalScroll};
 
 /// Keys the box leaves to the app (Ctrl+O): it takes every other key while focused.
-pub type Pass = fn(Modifiers, &Key) -> bool;
+/// The app's keys: let through, not handled or captured here (by physical key: any layout).
+pub type Pass = fn(Modifiers, &Key, &cosmic::iced::keyboard::key::Physical) -> bool;
 
 const AUTOSCROLL_INTERVAL: Duration = Duration::from_millis(100);
 
@@ -130,6 +131,8 @@ pub struct TerminalBox<'a, Message> {
     copy_on_select: bool,
     /// Global Options: the middle button pastes the clipboard.
     paste_on_middle: bool,
+    /// Its program ended: no keys taken.
+    ended: bool,
     sharp_corners: bool,
     disabled: bool,
 }
@@ -155,6 +158,7 @@ where
             pass,
             copy_on_select: false,
             paste_on_middle: false,
+            ended: false,
             on_open_hyperlink: None,
             on_window_focused: None,
             on_window_unfocused: None,
@@ -216,6 +220,11 @@ where
 
     pub fn paste_on_middle(mut self, on: bool) -> Self {
         self.paste_on_middle = on;
+        self
+    }
+
+    pub fn ended(mut self, ended: bool) -> Self {
+        self.ended = ended;
         self
     }
 
@@ -911,6 +920,11 @@ where
         if self.disabled {
             return;
         }
+        // The program ended: keys go to the app (Enter restarts); mouse, scroll and selection
+        // still work on what it left on screen.
+        if self.ended && matches!(event, Event::Keyboard(_)) {
+            return;
+        }
         let state = tree.state.downcast_mut::<State>();
         // Focus changes in many places (a click, a focus operation, the window): told here, on the
         // next event (a redraw follows each).
@@ -921,10 +935,15 @@ where
             }
         }
         // Focused, every key is the terminal's, handled below or not: none may reach the panels
-        // (Enter would open a row there). Only the app's own (`pass`: Ctrl+O) go through.
-        if let Event::Keyboard(KeyEvent::KeyPressed { key, modifiers, .. }) = event
+        // (Enter would open a row there). Only the app's own (`pass`) go through.
+        if let Event::Keyboard(KeyEvent::KeyPressed {
+            key,
+            modifiers,
+            physical_key,
+            ..
+        }) = event
             && state.is_focused
-            && !(self.pass)(*modifiers, key)
+            && !(self.pass)(*modifiers, key, physical_key)
         {
             shell.capture_event();
         }
@@ -984,7 +1003,7 @@ where
                 text,
                 ..
             }) if state.is_focused && named == modified_named => {
-                if (self.pass)(*modifiers, &Key::Named(*named)) {
+                if (self.pass)(*modifiers, &Key::Named(*named), physical_key) {
                     return; // the app's (not captured: it reaches the app's key handling)
                 }
 
@@ -1172,7 +1191,7 @@ where
                 modified_key,
                 ..
             }) if state.is_focused => {
-                if (self.pass)(*modifiers, key) {
+                if (self.pass)(*modifiers, key, physical_key) {
                     return; // the app's (not captured: it reaches the app's key handling)
                 }
                 // Copy / paste, as cosmic-term's defaults (its key table is not ours).

@@ -58,3 +58,5 @@ status-ended = Disconnected
 options-terminal = Terminal
 options-copy-on-select = Copy on select
 options-paste-on-middle = Paste with the middle mouse button
+term-exited = Process exited — press Enter to restart
+term-exited-code = Process exited with code { $code } — press Enter to restart

@@ -18,7 +18,6 @@ pub enum Action {
     GlobalOptions,
     NewLocalShell,
     CloseTab,
-    Clone,
     NextTab,
     PrevTab,
     /// Alt+1…9: the n-th tab (0-based) of the focused group.
@@ -62,14 +61,19 @@ fn key_binds() -> HashMap<KeyBind, Action> {
     ])
 }
 
-/// `tabs`: any tab open (tab items enabled).
-pub fn bar(session_manager: bool, tabs: bool) -> Element<'static, Message> {
+/// `(tabs, ended, splittable)`: any tab open; the active one's program ended; its group has
+/// more than one tab (`Tabs::menu_state`).
+pub fn bar(
+    session_manager: bool,
+    (tabs, ended, split): (bool, bool, bool),
+) -> Element<'static, Message> {
     use menu::Item::{Button, ButtonDisabled, CheckBox, Divider};
     let off = |label: String| ButtonDisabled(label, None, Action::Pending);
-    let tab = |label: String, a| match tabs {
+    let on = |yes: bool, label: String, a| match yes {
         true => Button(label, None, a),
         false => ButtonDisabled(label, None, a),
     };
+    let tab = |label: String, a| on(tabs, label, a);
     let roots = [
         (
             fl!("menu-file"),
@@ -77,7 +81,7 @@ pub fn bar(session_manager: bool, tabs: bool) -> Element<'static, Message> {
                 ButtonDisabled(fl!("menu-connect"), None, Action::Connect),
                 ButtonDisabled(fl!("menu-quick-connect"), None, Action::QuickConnect),
                 Button(fl!("menu-new-local-shell"), None, Action::NewLocalShell),
-                tab(fl!("menu-reconnect"), Action::Reconnect),
+                on(ended, fl!("menu-reconnect"), Action::Reconnect),
                 ButtonDisabled(fl!("menu-disconnect"), None, Action::Disconnect),
                 tab(fl!("menu-close-tab"), Action::CloseTab),
                 Divider,
@@ -131,8 +135,8 @@ pub fn bar(session_manager: bool, tabs: bool) -> Element<'static, Message> {
         (
             fl!("menu-window"),
             vec![
-                tab(fl!("menu-split-right"), Action::SplitRight),
-                tab(fl!("menu-split-down"), Action::SplitDown),
+                on(split, fl!("menu-split-right"), Action::SplitRight),
+                on(split, fl!("menu-split-down"), Action::SplitDown),
                 Divider,
                 tab(fl!("menu-next-tab"), Action::NextTab),
                 tab(fl!("menu-prev-tab"), Action::PrevTab),
