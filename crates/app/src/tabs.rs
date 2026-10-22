@@ -19,9 +19,46 @@ use std::sync::Mutex;
 
 const TAB_MIME: &str = "application/x-shagshell-tab";
 
+/// Who a tab talks to: the status bar's protocol.
+#[derive(Clone, Debug)]
+pub enum Protocol {
+    Local,
+    Ssh { host: String },
+}
+
+/// What a tab runs (again on Reconnect).
+#[derive(Clone, Debug)]
+pub struct Launch {
+    pub program: String,
+    pub args: Vec<String>,
+    /// Ours (a session's name, «Local Shell»), numbered if taken.
+    pub title: String,
+    pub protocol: Protocol,
+}
+
+impl Launch {
+    pub fn local_shell() -> Self {
+        let shell = shagshell_core::shell::pick(std::env::var_os("SHELL").as_deref());
+        Self {
+            program: shell.to_string_lossy().into_owned(),
+            args: Vec::new(),
+            title: fl!("tab-local-shell"),
+            protocol: Protocol::Local,
+        }
+    }
+
+    fn label(&self) -> String {
+        match &self.protocol {
+            Protocol::Local => fl!("tab-local-shell"),
+            Protocol::Ssh { host } => format!("SSH · {host}"),
+        }
+    }
+}
+
 pub struct Tab {
     pub terminal: Mutex<Terminal>,
-    /// «Local Shell (2)»: ours, shown while the program sets none.
+    launch: Launch,
+    /// «web-01 (2)»: ours, shown while the program sets none.
     base: String,
     /// OSC 0 / 2 from the program; empty: none.
     program_title: String,
@@ -102,12 +139,13 @@ impl Tabs {
         self.tx = Some(tx);
     }
 
-    /// Active tab: (connected, cols, rows).
-    pub fn status(&self) -> Option<(bool, usize, usize)> {
+    /// Active tab: (connected, protocol label, cols, rows).
+    pub fn status(&self) -> Option<(bool, String, usize, usize)> {
         let tab = self.tabs.get(&self.active()?.2)?;
         let t = tab.terminal.lock().unwrap_or_else(|e| e.into_inner());
         let term = t.term.lock();
-        Some((tab.alive, term.columns(), term.screen_lines()))
+        let label = tab.launch.label();
+        Some((tab.alive, label, term.columns(), term.screen_lines()))
     }
 
     /// Focused group, its active entity and that tab's id.
@@ -138,18 +176,19 @@ impl Tabs {
         self.tabs.get(&id).map(|t| &t.terminal)
     }
 
-    /// A new local shell tab in the focused group (the first group if none).
-    fn new_local(&mut self, look: &Look) -> Task<Message> {
+    /// A new tab running `launch` in the focused group (the first group if none).
+    pub fn open(&mut self, launch: Launch, look: &Look) -> Task<Message> {
         let taken: Vec<&str> = self.tabs.values().map(|t| t.base.as_str()).collect();
-        let base = rules::numbered(&fl!("tab-local-shell"), &taken);
+        let base = rules::numbered(&launch.title, &taken);
         let id = self.next_id;
-        let Some(terminal) = self.spawn(id, look) else {
+        let Some(terminal) = self.spawn(id, &launch, look) else {
             return Task::none();
         };
         self.next_id += 1;
         let widget_id = widget::Id::unique();
         let tab = Tab {
             terminal: Mutex::new(terminal),
+            launch,
             base,
             program_title: String::new(),
             alive: true,
@@ -177,12 +216,11 @@ impl Tabs {
         focus(widget_id)
     }
 
-    fn spawn(&self, id: TabId, look: &Look) -> Option<Terminal> {
+    fn spawn(&self, id: TabId, launch: &Launch, look: &Look) -> Option<Terminal> {
         let tx = self.tx.clone()?;
-        let shell = shagshell_core::shell::pick(std::env::var_os("SHELL").as_deref());
         let (style, dark, bg) = look;
-        term::start(id, tx, &shell, *dark, *bg, style)
-            .inspect_err(|e| log::error!("start {}: {e}", shell.display()))
+        term::start(id, tx, &launch.program, &launch.args, *dark, *bg, style)
+            .inspect_err(|e| log::error!("start {}: {e}", launch.program))
             .ok()
     }
 
@@ -193,7 +231,8 @@ impl Tabs {
             return Task::none();
         }
         let new_id = self.next_id;
-        let Some(terminal) = self.spawn(new_id, look) else {
+        let launch = self.tabs.get(&id).map(|t| t.launch.clone());
+        let Some(terminal) = launch.and_then(|l| self.spawn(new_id, &l, look)) else {
             return Task::none();
         };
         self.next_id += 1;
@@ -295,7 +334,10 @@ impl Tabs {
             TabCmd::Reconnect => self.restart(t.2, look),
             TabCmd::Clone => {
                 self.focus = Some(t.0); // its group
-                self.new_local(look)
+                match self.tabs.get(&t.2).map(|tab| tab.launch.clone()) {
+                    Some(launch) => self.open(launch, look),
+                    None => Task::none(),
+                }
             }
             TabCmd::SplitRight => self.split(t, pane_grid::Axis::Vertical),
             TabCmd::SplitDown => self.split(t, pane_grid::Axis::Horizontal),
@@ -310,7 +352,7 @@ impl Tabs {
             None => Task::none(),
         };
         let task = match action {
-            Action::NewLocalShell => self.new_local(look),
+            Action::NewLocalShell => self.open(Launch::local_shell(), look),
             Action::CloseTab => on_active(self, TabCmd::Close),
             Action::Reconnect => on_active(self, TabCmd::Reconnect),
             Action::NextTab | Action::PrevTab => {

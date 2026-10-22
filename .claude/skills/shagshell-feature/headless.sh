@@ -10,6 +10,9 @@
 #   headless.sh vkey [ctrl] [alt] [shift] [ru] KEY  a real key (a-z or evdev code) on a us,ru keymap:
 #                                  Ctrl+letters and Alt+letters arrive as from a keyboard
 #   headless.sh shot NAME          screenshot to $DIR/NAME.png
+#   headless.sh sshd start|stop    a user-space sshd on 127.0.0.1:2222 for this user, its own host key
+#                                  and client key $DIR/sshd/id_test (nothing system-wide touched)
+#   headless.sh session ID         write a session file ID (path) for that sshd into the app's config
 #   headless.sh stop
 #
 # Limits: wtype uploads its own keymap, so letter shortcuts bound to physical keys (Ctrl+M,
@@ -61,6 +64,30 @@ vkey)
     (cd "$vp" && cargo build -q --release --offline)
     WAYLAND_DISPLAY="$(sock)" "$vp/target/release/vkey" "$@"; sleep 0.3 ;;
 shot) WAYLAND_DISPLAY="$(sock)" grim "$DIR/$2.png"; echo "$DIR/$2.png" ;;
-stop) kill_pid app; kill_pid sway ;;
-*) sed -n '2,15p' "$0"; exit 1 ;;
+sshd)
+    S="$DIR/sshd"
+    case ${2:-start} in
+    start)
+        mkdir -p "$S"
+        [ -f "$S/host_key" ] || ssh-keygen -q -t ed25519 -N '' -f "$S/host_key"
+        [ -f "$S/id_test" ] || ssh-keygen -q -t ed25519 -N '' -f "$S/id_test"
+        cp "$S/id_test.pub" "$S/authorized_keys"
+        printf '%s\n' "Port 2222" "ListenAddress 127.0.0.1" "HostKey $S/host_key" \
+            "AuthorizedKeysFile $S/authorized_keys" "PidFile $S/sshd.pid" "UsePAM no" \
+            "StrictModes no" "PasswordAuthentication no" "KbdInteractiveAuthentication no" >"$S/sshd_config"
+        kill_pid sshd
+        setsid /usr/sbin/sshd -D -f "$S/sshd_config" -E "$S/sshd.log" >/dev/null 2>&1 &
+        echo $! >"$DIR/sshd.pid"
+        sleep 1
+        ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$S/known_hosts" \
+            -i "$S/id_test" -p 2222 127.0.0.1 true && echo "sshd ok on 127.0.0.1:2222" ;;
+    stop) kill_pid sshd ;;
+    esac ;;
+session)
+    f="$DIR/cfg/shagshell/sessions/$2.toml"; mkdir -p "$(dirname "$f")"
+    printf '%s\n' 'host = "127.0.0.1"' 'port = 2222' "identity = \"$DIR/sshd/id_test\"" \
+        "extra = \"-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$DIR/sshd/known_hosts\"" >"$f"
+    echo "$f" ;;
+stop) kill_pid app; kill_pid sway; kill_pid sshd ;;
+*) sed -n '2,18p' "$0"; exit 1 ;;
 esac

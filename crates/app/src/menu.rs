@@ -29,9 +29,11 @@ pub enum Action {
     SelectAll,
     /// The tab's program ended: start it again.
     Reconnect,
-    // Shown, not working yet (later phases).
+    /// Alt+C: the session tree, filter focused (SecureCRT's Connect dialog).
     Connect,
     QuickConnect,
+    ImportSshConfig,
+    // Shown, not working yet (later phases).
     Disconnect,
     ConnectSftp,
     SessionOptions,
@@ -52,6 +54,8 @@ fn key_binds() -> HashMap<KeyBind, Action> {
     let c = |s: &str| Key::Character(s.into());
     HashMap::from([
         bind(vec![Alt], c("m"), Action::ToggleSessionManager),
+        bind(vec![Alt], c("q"), Action::QuickConnect),
+        bind(vec![Alt], c("c"), Action::Connect),
         bind(vec![Ctrl, Shift], c("t"), Action::NewLocalShell),
         bind(vec![Ctrl, Shift], c("w"), Action::CloseTab),
         bind(vec![Ctrl, Shift], c("c"), Action::Copy),
@@ -78,12 +82,14 @@ pub fn bar(
         (
             fl!("menu-file"),
             vec![
-                ButtonDisabled(fl!("menu-connect"), None, Action::Connect),
-                ButtonDisabled(fl!("menu-quick-connect"), None, Action::QuickConnect),
+                Button(fl!("menu-connect"), None, Action::Connect),
+                Button(fl!("menu-quick-connect"), None, Action::QuickConnect),
                 Button(fl!("menu-new-local-shell"), None, Action::NewLocalShell),
                 on(ended, fl!("menu-reconnect"), Action::Reconnect),
                 ButtonDisabled(fl!("menu-disconnect"), None, Action::Disconnect),
                 tab(fl!("menu-close-tab"), Action::CloseTab),
+                Divider,
+                Button(fl!("menu-import-ssh-config"), None, Action::ImportSshConfig),
                 Divider,
                 Button(fl!("menu-exit"), None, Action::Exit),
             ],

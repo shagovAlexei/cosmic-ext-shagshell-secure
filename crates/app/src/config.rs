@@ -11,6 +11,10 @@ pub struct Config {
     pub copy_on_select: bool,
     /// Global Options → Terminal: the middle mouse button pastes.
     pub paste_on_middle_click: bool,
+    /// Session Manager width, px (dragged).
+    pub session_manager_width: u16,
+    /// Open folders of the session tree (ids).
+    pub expanded: Vec<String>,
 }
 
 impl Default for Config {
@@ -19,6 +23,8 @@ impl Default for Config {
             session_manager_visible: true,
             copy_on_select: true,
             paste_on_middle_click: true,
+            session_manager_width: 240,
+            expanded: Vec::new(),
         }
     }
 }

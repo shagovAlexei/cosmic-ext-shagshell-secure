@@ -1,23 +1,33 @@
-//! Toolbar under the header, as in SecureCRT. All buttons wait for later phases (no `on_press`).
+//! Toolbar under the header, as in SecureCRT. A button without an action waits for a later phase.
 
 use crate::app::Message;
 use crate::fl;
+use crate::menu::Action;
 use cosmic::Element;
 use cosmic::widget::{self, tooltip};
 
 pub fn view() -> Element<'static, Message> {
     let buttons = [
-        ("network-server-symbolic", fl!("menu-connect")),
-        ("media-playback-start-symbolic", fl!("menu-quick-connect")),
-        ("view-refresh-symbolic", fl!("menu-reconnect")),
-        ("process-stop-symbolic", fl!("menu-disconnect")),
-        ("folder-remote-symbolic", fl!("menu-connect-sftp")),
-        ("emblem-system-symbolic", fl!("menu-session-options")),
+        (
+            "network-server-symbolic",
+            fl!("menu-connect"),
+            Some(Action::Connect),
+        ),
+        (
+            "media-playback-start-symbolic",
+            fl!("menu-quick-connect"),
+            Some(Action::QuickConnect),
+        ),
+        ("view-refresh-symbolic", fl!("menu-reconnect"), None),
+        ("process-stop-symbolic", fl!("menu-disconnect"), None),
+        ("folder-remote-symbolic", fl!("menu-connect-sftp"), None),
+        ("emblem-system-symbolic", fl!("menu-session-options"), None),
     ];
     let row = buttons
         .into_iter()
-        .map(|(icon, tip)| -> Element<'static, Message> {
-            let b = widget::button::icon(widget::icon::from_name(icon));
+        .map(|(icon, tip, action)| -> Element<'static, Message> {
+            let b = widget::button::icon(widget::icon::from_name(icon))
+                .on_press_maybe(action.map(Message::Action));
             widget::tooltip(b, widget::text(tip), tooltip::Position::Bottom).into()
         });
     widget::row::with_children(row.collect::<Vec<_>>())
