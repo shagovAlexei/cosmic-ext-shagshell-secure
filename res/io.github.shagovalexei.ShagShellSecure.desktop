@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=ShagShell Secure
+Comment=SSH/SFTP session manager in the spirit of SecureCRT
+Comment[ru]=Менеджер SSH/SFTP-сессий в духе SecureCRT
+Exec=shagshell
+Terminal=false
+Type=Application
+StartupNotify=true
+Icon=io.github.shagovalexei.ShagShellSecure
+Categories=Network;RemoteAccess;
+Keywords=ssh;sftp;telnet;serial;terminal;securecrt;
