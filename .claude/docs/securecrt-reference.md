@@ -57,7 +57,7 @@ Column **Phase** = ROADMAP phase where we implement it (— = not planned).
 - Logging: name template `%H` host, `%S` session, `%Y %M %D %h %m %s` date/time, `%P` port, `%U` user; start on connect; append/overwrite; new file per session/day; custom text at start/end/each line (timestamps); raw log. Phase 7.
 - Copy/paste: copy on select, middle/right-click paste, confirm multi-line paste, line/char delay, block vs stream selection.
 - Send to many: Command Window "send to all", Edit > Send to all tabs. Phase 6.
-- Scripting: VBScript/JScript/Python, `crt.Screen.Send/WaitForString`, recorder. — (Button Bar strings cover most uses.)
+- Scripting: VBScript/JScript/Python, object model `crt.Screen.Send/WaitForString/ReadString`, `crt.Session.Connect`, `crt.Dialog`, `crt.GetTab`; run from menu, button, key, logon, command line; recorder. **Ours: Python only, same `crt` model via a separate process (phase 10); recorder — backlog.**
 - Keymap editor: key → send-string / menu function / script; global + per session.
 - Find (Ctrl+F): case, regex, direction, scrollback, highlight all.
 
@@ -85,4 +85,6 @@ Top features power users rely on (our MVP is 1–8 + host keys + SFTP queue):
 14. SFTP tab + drag-drop upload
 15. Auto reconnect + keepalive
 
-Rarely used (skip): SSH1, RLogin, TAPI, Wyse/SCO, TN3270/5250, printing, JScript/PerlScript, Public Key Assistant, GSSAPI, script recorder, Telnet/TLS.
+Also planned: Python scripting with the `crt` object model (phase 10).
+
+Rarely used (skip): SSH1, RLogin, TAPI, Wyse/SCO, TN3270/5250, printing, VBScript/JScript/PerlScript, Public Key Assistant, GSSAPI, Telnet/TLS.

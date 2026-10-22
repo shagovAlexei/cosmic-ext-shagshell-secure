@@ -4,8 +4,8 @@
 
 Менеджер SSH/SFTP-сессий для Pop!_OS 24.04 COSMIC с UX SecureCRT для Windows. Пользователь работает и с Linux-серверами, и с сетевым железом, поэтому важны и SFTP/ключи/jump host, и Command Window/Button Bar/логи/Serial.
 
-**Цели:** дерево сессий, вкладки и группы вкладок, сохранённые учётные данные, SFTP с очередью, отправка команд во много сессий, логи, проброс портов.
-**Не цели:** свой SSH-стек, скриптинг на VBScript/Python, legacy-протоколы и эмуляции, Windows/macOS.
+**Цели:** дерево сессий, вкладки и группы вкладок, сохранённые учётные данные, SFTP с очередью, отправка команд во много сессий, Button Bar, скрипты на Python (API как у SecureCRT), логи, проброс портов.
+**Не цели:** свой SSH-стек, VBScript/JScript, legacy-протоколы и эмуляции, Windows/macOS.
 **Анти-цели:** пароли в открытом виде на диске; приложение, которое «технически работает», но игнорирует `~/.ssh/config` и ключи пользователя.
 
 ## Решения и почему
@@ -81,7 +81,7 @@ Workspace из двух крейтов, как в shagoff-commander:
 Раскладка SecureCRT (подробно — `securecrt-reference.md`):
 
 ```
-┌ Menu: File Edit View Options Transfer Tools Window Help ─────────────┐
+┌ Menu: File Edit View Options Transfer Script Tools Window Help ──────┐
 │ Toolbar: Connect | Quick Connect | Reconnect | Disconnect | SFTP | ⚙ │
 ├──────────────┬───────────────────────────────────────────────────────┤
 │ Session      │ [✓ web-01] [✗ sw-core] [✓ lab]   │ [✓ db-01]          │
@@ -100,6 +100,46 @@ Workspace из двух крейтов, как в shagoff-commander:
 
 SFTP-вкладка: слева локальные файлы, справа удалённые, внизу очередь передач (ожидает / идёт / готово / ошибка, скорость, ETA, повтор).
 
+### 5. Button Bar (как в SecureCRT, этап 6)
+
+- Несколько **именованных панелей** кнопок; переключатель панели — выпадающий список слева на самой панели.
+- Сессия может указать свою панель (`button_bar = "cisco"`); при переключении вкладки панель меняется.
+- Действие кнопки:
+  - **Send String** — строка с escape-последовательностями `\r \n \t \e \\ \p` (пауза 1 с), разбор в `core/macros.rs`;
+  - **Run Script** — запуск Python-скрипта (раздел 6) с аргументами;
+  - **Menu Function** — любое действие приложения (Connect, Reconnect, Clone, SFTP, …), тот же enum `Action`, что и у горячих клавиш;
+  - **Launch Application** — внешняя программа, с подстановкой `%H %P %U %S`.
+- Цель отправки (Send String / Menu Function): текущая вкладка или все вкладки — как в Command Window.
+- Правка: ПКМ по панели → New / Edit / Delete / Move left/right; диалог как «Map Button» в SecureCRT.
+- Хранение: `~/.config/shagshell/buttonbars.toml` (`[[bar]] name, [[bar.button]] label, action, arg, target`).
+
+### 6. Скрипты на Python (как в SecureCRT, этап 10)
+
+Рассматривали встраивание интерпретатора (PyO3) и отдельный процесс. Выбран **отдельный процесс `python3`**:
+- падение или зависание скрипта не роняет приложение (скрипт можно убить);
+- сборка не привязана к версии libpython, `.deb` не тянет её как зависимость;
+- скрипты используют любые pip-пакеты и venv пользователя.
+
+Как это работает:
+- Приложение ставит модуль `crt` (`/usr/share/shagshell/python/crt.py`) и запускает `python3 <script> [args]` с `PYTHONPATH` на него и `SHAGSHELL_SCRIPT_SOCK=$XDG_RUNTIME_DIR/shagshell/script-<n>.sock` (0600).
+- `crt.py` — тонкая обёртка: каждый вызов — JSON-строка в сокет, ответ — JSON-строка. Протокол описан и тестируется в `core/script.rs`.
+- Объект `crt` повторяет объектную модель SecureCRT, чтобы скрипты переносились с минимальными правками:
+
+```python
+# $language = "python"   (строка SecureCRT игнорируется, оставлена для совместимости)
+crt.Screen.Synchronous = True
+crt.Session.Connect("/SSH2 /L admin 10.0.0.1")   # или crt.Session.Connect("lab/cisco/sw-core")
+crt.Screen.WaitForString("#", 10)
+crt.Screen.Send("show version\r")
+out = crt.Screen.ReadString("#")
+crt.Dialog.MessageBox(out[:200])
+```
+
+- Объём API (MVP): `crt.Screen.{Send, WaitForString, WaitForStrings, ReadString, Get, CurrentRow, CurrentColumn, Synchronous}`, `crt.Session.{Connect, Disconnect, Connected, Path, Log}`, `crt.Dialog.{MessageBox, Prompt, FileOpenDialog}`, `crt.Sleep`, `crt.Arguments`, `crt.GetScriptTab()`, `crt.GetTab(n)` / `crt.GetTabCount()` / `crt.GetActiveTab()` (у вкладки — свои `Screen` и `Session`).
+- Ожидание (`WaitForString`, `ReadString`) делается на стороне приложения по потоку вывода вкладки, со своим таймаутом; скрипт просто блокируется на сокете.
+- Запуск: меню Script → Run (последние скрипты), кнопка Button Bar, горячая клавиша, Logon Script сессии, `shagshell --script file.py`. Script → Cancel убивает процесс.
+- Записи скрипта (recorder) нет, в бэклоге.
+
 ## Что берём из shagoff-commander
 
 - `crates/app/src/term/*` — терминал (cosmic-term); `shell.rs`/follow не нужны.
@@ -114,6 +154,7 @@ cosmic-files не используем: его вкладки завязаны �
 - `openssh-sftp-client` поверх mux: проверить на этапе 5 спайком (докачка, большие каталоги, не-UTF-8 имена). Запасной вариант — второе ssh-соединение с `-s sftp`.
 - Askpass не вызывается, если ssh видит TTY и `SSH_ASKPASS_REQUIRE` не `force` — поэтому всегда `force`.
 - Keyboard-interactive (OTP) приходит в askpass как произвольный prompt — показываем как «другое» без сохранения.
+- Скрипты: Python 3 должен быть в системе (на Pop!_OS есть всегда); `--check` проверяет `python3`. Скрипт выполняется с правами пользователя — запускаем только явно выбранные пользователем файлы.
 
 ## Проверка
 

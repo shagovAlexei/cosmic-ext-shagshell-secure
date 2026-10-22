@@ -10,10 +10,11 @@
 - [ ] 3. Сессии: модель + хранилище (TDD), Session Manager, Session Options, Quick Connect, запуск ssh
 - [ ] 4. Аутентификация: askpass-сокет, keyring, Credentials Manager, диалог host key
 - [ ] 5. SFTP: двухпанельная вкладка + очередь передач (drag-drop, докачка, правила перезаписи)
-- [ ] 6. Command Window (send to all) и Button Bar
+- [ ] 6. Command Window (send to all) и Button Bar: именованные панели, Send String / Menu Function / Launch App, панель на сессию
 - [ ] 7. Логирование сессий по шаблонам имён
 - [ ] 8. Jump host / port forwarding в UI, Telnet и Serial, keepalive + auto-reconnect
 - [ ] 9. Logon Actions (expect/send), keyword highlighting, color schemes, импорт из `~/.ssh/config` и SecureCRT `.ini`
+- [ ] 10. Скрипты на Python: модуль `crt` (API как в SecureCRT), меню Script, запуск с Button Bar / клавиши / logon script / `--script`
 
 ## Бэклог
 
@@ -24,5 +25,6 @@
 - Синхронизация папок в SFTP
 - X/Y/Zmodem (`rz`/`sz`)
 - Command Manager (дерево сохранённых команд)
+- Запись скрипта (Script → Start Recording)
 
-Не делаем: SSH1, RLogin, TAPI, TN3270/5250, VBScript-скриптинг, legacy-эмуляции.
+Не делаем: SSH1, RLogin, TAPI, TN3270/5250, VBScript/JScript, legacy-эмуляции.
