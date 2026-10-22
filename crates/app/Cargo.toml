@@ -1,0 +1,11 @@
+[package]
+name = "shagshell"
+description = "SecureCRT-style SSH/SFTP session manager for COSMIC"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+shagshell-core = { path = "../core" }

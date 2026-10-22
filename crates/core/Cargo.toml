@@ -1,0 +1,11 @@
+[package]
+name = "shagshell-core"
+description = "ShagShell Secure logic, without the UI"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
