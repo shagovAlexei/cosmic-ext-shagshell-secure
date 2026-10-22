@@ -34,7 +34,8 @@ pub fn ssh_argv(s: &Session, control_dir: &Path, home: &Path) -> Result<Vec<Stri
     opt("-o", format!("ControlPath={}/%C", control_dir.display()));
     opt("-o", "ControlPersist=60".into());
     a.extend(shlex::split(&s.extra).ok_or(LaunchError::BadExtra)?);
-    a.push(s.host.clone());
+    // `--`: a host like `-oProxyCommand=…` is a host, never an option.
+    a.extend(["--".to_string(), s.host.clone()]);
     Ok(a)
 }
 
@@ -90,7 +91,7 @@ mod tests {
     fn argv_minimal() {
         let mut want = vec!["ssh"];
         want.extend(CTL);
-        want.push("h");
+        want.extend(["--", "h"]);
         assert_eq!(argv(&s("h")), want);
     }
 
@@ -107,7 +108,7 @@ mod tests {
         let mut want = vec!["ssh", "-p", "2222", "-l", "admin", "-i", "/home/u/k"];
         want.extend(["-o", "ServerAliveInterval=30"]);
         want.extend(CTL);
-        want.extend(["-A", "-o", "Compression=yes", "h"]);
+        want.extend(["-A", "-o", "Compression=yes", "--", "h"]);
         assert_eq!(argv(&x), want);
     }
 
@@ -120,6 +121,12 @@ mod tests {
             a.contains(&"ProxyCommand=ssh -W %h:%p j".to_string()),
             "{a:?}"
         );
+    }
+
+    #[test]
+    fn regression_host_dash_is_not_an_option() {
+        let a = argv(&s("-oProxyCommand=touch /tmp/x"));
+        assert_eq!(a[a.len() - 2..], ["--", "-oProxyCommand=touch /tmp/x"]);
     }
 
     #[test]

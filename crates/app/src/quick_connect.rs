@@ -80,7 +80,7 @@ impl QuickConnect {
 
     fn request(&self) -> Result<Request, String> {
         let host = self.host.trim();
-        if host.is_empty() || host.contains(char::is_whitespace) {
+        if host.is_empty() || host.contains(char::is_whitespace) || host.starts_with('-') {
             return Err(fl!("qc-host-required"));
         }
         let port = match self.port.trim() {

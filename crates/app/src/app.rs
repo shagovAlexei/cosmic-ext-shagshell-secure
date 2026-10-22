@@ -151,9 +151,10 @@ impl Application for App {
 
     fn subscription(&self) -> Subscription<Message> {
         Subscription::batch([
-            // Not a held key's repeat. The app's keys win wherever focus is (a text field would
-            // take Alt+Q as a «q»; the terminal lets them through anyway); Enter and the tree's
-            // keys only when no widget took them.
+            // Not a held key's repeat. Keys no widget took: all of the app's (the terminal lets
+            // them through). Taken by a text field: only the Alt / Ctrl+Tab ones (Alt+Q would be a
+            // «q» there), never Ctrl+Shift+C / V / W — the field's paste must not paste into the
+            // terminal too. Enter and the tree's keys only when no widget took them.
             event::listen_with(|e, status, _| match e {
                 cosmic::iced::Event::Keyboard(keyboard::Event::KeyPressed {
                     physical_key,
@@ -161,7 +162,10 @@ impl Application for App {
                     repeat: false,
                     ..
                 }) => match key_action(&physical_key, modifiers) {
-                    Some(a) => Some(Message::Action(a)),
+                    Some(a) if status == event::Status::Ignored || over_fields(a) => {
+                        Some(Message::Action(a))
+                    }
+                    Some(_) => None,
                     None if status == event::Status::Ignored => route_key(&physical_key, modifiers),
                     None => None,
                 },
@@ -287,6 +291,7 @@ impl App {
                 }
                 return widget::text_input::focus(self.sessions.filter_id.clone());
             }
+            Action::QuickConnect if self.quick.is_some() => {} // open: keep what is typed
             Action::QuickConnect => return self.quick_connect(None),
             Action::ImportSshConfig => self.import_ssh_config(),
             Action::About => self.toggle_drawer(Drawer::About),
@@ -346,19 +351,30 @@ impl App {
             Some(u) => format!("{u}@{}", req.session.host),
             None => req.session.host.clone(),
         };
+        let mut session = req.session.clone();
         if let Some((folder, name)) = &req.save_as {
+            if let Err(e) = crate::session_manager::check(name, folder.is_empty()) {
+                if let Some(q) = &mut self.quick {
+                    q.error = Some(e);
+                }
+                return Task::none();
+            }
             let store = &self.sessions.store;
             let saved = store
                 .create(folder, name, &req.session.host)
                 .and_then(|id| {
                     let mut s = store.get(&id)?;
                     (s.port, s.user) = (req.session.port, req.session.user.clone());
-                    store.save(&id, &s).map(|()| id)
+                    store.save(&id, &s).map(|()| (id, s))
                 });
             match saved {
-                Ok(id) => {
+                // Opened as saved: the Default template's key / keepalive / options too.
+                Ok((id, s)) => {
                     self.sessions.select(&id);
+                    self.config.expanded = self.sessions.expanded.iter().cloned().collect();
+                    self.save_config();
                     title = name.clone();
+                    session = s;
                 }
                 Err(e) => {
                     if let Some(q) = &mut self.quick {
@@ -369,7 +385,7 @@ impl App {
             }
         }
         self.quick = None;
-        match self.ssh_launch(&req.session, title) {
+        match self.ssh_launch(&session, title) {
             Ok(l) => self.tabs.open(l, &look()),
             Err(e) => {
                 self.sessions.notice = Some(e);
@@ -426,6 +442,19 @@ fn look() -> tabs::Look {
     (Default::default(), c.is_dark, bg)
 }
 
+/// App keys that act even when a text field took the key.
+fn over_fields(a: Action) -> bool {
+    matches!(
+        a,
+        Action::QuickConnect
+            | Action::Connect
+            | Action::ToggleSessionManager
+            | Action::SelectTab(_)
+            | Action::NextTab
+            | Action::PrevTab
+    )
+}
+
 /// Keys no widget took, other than the app's (`key_action`): Enter connects from the tree or
 /// restarts an ended tab; the tree's own keys.
 fn route_key(key: &Physical, mods: Modifiers) -> Option<Message> {
@@ -440,6 +469,7 @@ fn route_key(key: &Physical, mods: Modifiers) -> Option<Message> {
                 Code::ArrowDown => TreeKey::Down,
                 Code::Delete => TreeKey::Delete,
                 Code::F2 => TreeKey::Rename,
+                Code::Escape => TreeKey::Clear,
                 _ => return None,
             };
             Some(Message::Sessions(SmMsg::Key(k)))

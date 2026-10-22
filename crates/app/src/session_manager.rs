@@ -38,6 +38,8 @@ pub enum SmMsg {
     DoubleClick(String),
     Toggle(String),
     Hover(Option<String>),
+    /// The pointer left the tree: a drop now goes nowhere.
+    Leave,
     /// The left button came up anywhere (only listened to while a row or the splitter is held).
     Release,
     Cursor(f32),
@@ -60,6 +62,8 @@ pub enum TreeKey {
     Down,
     Delete,
     Rename,
+    /// Esc: clear the filter.
+    Clear,
 }
 
 #[derive(Clone, Debug)]
@@ -108,6 +112,8 @@ pub struct SessionManager {
     /// Being dragged (the pointer left the pressed row).
     drag: Option<String>,
     hover: Option<String>,
+    /// The pointer is over the tree (a drop outside it is no move).
+    over_tree: bool,
     context: Option<String>,
     dialog: Option<SmDialog>,
     input_id: widget::Id,
@@ -134,6 +140,7 @@ impl SessionManager {
             pressed: None,
             drag: None,
             hover: None,
+            over_tree: false,
             context: None,
             dialog: None,
             input_id: widget::Id::unique(),
@@ -152,8 +159,31 @@ impl SessionManager {
         self.refresh();
     }
 
+    /// Rows again; the selection keeps only what is still shown (Enter / Delete never act on
+    /// rows the filter or a closed folder hides).
     fn refresh(&mut self) {
         self.rows = rows::visible(&self.tree, &self.expanded, &self.filter);
+        let shown: BTreeSet<&str> = self.rows.iter().map(|r| r.id.as_str()).collect();
+        self.selected.retain(|id| shown.contains(id.as_str()));
+        if self
+            .anchor
+            .as_ref()
+            .is_some_and(|a| !self.selected.contains(a))
+        {
+            self.anchor = self.selected.iter().next_back().cloned();
+        }
+    }
+
+    /// A folder renamed or moved: its open folders keep open under the new id.
+    fn retarget_expanded(&mut self, old: &str, new: &str) {
+        let moved: Vec<String> = (self.expanded.iter())
+            .filter(|e| *e == old || e.starts_with(&format!("{old}/")))
+            .cloned()
+            .collect();
+        for e in moved {
+            self.expanded.remove(&e);
+            self.expanded.insert(format!("{new}{}", &e[old.len()..]));
+        }
     }
 
     /// Mouse events are wanted: a row or the splitter is held.
@@ -201,10 +231,17 @@ impl SessionManager {
                 self.notice = None;
                 out.task = Some(unfocus());
                 if self.mods.control() {
-                    if !self.selected.remove(&id) {
-                        self.selected.insert(id.clone());
+                    match self.selected.remove(&id) {
+                        // Taken out: the anchor stays on something still selected.
+                        true if self.anchor.as_ref() == Some(&id) => {
+                            self.anchor = self.selected.iter().next_back().cloned();
+                        }
+                        true => {}
+                        false => {
+                            self.selected.insert(id.clone());
+                            self.anchor = Some(id);
+                        }
                     }
-                    self.anchor = Some(id);
                 } else if self.mods.shift() {
                     let from = self.anchor.clone().unwrap_or_else(|| id.clone());
                     self.selected = rows::range(&self.rows, &from, &id).into_iter().collect();
@@ -232,7 +269,9 @@ impl SessionManager {
                 }
             }
             SmMsg::Toggle(id) => return self.toggle(id),
+            SmMsg::Leave => self.over_tree = false,
             SmMsg::Hover(h) => {
+                self.over_tree = true;
                 if let Some(p) = &self.pressed
                     && h.as_ref() != Some(p)
                 {
@@ -246,8 +285,16 @@ impl SessionManager {
                     out.save = true;
                 }
                 let dragged = self.drag.take();
-                self.pressed = None;
-                if let Some(id) = dragged {
+                // A plain click (no drag) in a multi-selection picks just that row.
+                if let Some(p) = self.pressed.take()
+                    && dragged.is_none()
+                    && !self.mods.control()
+                    && !self.mods.shift()
+                {
+                    self.selected = BTreeSet::from([p.clone()]);
+                    self.anchor = Some(p);
+                }
+                if let Some(id) = dragged.filter(|_| self.over_tree) {
                     let into = match self.hover.as_ref() {
                         None => String::new(),
                         Some(h) if self.rows.iter().any(|r| &r.id == h && r.folder) => h.clone(),
@@ -256,11 +303,12 @@ impl SessionManager {
                     if into != parent(&id) {
                         match self.store.move_to(&id, &into) {
                             Ok(new) => {
+                                self.retarget_expanded(&id, &new);
                                 if !into.is_empty() {
                                     self.expanded.insert(into);
-                                    out.save = true;
                                 }
                                 self.select(&new);
+                                out.save = true;
                             }
                             Err(e) => self.notice = Some(io_text(&e)),
                         }
@@ -302,6 +350,10 @@ impl SessionManager {
                     TreeKey::Up | TreeKey::Down => self.step(k == TreeKey::Down),
                     TreeKey::Delete => return self.cmd(SmCmd::Delete),
                     TreeKey::Rename => return self.cmd(SmCmd::Rename),
+                    TreeKey::Clear => {
+                        self.filter.clear();
+                        self.refresh();
+                    }
                 }
             }
             SmMsg::Input(v) => {
@@ -375,7 +427,8 @@ impl SessionManager {
             }
             SmCmd::Delete => {
                 if let Some(id) = one {
-                    let folder = self.rows.iter().any(|r| r.id == id && r.folder);
+                    // From disk, not the rows: what `delete` will remove.
+                    let folder = self.store.is_folder(&id);
                     let sessions = self.store.count_sessions(&id);
                     self.dialog = Some(SmDialog::Delete {
                         id,
@@ -395,7 +448,10 @@ impl SessionManager {
                 match check(&value, parent(id).is_empty()) {
                     Err(e) => Err((error, e)),
                     Ok(()) => match self.store.rename(id, &value) {
-                        Ok(new) => Ok(Some(new)),
+                        Ok(new) => {
+                            let old = id.clone();
+                            Ok(Some((old, new)))
+                        }
                         Err(e) => Err((error, io_text(&e))),
                     },
                 }
@@ -409,7 +465,7 @@ impl SessionManager {
                 match check(&value, parent.is_empty()) {
                     Err(e) => Err((error, e)),
                     Ok(()) => match self.store.new_folder(parent, &value) {
-                        Ok(new) => Ok(Some(new)),
+                        Ok(new) => Ok(Some((new.clone(), new))),
                         Err(e) => Err((error, io_text(&e))),
                     },
                 }
@@ -429,7 +485,10 @@ impl SessionManager {
                 self.dialog = None;
                 self.selected.clear();
                 match new {
-                    Some(id) => self.select(&id),
+                    Some((old, id)) => {
+                        self.retarget_expanded(&old, &id);
+                        self.select(&id);
+                    }
                     None => self.reload(),
                 }
                 out.save = true;
@@ -564,6 +623,7 @@ impl SessionManager {
         ))
         .interaction(mouse::Interaction::ResizingHorizontally)
         .on_press(m(SmMsg::SplitStart));
+        let pane = widget::mouse_area(pane).on_exit(m(SmMsg::Leave));
         widget::row::with_children(vec![pane.into(), splitter.into()]).into()
     }
 
@@ -658,7 +718,7 @@ fn name_of(id: &str) -> &str {
     id.rsplit_once('/').map_or(id, |(_, n)| n)
 }
 
-fn check(name: &str, at_root: bool) -> Result<(), String> {
+pub fn check(name: &str, at_root: bool) -> Result<(), String> {
     valid_name(name, at_root).map_err(|e| match e {
         NameError::Empty => fl!("name-empty"),
         NameError::Slash => fl!("name-slash"),
@@ -671,6 +731,7 @@ pub fn io_text(e: &std::io::Error) -> String {
     match e.kind() {
         std::io::ErrorKind::AlreadyExists => fl!("name-taken"),
         std::io::ErrorKind::InvalidInput => fl!("move-into-itself"),
+        std::io::ErrorKind::InvalidFilename => fl!("name-invalid"),
         _ => e.to_string(),
     }
 }

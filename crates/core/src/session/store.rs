@@ -159,7 +159,8 @@ impl Store {
         self.root.join(format!("{id}.{EXT}"))
     }
 
-    fn is_folder(&self, id: &str) -> bool {
+    /// A folder on disk (shown or not).
+    pub fn is_folder(&self, id: &str) -> bool {
         !id.is_empty() && self.root.join(id).is_dir()
     }
 
@@ -188,7 +189,9 @@ impl Store {
 }
 
 fn check_name(name: &str, at_root: bool) -> io::Result<()> {
-    valid_name(name, at_root).map_err(|e| io::Error::new(ErrorKind::InvalidInput, format!("{e:?}")))
+    // InvalidFilename, not InvalidInput: that one says «into itself» (`move_to`).
+    valid_name(name, at_root)
+        .map_err(|e| io::Error::new(ErrorKind::InvalidFilename, format!("{e:?}")))
 }
 
 fn join(folder: &str, name: &str) -> String {

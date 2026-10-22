@@ -19,9 +19,12 @@ pub fn hosts(text: &str) -> Vec<String> {
             continue;
         }
         let names = rest.trim_start_matches(|c: char| c.is_whitespace() || c == '=');
-        for n in names.split_whitespace() {
-            if !n.contains(['*', '?', '!']) && !out.iter().any(|o| o == n) {
-                out.push(n.to_string());
+        // As ssh reads it: quotes group, `#` starts a comment; a name with a space is no host.
+        let words = shlex::split(names).unwrap_or_default();
+        for n in words.iter().take_while(|w| !w.starts_with('#')) {
+            let pattern = n.contains(['*', '?', '!']) || n.contains(char::is_whitespace);
+            if !pattern && !n.is_empty() && !out.contains(n) {
+                out.push(n.clone());
             }
         }
     }
@@ -60,6 +63,12 @@ mod tests {
     fn hosts_case_and_equals() {
         let t = "host a\nHOST=b\n\tHost  c\n# Host d\nMatch host e\nHost a\n";
         assert_eq!(hosts(t), ["a", "b", "c"]);
+    }
+
+    #[test]
+    fn regression_hosts_comment_and_quotes() {
+        let t = "Host web  # production box\nHost \"my host\" db\n";
+        assert_eq!(hosts(t), ["web", "db"]);
     }
 
     #[test]

@@ -95,5 +95,6 @@ qc-save = Save session
 qc-name = Name (in { $folder })
 qc-root = the root
 qc-connect = Connect
-qc-host-required = Enter a hostname (no spaces)
+qc-host-required = Enter a hostname (no spaces, not starting with “-”)
 qc-bad-port = The port is a number from 1 to 65535
+name-invalid = That name can't be used

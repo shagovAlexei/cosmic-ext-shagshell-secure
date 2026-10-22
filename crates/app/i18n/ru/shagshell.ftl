@@ -95,5 +95,6 @@ qc-save = Сохранить сессию
 qc-name = Имя (в папке: { $folder })
 qc-root = корень
 qc-connect = Подключить
-qc-host-required = Введите хост (без пробелов)
+qc-host-required = Введите хост (без пробелов, не с «-»)
 qc-bad-port = Порт — число от 1 до 65535
+name-invalid = Такое имя использовать нельзя
