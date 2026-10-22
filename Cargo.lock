@@ -4247,7 +4247,6 @@ dependencies = [
  "serde",
  "shagshell-core",
  "simple_logger",
- "wgpu",
 ]
 
 [[package]]

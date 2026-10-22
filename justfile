@@ -77,5 +77,4 @@ deb: (build-release '--locked')
      Session tree, tabs, saved credentials in the keyring, SFTP with a
      transfer queue, commands to many sessions; runs the system OpenSSH.
     EOC
-    sed -i 's/^    //' "$root/DEBIAN/control"
     dpkg-deb --root-owner-group --build "$root" "target/deb/{{name}}_${version}_${arch}.deb"

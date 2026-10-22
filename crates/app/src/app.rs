@@ -61,8 +61,10 @@ impl Application for App {
             Message::Action(_) => {}
             Message::Config(c) => self.config = c,
             Message::OpenUrl(url) => {
-                if let Err(e) = std::process::Command::new("xdg-open").arg(url).spawn() {
-                    log::warn!("xdg-open: {e}");
+                match std::process::Command::new("xdg-open").arg(url).spawn() {
+                    // Reaped off the UI thread, or each click leaves a zombie until exit.
+                    Ok(mut child) => drop(std::thread::spawn(move || child.wait())),
+                    Err(e) => log::warn!("xdg-open: {e}"),
                 }
             }
             Message::CloseDrawer => self.core.window.show_context = false,
@@ -72,12 +74,16 @@ impl Application for App {
 
     fn subscription(&self) -> Subscription<Message> {
         Subscription::batch([
-            event::listen_with(|e, _, _| match e {
+            // Not a key a focused widget took (the terminal's Meta-m later), not a held key's repeat.
+            event::listen_with(|e, status, _| match e {
                 cosmic::iced::Event::Keyboard(keyboard::Event::KeyPressed {
                     physical_key,
                     modifiers,
+                    repeat: false,
                     ..
-                }) => route_key(physical_key, modifiers).map(Message::Action),
+                }) if status == event::Status::Ignored => {
+                    route_key(physical_key, modifiers).map(Message::Action)
+                }
                 _ => None,
             }),
             self.core()

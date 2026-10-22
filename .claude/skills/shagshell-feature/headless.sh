@@ -19,7 +19,7 @@
 set -euo pipefail
 DIR=${SHAGSHELL_HEADLESS:-/tmp/shagshell-headless}
 ROOT=$(git -C "$(dirname "$0")" rev-parse --show-toplevel)
-mkdir -p "$DIR"/{cfg,state,cache}
+mkdir -p "$DIR"/{cfg,state,cache,data}
 sock() { cat "$DIR/wayland"; }
 # pid files, not `pkill -f`: a pattern also matches the shell that runs this script.
 kill_pid() { [ -f "$DIR/$1.pid" ] && { kill "$(cat "$DIR/$1.pid")" 2>/dev/null || true; }; rm -f "$DIR/$1.pid"; }
@@ -33,6 +33,7 @@ app() {
 }
 case ${1:-} in
 start)
+    kill_pid app; kill_pid sway  # a second `start` must not leak the first sway
     before=$(ls "$XDG_RUNTIME_DIR" | grep -E '^wayland-[0-9]+$' || true)
     printf 'output HEADLESS-1 resolution %s\ndefault_border none\n' "${2:-1200x800}" >"$DIR/sway.cfg"
     echo "${2:-1200x800}" >"$DIR/size"

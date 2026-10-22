@@ -21,7 +21,8 @@ fn main() -> cosmic::iced::Result {
                 println!("{name:<8} {}", if *ok { "ok" } else { "MISSING" });
             }
             // ssh is the one we can't work without.
-            std::process::exit(i32::from(!found[0].1));
+            let ssh = found.iter().any(|(name, ok)| name == "ssh" && *ok);
+            std::process::exit(i32::from(!ssh));
         }
         _ => {}
     }
@@ -44,6 +45,8 @@ fn main() -> cosmic::iced::Result {
 /// on Linux Lite in a VM) lacks it and the app panicked on its first frame. There: the software
 /// renderer. `ICED_BACKEND` set by hand wins. Costs ~70 ms at startup. `true`: software.
 fn pick_renderer() -> bool {
+    use cosmic::iced::wgpu;
+    use std::os::unix::process::CommandExt;
     if let Some(b) = std::env::var_os("ICED_BACKEND") {
         return b.to_string_lossy().starts_with("tiny-skia");
     }
@@ -58,9 +61,14 @@ fn pick_renderer() -> bool {
     let f16 = wgpu::DownlevelFlags::SHADER_F16_IN_F32;
     if !adapter.is_ok_and(|a| a.get_downlevel_capabilities().flags.contains(f16)) {
         log::warn!("GPU without SHADER_F16_IN_F32: software rendering (ICED_BACKEND=tiny-skia)");
-        // SAFETY: first thing in main, before any other thread exists.
-        unsafe { std::env::set_var("ICED_BACKEND", "tiny-skia") };
-        return true;
+        // Run ourselves again with it set: `set_var` here would race the GPU driver's threads
+        // the probe just started. `exec` only returns on failure.
+        let exe = std::env::current_exe().unwrap_or_else(|_| "shagshell".into());
+        let e = std::process::Command::new(exe)
+            .args(std::env::args_os().skip(1))
+            .env("ICED_BACKEND", "tiny-skia")
+            .exec();
+        log::error!("re-exec with ICED_BACKEND=tiny-skia: {e}");
     }
     false
 }
