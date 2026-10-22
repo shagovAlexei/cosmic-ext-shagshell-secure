@@ -9,3 +9,18 @@ repository.workspace = true
 
 [dependencies]
 shagshell-core = { path = "../core" }
+i18n-embed = { version = "0.16", features = ["fluent-system", "desktop-requester"] }
+i18n-embed-fl = "0.10"
+rust-embed = "8"
+log = "0.4"
+simple_logger = "5"
+serde = { version = "1", features = ["derive"] }
+# Startup probe for the renderer (same versions libcosmic's iced uses; features come from it).
+wgpu = { version = "28", default-features = false }
+pollster = "0.4"
+
+[dependencies.libcosmic]
+git = "https://github.com/pop-os/libcosmic.git"
+rev = "ef490df50b0a05a21c494c3f75737581bf0b39d9"
+default-features = false
+features = ["tokio", "winit", "wayland", "wgpu", "multi-window", "about"]
