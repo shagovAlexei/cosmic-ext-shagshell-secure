@@ -37,6 +37,8 @@ pub struct App {
     options: Option<SessionOptions>,
     /// ssh's ControlMaster sockets (`launch::ensure_control_dir`).
     control_dir: std::path::PathBuf,
+    /// ssh's prompts waiting for an answer (`askpass`).
+    asks: crate::askpass::Asks,
 }
 
 #[derive(Clone, Debug)]
@@ -59,6 +61,7 @@ pub enum Message {
     /// Keys and the pointer: acted on only when from the main window (not Session Options).
     Input(cosmic::iced::window::Id, Box<Message>),
     CloseRequested(cosmic::iced::window::Id),
+    Ask(crate::askpass::AskMsg),
 }
 
 impl Application for App {
@@ -85,6 +88,7 @@ impl Application for App {
         let store =
             shagshell_core::session::Store::new(shagshell_core::session::store::default_root());
         let sessions = SessionManager::new(store, &config.expanded, config.session_manager_width);
+        let asks = crate::askpass::Asks::new(askpass_sock(&control_dir));
         let app = Self {
             core,
             config,
@@ -96,6 +100,7 @@ impl Application for App {
             quick: None,
             options: None,
             control_dir,
+            asks,
         };
         (app, Task::none())
     }
@@ -118,10 +123,23 @@ impl Application for App {
             Message::CloseDrawer => self.set_drawer(None),
             Message::Tabs(m) => {
                 self.sessions.focused = false; // a terminal is used: Enter is its again
-                return self.tabs.update(m, &look());
+                let task = self.tabs.update(m, &look());
+                return Task::batch([task, self.prune_asks()]);
             }
             Message::TermTx(tx) => self.tabs.set_sender(tx),
-            Message::Term(id, e) => return self.tabs.on_term(id, e),
+            Message::Term(id, e) => {
+                let task = self.tabs.on_term(id, e);
+                return Task::batch([task, self.prune_asks()]);
+            }
+            Message::Ask(crate::askpass::AskMsg::Stored(r)) => {
+                if let Err(e) = r {
+                    self.sessions.notice = Some(fl!("ask-keyring-failed", error = e));
+                }
+            }
+            Message::Ask(m) => {
+                let out = self.asks.update(m);
+                return self.ask_outcome(out);
+            }
             Message::EnterKey if self.sessions.focused => {
                 let ids = self.sessions.connect();
                 return self.open_sessions(&ids);
@@ -147,6 +165,15 @@ impl Application for App {
                 }
                 if let Some((old, new)) = &out.moved {
                     self.sessions_changed(old, new);
+                    let (old, new) = (old.clone(), new.clone());
+                    tasks.push(keyring_task(move || {
+                        shagshell_core::keyring::retarget(&old, &new)
+                    }));
+                }
+                if let Some(id) = out.deleted.clone() {
+                    tasks.push(keyring_task(move || {
+                        shagshell_core::keyring::forget_under(&id)
+                    }));
                 }
                 if let Some(id) = out.edit {
                     tasks.push(self.open_options(Target::Edit { id }));
@@ -238,6 +265,7 @@ impl Application for App {
             // Session Options' × / Alt+F4: Cancel.
             cosmic::iced::window::close_requests().map(Message::CloseRequested),
             crate::term::subscription(),
+            crate::askpass::subscription(askpass_sock(&self.control_dir)),
             self.core()
                 .watch_config::<Config>(APP_ID)
                 .map(|u| Message::Config(u.config)),
@@ -279,7 +307,8 @@ impl Application for App {
     }
 
     fn dialog(&self) -> Option<Element<'_, Message>> {
-        (self.tabs.dialog())
+        (self.asks.dialog(|t| self.tabs.title(t)))
+            .or_else(|| self.tabs.dialog())
             .or_else(|| self.quick.as_ref().map(QuickConnect::view))
             .or_else(|| self.sessions.dialog())
     }
@@ -325,7 +354,10 @@ impl App {
             return task;
         }
         match action {
-            Action::Exit => return cosmic::iced::exit(),
+            Action::Exit => {
+                let _ = std::fs::remove_file(askpass_sock(&self.control_dir));
+                return cosmic::iced::exit();
+            }
             Action::ToggleSessionManager => {
                 self.config.session_manager_visible = !self.config.session_manager_visible;
                 self.save_config();
@@ -374,6 +406,39 @@ impl App {
                 }
                 Err(e) => self.sessions.notice = Some(format!("{id}: {e}")),
             }
+        }
+        Task::batch(tasks)
+    }
+
+    /// After a tab closed or its program ended: its prompts go.
+    fn prune_asks(&mut self) -> Task<Message> {
+        let tabs = &self.tabs;
+        let out = self.asks.prune(|t| tabs.alive(t));
+        self.ask_outcome(out)
+    }
+
+    fn ask_outcome(&mut self, out: crate::askpass::Outcome) -> Task<Message> {
+        use crate::askpass::{AskMsg, Hidden};
+        let mut tasks = Vec::new();
+        if let Some((inc, session, s)) = out.lookup {
+            tasks.push(off_ui(
+                move || shagshell_core::keyring::lookup(&session, s),
+                move |r| {
+                    let r = r.map(|v| v.map(Hidden)).map_err(|e| e.to_string());
+                    Message::Ask(AskMsg::Saved(inc.clone(), r))
+                },
+            ));
+        }
+        if let Some((session, s, Hidden(value))) = out.store {
+            tasks.push(keyring_task(move || {
+                shagshell_core::keyring::store(&session, s, &value)
+            }));
+        }
+        if let Some((tab, field)) = out.shown {
+            if let Some(t) = tab {
+                self.tabs.show(t);
+            }
+            tasks.push(widget::text_input::focus(field));
         }
         Task::batch(tasks)
     }
@@ -489,10 +554,13 @@ impl App {
         let o = SessionOptions::new(window, target, &session);
         // The first field focused once the window is there (before, the focus goes nowhere).
         let first = o.first_field();
-        let tasks = [
+        let mut tasks = vec![
             open.then(move |_| widget::text_input::focus(first.clone())),
             cosmic::ApplicationExt::set_window_title(self, o.title(), window),
         ];
+        if let Target::Edit { id } = &o.target {
+            tasks.push(saved_task(window, id.clone()));
+        }
         self.options = Some(o);
         Task::batch(tasks)
     }
@@ -508,6 +576,24 @@ impl App {
                 return cosmic::iced::window::close(w);
             }
             SoMsg::Drag => return cosmic::iced::window::drag(o.window),
+            SoMsg::Forget => {
+                let Target::Edit { id } = &o.target else {
+                    return Task::none();
+                };
+                let (w, id) = (o.window, id.clone());
+                let forget = id.clone();
+                return Task::batch([
+                    keyring_task(move || {
+                        use shagshell_core::keyring::{Secret, delete};
+                        delete(&forget, Secret::Password)?;
+                        delete(&forget, Secret::Passphrase)
+                    }),
+                    // The line goes at once; a failed delete is said under the tree.
+                    Task::done(cosmic::Action::App(Message::SessionOptions(SoMsg::Saved(
+                        w, false,
+                    )))),
+                ]);
+            }
             SoMsg::Browse => {
                 let title = fl!("so-identity");
                 let w = o.window;
@@ -610,6 +696,44 @@ impl App {
     }
 }
 
+/// This instance's askpass socket (`core::askpass::socket_path`).
+fn askpass_sock(control_dir: &std::path::Path) -> std::path::PathBuf {
+    shagshell_core::askpass::socket_path(control_dir, std::process::id())
+}
+
+/// `f` on a blocking thread (D-Bus, files), its result as a message.
+fn off_ui<T: Send + 'static>(
+    f: impl FnOnce() -> T + Send + 'static,
+    then: impl Fn(T) -> Message + Send + 'static,
+) -> Task<Message> {
+    Task::perform(tokio::task::spawn_blocking(f), move |r| match r {
+        Ok(v) => cosmic::Action::App(then(v)),
+        Err(_) => cosmic::Action::None,
+    })
+}
+
+/// Session Options: whether the session has a secret saved (its «Забыть» line).
+fn saved_task(window: cosmic::iced::window::Id, id: String) -> Task<Message> {
+    off_ui(
+        move || {
+            use shagshell_core::keyring::{Secret, lookup};
+            [Secret::Password, Secret::Passphrase]
+                .iter()
+                .any(|&s| lookup(&id, s).is_ok_and(|v| v.is_some()))
+        },
+        move |saved| Message::SessionOptions(SoMsg::Saved(window, saved)),
+    )
+}
+
+/// A keyring write in the background; a failure is said under the tree.
+fn keyring_task<E: std::fmt::Display + Send + 'static>(
+    f: impl FnOnce() -> Result<(), E> + Send + 'static,
+) -> Task<Message> {
+    off_ui(f, |r| {
+        Message::Ask(crate::askpass::AskMsg::Stored(r.map_err(|e| e.to_string())))
+    })
+}
+
 fn ssh_launch(
     control_dir: &std::path::Path,
     s: &shagshell_core::session::Session,
@@ -620,9 +744,12 @@ fn ssh_launch(
     let mut argv =
         shagshell_core::launch::ssh_argv(s, control_dir, &home).map_err(|_| fl!("bad-extra"))?;
     let program = argv.remove(0);
+    let exe = std::env::current_exe().unwrap_or_else(|_| "shagshell".into());
+    let env = shagshell_core::launch::askpass_env(&exe, &askpass_sock(control_dir), session);
     Ok(tabs::Launch {
         program,
         args: argv,
+        env,
         title,
         protocol: tabs::Protocol::Ssh {
             host: s.host.clone(),

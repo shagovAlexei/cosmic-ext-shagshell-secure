@@ -29,7 +29,7 @@ just build-debug / build-release
 just run-logs        # RUST_LOG=debug cargo run
 sudo just install    # binary, .desktop, metainfo, icon into /usr (rootdir=… to stage)
 just deb             # target/deb/*.deb; tag vX.Y.Z → GitHub release with it
-shagshell --check    # probes ssh, telnet, picocom, python3, keyring, askpass socket: ok / MISSING
+shagshell --check    # probes ssh, telnet, picocom, python3, keyring: ok / MISSING
 ```
 
 ## Architecture
@@ -43,7 +43,7 @@ We do **not** implement SSH. The system OpenSSH does it; we drive it.
   - `-p`, `-l`, `-i`, `-J <jump>`, `-L/-R/-D`, `-o ServerAliveInterval=N` built from the session.
   - env: `SSH_ASKPASS=<path to shagshell>`, `SSH_ASKPASS_REQUIRE=force`, `SHAGSHELL_SESSION=<session id>`.
 - Telnet = `telnet host port`; Serial = `picocom -b <baud> <dev>`; Local shell = `$SHELL`.
-- **Askpass:** `shagshell askpass "<prompt>"` connects to the running app's socket `$XDG_RUNTIME_DIR/shagshell/askpass.sock`. The app classifies the prompt (password / passphrase / host-key yes-no / other), answers from the keyring or shows a dialog in the main window ("Save password" checkbox), and the helper prints the answer to stdout.
+- **Askpass:** ssh runs `shagshell "<prompt>"` (one argument; `SHAGSHELL_ASKPASS_SOCK` set = helper mode), which connects to this app instance's socket `$XDG_RUNTIME_DIR/shagshell/askpass-<pid>.sock` (one JSON line each way). The app classifies the prompt (password / passphrase / host-key yes-no / other), answers from the keyring on the first try of that ssh (its pid = the helper's ppid) or shows a dialog in the main window ("Save password", off by default; a second try = «wrong password»), and the helper prints the answer to stdout. Cancel kills that ssh (checked ours by its `/proc/<pid>/environ`): ssh would send empty passwords for its other tries.
 - **SFTP** = `openssh` crate (native-mux) + `openssh-sftp-client` over the session's ControlMaster.
 - Why not russh: own known_hosts / ssh_config parsing, known russh bugs (one stalled channel freezes the connection, SFTP breaks on non-UTF-8 names), API churn. Switching later stays cheap: the terminal does not care where bytes come from. Do **not** add an "SSH backend" trait in advance.
 
@@ -57,7 +57,7 @@ We do **not** implement SSH. The system OpenSSH does it; we drive it.
 - Sessions: `~/.config/shagshell/sessions/<folder>/…/<name>.toml`, one file per session; the folder tree is the Session Manager tree.
 - `sessions/Default.toml` is the template: a new session copies it at creation (SecureCRT behaviour, no live inheritance).
 - Credentials: `~/.config/shagshell/credentials.toml` holds named sets (username only); sessions reference a set by name.
-- **Secrets only in Secret Service** (gnome-keyring), never in files: attributes `app=io.github.shagovalexei.ShagShellSecure`, `kind=session|credential`, `id=<session path or credential name>`. No master password (deferred).
+- **Secrets only in Secret Service** (gnome-keyring), never in files: attributes `app=io.github.shagovalexei.ShagShellSecure`, `kind=session|credential`, `id=<session path or credential name>`, `secret=password|passphrase`; they follow a session renamed / moved / deleted (`keyring::retarget` / `forget_under`). No master password (deferred).
 - Keys: `~/.ssh` + ssh-agent (gnome-keyring); generation through `ssh-keygen`.
 - Global options: cosmic-config (`~/.config/cosmic/<APP_ID>/v1/`). Window state / open tabs: `~/.local/state/…`.
 
@@ -67,7 +67,7 @@ We do **not** implement SSH. The system OpenSSH does it; we drive it.
   - `session/{model,store,rows,form}.rs` — `Session` (every field defaulted, unknown ones kept in `rest` and written back), the tree on disk (`Store`: load / create from Default / atomic save / rename / move / delete), the rows on screen (`rows::visible` with filter, Shift ranges, `sessions_under` for Connect all), the Session Options fields → checked `Session` (`form`);
   - `sshconfig.rs` — `~/.ssh/config` hosts → sessions (alias only; ssh applies the rest);
   - `launch.rs` — `Session` → argv + env (pure, tested against expected argv);
-  - `askpass.rs` — prompt classification + socket protocol;
+  - `askpass.rs` — prompt classification, the socket protocol, the helper, `Tries` (first / retry / cancelled per ssh), `abort`;
   - `keyring.rs` — Secret Service over zbus (from shagoff-commander, + `lookup` / `delete`);
   - `credentials.rs`;
   - `sftp/{client,queue}.rs` — the transfer queue is a pure state machine;
@@ -86,7 +86,8 @@ We do **not** implement SSH. The system OpenSSH does it; we drive it.
   - Key and pointer subscriptions are tagged with their window (`Message::Input`) and acted on only from the main one: keys typed in Session Options never reach the terminal or the tree.
   - App keys (`key_action`) are handled whatever the event status: a text field would take Alt+Q as a letter. Enter and the tree's keys only when no widget took them.
   - Popups (menus) are windows: `App::view_window` returns an empty `Space` for them, or libcosmic panics ("no view for window"). A `segmented_button` context menu is one root whose children are one menu per tab.
-  - `main.rs` also dispatches the `askpass` subcommand and `--check`.
+  - `askpass.rs`: the socket (listener thread → subscription), the prompt queue and its dialog; keyring calls go through `App::ask_outcome` off the UI thread (`off_ui`). Prompts of a closed / ended tab are cancelled (`prune`). Secrets in messages are `Hidden` (redacted `Debug`).
+  - `main.rs` also dispatches the askpass helper and `--check`.
 - Modularity = Rust modules. No plugin system.
 
 ### UI (SecureCRT layout)

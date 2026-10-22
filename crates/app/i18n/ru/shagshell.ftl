@@ -117,3 +117,17 @@ so-extra = Дополнительные параметры ssh
 so-bad-keepalive = Keepalive — число секунд
 so-nothing = Выделите сессию в дереве или откройте её вкладку
 ok = OK
+
+# askpass
+ask-password-title = Пароль
+ask-passphrase-title = Passphrase ключа
+ask-host-key-title = Новый ключ хоста
+ask-other-title = Сервер спрашивает
+ask-wrong = Пароль не подошёл, введите его ещё раз
+ask-save-password = Сохранить пароль
+ask-save-passphrase = Сохранить passphrase
+ask-no-session = Сохраняется только для сохранённой сессии
+ask-keyring-failed = Keyring: { $error }
+ask-accept = Принять и сохранить
+so-saved = Пароль сохранён в keyring
+so-forget = Забыть

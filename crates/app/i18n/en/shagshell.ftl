@@ -117,3 +117,17 @@ so-extra = More ssh options
 so-bad-keepalive = Keepalive is a number of seconds
 so-nothing = Select a session in the tree, or open its tab
 ok = OK
+
+# askpass
+ask-password-title = Password
+ask-passphrase-title = Key passphrase
+ask-host-key-title = New host key
+ask-other-title = The server asks
+ask-wrong = The password was not accepted, enter it again
+ask-save-password = Save password
+ask-save-passphrase = Save passphrase
+ask-no-session = Saved only for a saved session
+ask-keyring-failed = Keyring: { $error }
+ask-accept = Accept & Save
+so-saved = A password is saved in the keyring
+so-forget = Forget

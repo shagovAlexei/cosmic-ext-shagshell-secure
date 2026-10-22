@@ -1,5 +1,6 @@
 mod about;
 mod app;
+mod askpass;
 mod config;
 mod i18n;
 mod menu;
@@ -15,7 +16,14 @@ mod toolbar;
 use shagshell_core::check;
 
 fn main() -> cosmic::iced::Result {
-    match std::env::args().nth(1).as_deref() {
+    // ssh's askpass: our own binary, run with the prompt as its one argument.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if let (Some(sock), [prompt]) = (std::env::var_os("SHAGSHELL_ASKPASS_SOCK"), &args[..])
+        && !prompt.starts_with("--")
+    {
+        std::process::exit(shagshell_core::askpass::run_helper(sock.as_ref(), prompt));
+    }
+    match args.first().map(String::as_str) {
         Some("--version") => {
             println!("shagshell {}", env!("CARGO_PKG_VERSION"));
             return Ok(());
@@ -25,6 +33,12 @@ fn main() -> cosmic::iced::Result {
             for (name, ok) in &found {
                 println!("{name:<8} {}", if *ok { "ok" } else { "MISSING" });
             }
+            let keyring = shagshell_core::keyring::available();
+            println!(
+                "{:<8} {}",
+                "keyring",
+                if keyring { "ok" } else { "MISSING" }
+            );
             // ssh is the one we can't work without.
             let ssh = found.iter().any(|(name, ok)| name == "ssh" && *ok);
             std::process::exit(i32::from(!ssh));

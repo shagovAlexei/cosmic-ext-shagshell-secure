@@ -23,11 +23,13 @@ const HISTORY: usize = 10_000;
 
 /// Start `program` with `args` in the home dir. `dark`: the COSMIC theme's colors; `bg`: the window's
 /// background (0xAARRGGBB), the terminal's own.
+#[allow(clippy::too_many_arguments)]
 pub fn start(
     id: TabId,
     tx: Events,
     program: &str,
     args: &[String],
+    env: &[(String, String)],
     dark: bool,
     bg: u32,
     style: &style::Style,
@@ -37,7 +39,9 @@ pub fn start(
     let options = tty::Options {
         shell: Some(tty::Shell::new(program.to_string(), args.to_vec())),
         working_directory: std::env::home_dir(),
-        env: [("TERM".to_string(), "xterm-256color".to_string())].into(),
+        env: std::iter::once(("TERM".to_string(), "xterm-256color".to_string()))
+            .chain(env.iter().cloned())
+            .collect(),
         ..tty::Options::default()
     };
     let config = term::Config {

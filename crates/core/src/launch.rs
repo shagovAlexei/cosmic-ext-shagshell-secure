@@ -39,6 +39,20 @@ pub fn ssh_argv(s: &Session, control_dir: &Path, home: &Path) -> Result<Vec<Stri
     Ok(a)
 }
 
+/// ssh's environment: every prompt to our askpass (`exe`), which asks the app over `sock`.
+/// `session`: the saved session (its keyring entries); the tab id is added by the tab.
+pub fn askpass_env(exe: &Path, sock: &Path, session: Option<&str>) -> Vec<(String, String)> {
+    let mut env = vec![
+        ("SSH_ASKPASS".into(), exe.display().to_string()),
+        ("SSH_ASKPASS_REQUIRE".into(), "force".into()),
+        ("SHAGSHELL_ASKPASS_SOCK".into(), sock.display().to_string()),
+    ];
+    if let Some(s) = session {
+        env.push(("SHAGSHELL_SESSION".into(), s.to_string()));
+    }
+    env
+}
+
 /// `$XDG_RUNTIME_DIR/shagshell` (`/tmp/shagshell-<uid>` without it).
 pub fn control_dir() -> PathBuf {
     use std::os::unix::fs::MetadataExt;
@@ -66,6 +80,26 @@ pub fn ensure_control_dir() -> std::io::Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn askpass_env_names() {
+        let env = askpass_env(
+            Path::new("/usr/bin/shagshell"),
+            Path::new("/r/a.sock"),
+            Some("lab/w"),
+        );
+        let got: Vec<(&str, &str)> = env.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        assert_eq!(
+            got,
+            [
+                ("SSH_ASKPASS", "/usr/bin/shagshell"),
+                ("SSH_ASKPASS_REQUIRE", "force"),
+                ("SHAGSHELL_ASKPASS_SOCK", "/r/a.sock"),
+                ("SHAGSHELL_SESSION", "lab/w"),
+            ]
+        );
+        assert_eq!(askpass_env(Path::new("x"), Path::new("y"), None).len(), 3);
+    }
 
     fn s(host: &str) -> Session {
         Session {

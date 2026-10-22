@@ -25,7 +25,7 @@
 - Терминал (cosmic-term через shagoff-commander) работает с локальным PTY; `ssh`, `telnet`, `picocom`, `$SHELL` — просто разные команды.
 - `launch.rs` строит argv/env из сессии; это чистая функция, тесты сравнивают с ожидаемым argv.
 - ControlMaster (`ControlPath=$XDG_RUNTIME_DIR/shagshell/%C`) даёт переиспользование соединения для SFTP и Clone, как «Connect SFTP Tab» в SecureCRT.
-- Askpass: ssh вызывает `shagshell askpass "<prompt>"`, тот через unix-сокет спрашивает работающее приложение. Приложение берёт секрет из keyring по `SHAGSHELL_SESSION` или показывает диалог (пароль / passphrase / host key yes-no). Ответ — в stdout помощника.
+- Askpass: ssh вызывает `shagshell "<prompt>"` (режим помощника — по `SHAGSHELL_ASKPASS_SOCK`), тот через unix-сокет своего экземпляра приложения (`askpass-<pid>.sock`) спрашивает его. Приложение берёт секрет из keyring по `SHAGSHELL_SESSION` или показывает диалог (пароль / passphrase / host key yes-no). Ответ — в stdout помощника.
   - Сокет создаётся с правами 0600 в `$XDG_RUNTIME_DIR/shagshell/` (каталог 0700).
 - Auto-reconnect: ssh завершился с кодом 255 → предложить/выполнить переподключение.
 - Переход на russh остаётся дешёвым (терминалу всё равно, откуда байты), но trait «на будущее» не заводим.
@@ -160,4 +160,4 @@ cosmic-files не используем: его вкладки завязаны �
 
 - `just verify` на каждом PR.
 - Headless (sway + grim): подключение к `localhost` sshd, пароль через askpass, SFTP put/get.
-- `shagshell --check`: ssh, telnet, picocom, keyring, askpass-сокет → ok / MISSING.
+- `shagshell --check`: ssh, telnet, picocom, python3, keyring → ok / MISSING.

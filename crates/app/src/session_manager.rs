@@ -101,6 +101,8 @@ pub struct Outcome {
     pub edit: Option<String>,
     /// A session or folder renamed / moved (old id, new id): its open tabs follow.
     pub moved: Option<(String, String)>,
+    /// A session or folder deleted: its saved passwords go too.
+    pub deleted: Option<String>,
 }
 
 pub struct SessionManager {
@@ -488,7 +490,10 @@ impl SessionManager {
                 }
             }
             Some(SmDialog::Delete { id, .. }) => match self.store.delete(id) {
-                Ok(()) => Ok(None),
+                Ok(()) => {
+                    out.deleted = Some(id.clone());
+                    Ok(None)
+                }
                 Err(e) => {
                     self.notice = Some(io_text(&e));
                     Ok(None)
