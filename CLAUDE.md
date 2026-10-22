@@ -21,7 +21,7 @@ Fixed names (never change these):
 | APP_ID | `io.github.shagovalexei.ShagShellSecure` (config path, `.desktop`, metainfo, icon, keyring attribute) |
 | License | GPL-3.0-only (code adapted from cosmic-term / shagoff-commander is allowed; mark the source at the top of the file) |
 
-## Commands (from phase 1)
+## Commands
 
 ```bash
 just verify          # fmt --check + clippy -D warnings + test — must pass before every PR
