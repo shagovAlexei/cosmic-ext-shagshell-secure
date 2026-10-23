@@ -114,15 +114,15 @@ pub struct Config {
 }
 
 impl Config {
-    /// The folder of session logs.
+    /// The folder of session logs: `~`, `~/x` or absolute; a relative one is under home too.
     pub fn log_dir(&self) -> std::path::PathBuf {
+        let home = std::env::home_dir().unwrap_or_else(std::env::temp_dir);
         match self.log_dir.trim() {
-            "" => std::env::home_dir()
-                .unwrap_or_default()
-                .join("ShagShellLogs"),
+            "" => home.join("ShagShellLogs"),
+            "~" => home,
             d => match d.strip_prefix("~/") {
-                Some(rest) => std::env::home_dir().unwrap_or_default().join(rest),
-                None => std::path::PathBuf::from(d),
+                Some(rest) => home.join(rest),
+                None => home.join(d), // an absolute `d` replaces `home` in `join`
             },
         }
     }

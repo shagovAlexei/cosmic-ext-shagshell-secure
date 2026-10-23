@@ -153,7 +153,7 @@ impl Application for App {
         let task = self.handle(message);
         // A log that could not start, or stopped by itself (disk full): said in the status bar.
         if let Some(n) = self.tabs.take_notice() {
-            self.sessions.notice = Some(n);
+            self.sessions.notice.get_or_insert(n);
         }
         task
     }
@@ -1419,7 +1419,8 @@ fn ssh_launch(
             session: session.map(str::to_string),
         },
         sftp: false,
-        log: (!s.log_file.is_empty()).then(|| tabs::LogSpec {
+        // An empty file name: no log on connect, the port and user still serve a log by hand.
+        log: Some(tabs::LogSpec {
             file: s.log_file.clone(),
             append: s.log_append,
             raw: s.log_raw,

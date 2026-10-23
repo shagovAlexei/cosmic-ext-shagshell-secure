@@ -142,6 +142,11 @@ impl Cleaner {
     }
 
     fn byte(&mut self, b: u8, out: &mut Vec<u8>) {
+        // A character cut short by a control byte is not glued to what follows.
+        if self.state == State::Normal && !self.pending.is_empty() && (b < 0x20 || b == 0x7f) {
+            self.pending.clear();
+            self.put('\u{fffd}');
+        }
         match self.state {
             State::Normal => match b {
                 0x1b => self.state = State::Esc,
@@ -159,11 +164,18 @@ impl Cleaner {
                             self.pending.clear();
                             self.put(c);
                         }
-                        Err(e) if e.error_len().is_some() => {
-                            self.pending.clear();
-                            self.put('\u{fffd}');
+                        Err(e) => {
+                            if let Some(n) = e.error_len() {
+                                // The wrong bytes are one replacement character; what follows
+                                // them (this byte, if it did not belong) starts over.
+                                let rest = self.pending.split_off(n);
+                                self.pending.clear();
+                                self.put('\u{fffd}');
+                                for x in rest {
+                                    self.byte(x, out);
+                                }
+                            }
                         }
-                        Err(_) => {}
                     }
                 }
             },
@@ -210,11 +222,16 @@ pub struct Logger {
 impl Logger {
     /// `append`: add to the file; else it starts over. `raw`: the bytes as they came.
     pub fn open(path: &Path, append: bool, raw: bool) -> io::Result<Self> {
+        use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+        // A transcript may hold what was pasted or shown (a config with passwords): ours alone.
         if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
-            std::fs::create_dir_all(dir)?;
+            std::fs::DirBuilder::new()
+                .recursive(true)
+                .mode(0o700)
+                .create(dir)?;
         }
         let mut o = OpenOptions::new();
-        o.create(true).write(true);
+        o.create(true).write(true).mode(0o600);
         match append {
             true => o.append(true),
             false => o.truncate(true),
@@ -239,12 +256,23 @@ impl Logger {
 
     /// The log ends: the last unfinished line too.
     pub fn close(mut self) -> io::Result<()> {
+        self.finish()
+    }
+
+    fn finish(&mut self) -> io::Result<()> {
         if let Some(c) = &mut self.clean {
             let mut out = Vec::new();
             c.finish(&mut out);
             self.file.write_all(&out)?;
         }
         self.file.flush()
+    }
+}
+
+/// Dropped (the tab closed, the program ended): the last line is written all the same.
+impl Drop for Logger {
+    fn drop(&mut self) {
+        let _ = self.finish();
     }
 }
 
@@ -321,6 +349,27 @@ mod tests {
         let s = "żółć\n".as_bytes();
         assert_eq!(clean(&[&s[..3], &s[3..]]), "żółć\n");
         assert_eq!(clean(&[b"a\xffb\n"]), "a\u{fffd}b\n");
+    }
+
+    #[test]
+    fn a_cut_character_is_not_glued_to_what_follows() {
+        assert_eq!(clean(&[b"a\xc5\r\n", b"\xc5b\n"]), "a\u{fffd}\n\u{fffd}b\n");
+        assert_eq!(clean(&[b"\xc5\x1b[0mab\n"]), "\u{fffd}ab\n");
+    }
+
+    #[test]
+    fn dropping_a_logger_writes_the_last_line() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("x.log");
+        let mut l = Logger::open(&p, false, false).unwrap();
+        l.write(b"no newline").unwrap();
+        drop(l);
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), "no newline");
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            std::fs::metadata(&p).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
     }
 
     #[test]

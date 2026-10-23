@@ -7,61 +7,61 @@ use polling::{Event, PollMode, Poller};
 use shagshell_core::logfile::Logger;
 use std::fs::File;
 use std::io::{self, Read};
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Default)]
-pub struct Tap(Arc<Mutex<State>>);
-
-#[derive(Default)]
-struct State {
-    logger: Option<Logger>,
+pub struct Tap {
+    logger: Arc<Mutex<Option<Logger>>>,
+    /// Asked by the UI on every frame: no lock (the reader thread holds one while it writes, and
+    /// a stalled disk must not stall the window).
+    on: Arc<AtomicBool>,
     /// Why the log stopped by itself (disk full…), until it is asked for.
-    failed: Option<String>,
+    failed: Arc<Mutex<Option<String>>>,
 }
 
 impl Tap {
-    fn lock(&self) -> std::sync::MutexGuard<'_, State> {
-        self.0.lock().unwrap_or_else(|e| e.into_inner())
+    fn lock(&self) -> std::sync::MutexGuard<'_, Option<Logger>> {
+        self.logger.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     pub fn start(&self, path: &Path, append: bool, raw: bool) -> io::Result<()> {
         let logger = Logger::open(path, append, raw)?;
-        let mut s = self.lock();
-        s.failed = None;
-        if let Some(old) = s.logger.replace(logger) {
-            let _ = old.close();
-        }
+        *self.failed.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        let old = self.lock().replace(logger);
+        self.on.store(true, Ordering::SeqCst);
+        drop(old); // written out here, not under the lock
         Ok(())
     }
 
     pub fn stop(&self) {
-        if let Some(l) = self.lock().logger.take() {
-            let _ = l.close();
-        }
-    }
-
-    pub fn path(&self) -> Option<PathBuf> {
-        self.lock().logger.as_ref().map(|l| l.path.clone())
+        self.on.store(false, Ordering::SeqCst);
+        let old = self.lock().take();
+        drop(old);
     }
 
     pub fn active(&self) -> bool {
-        self.lock().logger.is_some()
+        self.on.load(Ordering::SeqCst)
     }
 
     /// Why the log stopped by itself, once.
     pub fn take_failure(&self) -> Option<String> {
-        self.lock().failed.take()
+        self.failed.try_lock().ok()?.take()
     }
 
     fn write(&self, bytes: &[u8]) {
-        let mut s = self.lock();
-        if let Some(l) = &mut s.logger
+        if !self.active() {
+            return;
+        }
+        let mut guard = self.lock();
+        if let Some(l) = guard.as_mut()
             && let Err(e) = l.write(bytes)
         {
-            let path = l.path.display().to_string();
-            s.logger = None;
-            s.failed = Some(format!("{path}: {e}"));
+            let msg = format!("{}: {e}", l.path.display());
+            *guard = None;
+            self.on.store(false, Ordering::SeqCst);
+            *self.failed.lock().unwrap_or_else(|e| e.into_inner()) = Some(msg);
         }
     }
 }

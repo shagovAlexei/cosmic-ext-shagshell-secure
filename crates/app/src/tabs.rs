@@ -475,7 +475,7 @@ impl Tabs {
         )
         .inspect_err(|e| log::error!("start {}: {e}", launch.program))
         .ok()?;
-        if let Some(spec) = &launch.log
+        if let Some(spec) = launch.log.as_ref().filter(|s| !s.file.is_empty())
             && let Err(e) = self.begin_log(&tap, launch, spec)
         {
             *self.notice.lock().unwrap_or_else(|e| e.into_inner()) = Some(e);
@@ -529,10 +529,12 @@ impl Tabs {
             tap.stop();
             return Ok(());
         }
-        let spec = tab.launch.log.clone().unwrap_or_else(|| LogSpec {
-            file: self.log_prefs.1.clone(),
-            ..LogSpec::default()
-        });
+        // The session's own name template, else the one of Global Options; the port and user are
+        // the session's either way.
+        let mut spec = tab.launch.log.clone().unwrap_or_default();
+        if spec.file.is_empty() {
+            spec.file = self.log_prefs.1.clone();
+        }
         self.begin_log(&tap, &tab.launch, &spec)
     }
 
