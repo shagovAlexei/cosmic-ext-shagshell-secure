@@ -20,7 +20,7 @@ pub struct Tap {
     /// a stalled disk must not stall the window).
     on: Arc<AtomicBool>,
     /// Why the log stopped by itself (disk full…), until it is asked for.
-    failed: Arc<Mutex<Option<String>>>,
+    failed: Arc<Mutex<std::collections::VecDeque<String>>>,
     /// Logon Actions: watches the output, and what to do with an answer that is due.
     logon: Arc<Mutex<Option<(Automaton, Sender)>>>,
     /// The PTY's input (set when the terminal is made).
@@ -37,7 +37,10 @@ impl Tap {
 
     pub fn start(&self, path: &Path, append: bool, raw: bool) -> io::Result<()> {
         let logger = Logger::open(path, append, raw)?;
-        *self.failed.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        self.failed
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
         let old = self.lock().replace(logger);
         self.on.store(true, Ordering::SeqCst);
         drop(old); // written out here, not under the lock
@@ -56,7 +59,7 @@ impl Tap {
 
     /// Why the log stopped by itself, once.
     pub fn take_failure(&self) -> Option<String> {
-        self.failed.try_lock().ok()?.take()
+        self.failed.try_lock().ok()?.pop_front()
     }
 
     /// The terminal's PTY input, for what Logon Actions answer.
@@ -73,7 +76,10 @@ impl Tap {
 
     /// Something went wrong that the user should see (shown once, like a log failure).
     pub fn fail(&self, why: String) {
-        *self.failed.lock().unwrap_or_else(|e| e.into_inner()) = Some(why);
+        self.failed
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push_back(why);
     }
 
     /// Logon Actions on: the steps, and what receives each due answer (the first ones, those
@@ -81,7 +87,10 @@ impl Tap {
     pub fn set_logon(&self, steps: Vec<Step>, on_send: Sender) {
         let mut a = Automaton::new(steps);
         let first = a.start();
-        *self.logon.lock().unwrap_or_else(|e| e.into_inner()) = Some((a, on_send.clone()));
+        // All rows may have gone at once: nothing is left to watch.
+        if !a.done() {
+            *self.logon.lock().unwrap_or_else(|e| e.into_inner()) = Some((a, on_send.clone()));
+        }
         for s in first {
             on_send(s);
         }
@@ -124,7 +133,10 @@ impl Tap {
             let msg = format!("{}: {e}", l.path.display());
             *guard = None;
             self.on.store(false, Ordering::SeqCst);
-            *self.failed.lock().unwrap_or_else(|e| e.into_inner()) = Some(msg);
+            self.failed
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push_back(msg);
         }
     }
 }

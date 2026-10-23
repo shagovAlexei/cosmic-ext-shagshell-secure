@@ -1276,6 +1276,7 @@ impl App {
         let store = &self.sessions.store;
         let io = |e: std::io::Error| crate::session_manager::io_text(&e);
         let mut tasks = Vec::new();
+        let mut moved: Option<Task<Message>> = None;
         // The saved session this ends up as: where a typed Logon password is stored.
         let id: Option<String> = match &o.target {
             Target::New { folder } => {
@@ -1306,7 +1307,8 @@ impl App {
                 if renamed {
                     self.sessions.select(&new);
                     let (from, to) = (id, new.clone());
-                    tasks.push(keyring_task(move || {
+                    // Before the store below: in order, or the old password could win.
+                    moved = Some(keyring_task(move || {
                         shagshell_core::keyring::retarget(&from, &to)
                     }));
                 }
@@ -1319,11 +1321,16 @@ impl App {
         };
         // A password typed in Logon Actions: into the keyring (after a rename moved the old one).
         if let (Some(id), Some(pw)) = (id, password) {
-            tasks.push(keyring_task(move || {
+            let store_it = keyring_task(move || {
                 use shagshell_core::keyring::{Owner, Secret, store};
                 store(&Owner::Session(id), Secret::Password, &pw)
-            }));
+            });
+            tasks.push(match moved.take() {
+                Some(m) => m.chain(store_it),
+                None => store_it,
+            });
         }
+        tasks.extend(moved);
         Ok(Task::batch(tasks))
     }
 
@@ -1491,7 +1498,12 @@ fn logon_spec(s: &shagshell_core::session::Session, id: Option<&str>) -> Option<
     (!s.logon.is_empty()).then(|| tabs::LogonSpec {
         steps: s.logon.clone(),
         user: s.user.clone().unwrap_or_default(),
-        session: id.map(str::to_string),
+        // The password ssh itself would use: the credential set's, else the session's own.
+        owner: match (&s.credential, id) {
+            (Some(c), _) => Some(shagshell_core::keyring::Owner::Credential(c.clone())),
+            (None, Some(id)) => Some(shagshell_core::keyring::Owner::Session(id.to_string())),
+            (None, None) => None,
+        },
     })
 }
 

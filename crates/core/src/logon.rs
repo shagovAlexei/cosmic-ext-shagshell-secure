@@ -22,8 +22,10 @@ pub struct Automaton {
     steps: Vec<Step>,
     at: usize,
     clean: Cleaner,
-    /// The text seen since the last match: finished lines and the one being written.
+    /// The finished lines seen (the line being written is the cleaner's).
     seen: String,
+    /// How much of `seen` + the line being written earlier steps have used up.
+    skip: usize,
 }
 
 impl Automaton {
@@ -33,6 +35,7 @@ impl Automaton {
             at: 0,
             clean: Cleaner::default(),
             seen: String::new(),
+            skip: 0,
         }
     }
 
@@ -59,6 +62,7 @@ impl Automaton {
                 .find(|&i| self.seen.is_char_boundary(i))
                 .unwrap_or(self.seen.len());
             self.seen.drain(..at);
+            self.skip = self.skip.saturating_sub(at);
         }
         self.fire(true)
     }
@@ -66,36 +70,58 @@ impl Automaton {
     fn fire(&mut self, with_output: bool) -> Vec<String> {
         let mut sends = Vec::new();
         while let Some(step) = self.steps.get(self.at) {
-            let hit = match step.expect.is_empty() {
-                true => !with_output || !self.seen.is_empty() || sends.is_empty(),
-                false => {
-                    let text = format!("{}{}", self.seen, self.clean.partial());
-                    text.to_lowercase().contains(&step.expect.to_lowercase())
+            if step.expect.is_empty() {
+                // Waits for nothing: at the start, or right after the step before it.
+                if with_output && sends.is_empty() && self.at == 0 {
+                    break;
                 }
-            };
-            if !hit {
-                break;
+            } else {
+                let text = format!("{}{}", self.seen, self.clean.partial());
+                let from = (self.skip.min(text.len())..text.len())
+                    .find(|&i| text.is_char_boundary(i))
+                    .unwrap_or(text.len());
+                let (tail, want) = (text[from..].to_lowercase(), step.expect.to_lowercase());
+                match tail.find(&want) {
+                    // What was matched is used up: the same prompt answers one step only, and
+                    // what follows it in the same chunk is looked at for the next step.
+                    Some(at) => self.skip = from + at + want.len().min(tail.len() - at),
+                    None => break,
+                }
             }
             sends.push(step.send.clone());
             self.at += 1;
-            // What was matched is used up: the same prompt does not answer the next step.
-            self.seen.clear();
-            self.clean = Cleaner::default();
-            if !step.expect.is_empty() {
-                break;
-            }
         }
         sends
     }
 }
 
-/// `%user%` and `%password%` in a send string (`None`: no saved password; nothing to send).
-pub fn fill(send: &str, user: &str, password: Option<&str>) -> Option<String> {
-    let mut out = send.replace("%user%", user);
-    if out.contains("%password%") {
-        out = out.replace("%password%", password?);
+/// `%user%` and `%password%` in one piece of bytes to send, after escapes were read (so a
+/// password with a backslash is sent as it is). `None`: it needs a password and there is none.
+pub fn fill(bytes: &[u8], user: &str, password: Option<&str>) -> Option<Vec<u8>> {
+    let replace = |hay: &[u8], needle: &[u8], with: &[u8]| -> Vec<u8> {
+        let mut out = Vec::with_capacity(hay.len());
+        let mut i = 0;
+        while i < hay.len() {
+            if hay[i..].starts_with(needle) {
+                out.extend_from_slice(with);
+                i += needle.len();
+            } else {
+                out.push(hay[i]);
+                i += 1;
+            }
+        }
+        out
+    };
+    let out = replace(bytes, b"%user%", user.as_bytes());
+    match out.windows(10).any(|w| w == b"%password%") {
+        true => Some(replace(&out, b"%password%", password?.as_bytes())),
+        false => Some(out),
     }
-    Some(out)
+}
+
+/// The send string needs the saved password.
+pub fn needs_password(send: &str) -> bool {
+    send.contains("%password%")
 }
 
 #[cfg(test)]
@@ -142,9 +168,23 @@ mod tests {
     }
 
     #[test]
-    fn fill_in_user_and_password() {
-        assert_eq!(fill("%user%\\r", "adm", None).unwrap(), "adm\\r");
-        assert_eq!(fill("%password%", "u", Some("s3")).unwrap(), "s3");
-        assert_eq!(fill("%password%", "u", None), None);
+    fn regression_two_prompts_in_one_chunk_answer_two_steps() {
+        let mut a = Automaton::new(vec![step("login:", "u"), step("password:", "p")]);
+        assert_eq!(a.feed(b"login: \r\nPassword: "), ["u", "p"]);
+        // the second one's text came before the first's: it must not count
+        let mut b = Automaton::new(vec![step("login:", "u"), step("password:", "p")]);
+        assert_eq!(b.feed(b"password: login: "), ["u"]);
+        assert_eq!(b.feed(b"Password:"), ["p"]);
+    }
+
+    #[test]
+    fn regression_a_password_with_escapes_is_sent_as_it_is() {
+        assert_eq!(fill(b"%user%", "adm", None).unwrap(), b"adm");
+        assert_eq!(
+            fill(b"x%password%y", "u", Some(r"a\pb\r")).unwrap(),
+            br"xa\pb\ry"
+        );
+        assert_eq!(fill(b"%password%", "u", None), None);
+        assert!(needs_password("a%password%") && !needs_password("%user%"));
     }
 }

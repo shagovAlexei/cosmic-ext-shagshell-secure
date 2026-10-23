@@ -55,36 +55,46 @@ pub struct LogSpec {
 pub struct LogonSpec {
     pub steps: Vec<shagshell_core::logon::Step>,
     pub user: String,
-    /// The saved session whose keyring password is `%password%`.
-    pub session: Option<String>,
+    /// Whose keyring password is `%password%` (the session's, or its credential set's).
+    pub owner: Option<shagshell_core::keyring::Owner>,
 }
 
-/// An answer due: filled in and typed into the tab, off the reader thread (the keyring may take
-/// a while, and `\p` pauses). A password that is not saved is said, not typed.
+/// Answers due are typed into the tab by one worker, in order: the keyring may take a while and
+/// `\p` pauses, and a later answer must not overtake an earlier one. A password that is not saved
+/// is said, not typed.
 fn answer(tap: &term::log::Tap, spec: &LogonSpec) -> term::log::Sender {
+    use shagshell_core::keyring::{Secret, lookup};
+    use shagshell_core::macros::{Piece, parse};
+    let (tx, rx) = std::sync::mpsc::channel::<String>();
     let (tap, spec) = (tap.clone(), spec.clone());
-    std::sync::Arc::new(move |send: String| {
-        let (tap, spec) = (tap.clone(), spec.clone());
-        std::thread::spawn(move || {
-            use shagshell_core::keyring::{Owner, Secret, lookup};
-            use shagshell_core::macros::{Piece, parse};
-            let password = match send.contains("%password%") {
-                true => (spec.session.clone())
-                    .and_then(|id| lookup(&Owner::Session(id), Secret::Password).ok().flatten()),
+    std::thread::spawn(move || {
+        for send in rx {
+            let password = match shagshell_core::logon::needs_password(&send) {
+                true => {
+                    (spec.owner.as_ref()).and_then(|o| lookup(o, Secret::Password).ok().flatten())
+                }
                 false => None,
             };
-            let Some(text) = shagshell_core::logon::fill(&send, &spec.user, password.as_deref())
-            else {
-                tap.fail(fl!("logon-no-password"));
-                return;
-            };
-            for piece in parse(&text) {
+            // The escapes are read first: a password is typed as it is, backslashes and all.
+            for piece in parse(&send) {
                 match piece {
-                    Piece::Bytes(b) => tap.input(b),
+                    Piece::Bytes(b) => {
+                        match shagshell_core::logon::fill(&b, &spec.user, password.as_deref()) {
+                            Some(bytes) => tap.input(bytes),
+                            None => {
+                                tap.fail(fl!("logon-no-password"));
+                                break;
+                            }
+                        }
+                    }
                     Piece::Pause(d) => std::thread::sleep(d),
                 }
             }
-        });
+        }
+    });
+    let tx = Mutex::new(tx);
+    std::sync::Arc::new(move |send: String| {
+        let _ = tx.lock().unwrap_or_else(|e| e.into_inner()).send(send);
     })
 }
 
