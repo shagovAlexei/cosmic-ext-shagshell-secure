@@ -16,10 +16,12 @@ pub enum Kind {
     Menu,
     /// `arg` is a command line; `%H %P %U %S` are the active session's host, port, user, name.
     Launch,
+    /// `arg` is a Python script (`core::script`), `args` its arguments.
+    Script,
 }
 
 impl Kind {
-    pub const ALL: [Kind; 3] = [Kind::Send, Kind::Menu, Kind::Launch];
+    pub const ALL: [Kind; 4] = [Kind::Send, Kind::Menu, Kind::Launch, Kind::Script];
 }
 
 /// Where a string goes.
@@ -37,6 +39,9 @@ pub struct Button {
     pub label: String,
     pub kind: Kind,
     pub arg: String,
+    /// A script's arguments (a command line); empty for the others.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub args: String,
     #[serde(skip_serializing_if = "is_current")]
     pub target: Target,
 }
@@ -182,6 +187,7 @@ mod tests {
             label: label.into(),
             kind,
             arg: arg.into(),
+            args: String::new(),
             target: Target::Current,
         }
     }
@@ -197,6 +203,10 @@ mod tests {
         b.bars[i]
             .buttons
             .push(button("again", Kind::Menu, "Reconnect"));
+        b.bars[i].buttons.push(Button {
+            args: "a 'b c'".into(),
+            ..button("run", Kind::Script, "/home/u/x.py")
+        });
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("x/buttonbars.toml");
         b.save(&p).unwrap();

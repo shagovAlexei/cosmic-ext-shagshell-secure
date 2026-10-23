@@ -66,6 +66,8 @@ pub enum ScMsg {
     Picked(Option<PathBuf>),
     /// `--script file args…`, or a Button Bar button: run it on the active terminal.
     Start(PathBuf, Vec<String>),
+    /// A session's script: on the tab it opened.
+    StartOn(u64, PathBuf, Vec<String>),
     Input(String),
     Ok,
     Cancel,
@@ -249,7 +251,7 @@ impl Scripts {
                     End::Failed(e) => fl!("script-failed", name = name, error = e),
                 });
             }
-            ScMsg::Picked(_) | ScMsg::Start(..) => {}
+            ScMsg::Picked(_) | ScMsg::Start(..) | ScMsg::StartOn(..) => {}
             ScMsg::Input(v) => {
                 if let Some(a) = self.asks.front_mut() {
                     a.value = v;

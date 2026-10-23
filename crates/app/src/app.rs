@@ -725,6 +725,10 @@ impl App {
                 let ids = self.tabs.send_targets(to);
                 self.tabs.send(ids, shagshell_core::macros::parse(&b.arg))
             }
+            Kind::Script => {
+                let args = shlex::split(&b.args).unwrap_or_default();
+                self.script(crate::script::ScMsg::Start(b.arg.into(), args))
+            }
             Kind::Menu => match Action::named(&b.arg) {
                 Some(a) => self.act(a),
                 None => {
@@ -860,15 +864,16 @@ impl App {
     fn script(&mut self, m: crate::script::ScMsg) -> Task<Message> {
         use crate::script::ScMsg;
         let (start, m) = match m {
-            ScMsg::Picked(p) => (Some(p.map(|p| (p, Vec::new()))), None),
-            ScMsg::Start(p, a) => (Some(Some((p, a))), None),
+            ScMsg::Picked(p) => (Some(p.map(|p| (None, p, Vec::new()))), None),
+            ScMsg::Start(p, a) => (Some(Some((None, p, a))), None),
+            ScMsg::StartOn(t, p, a) => (Some(Some((Some(t), p, a))), None),
             m => (None, Some(m)),
         };
         if let Some(start) = start {
-            let Some((path, args)) = start else {
+            let Some((on, path, args)) = start else {
                 return self.tabs.focus_active();
             };
-            match self.tabs.active_terminal() {
+            match on.or_else(|| self.tabs.active_terminal()) {
                 None => self.sessions.notice = Some(fl!("script-no-tab")),
                 Some(tab) => match self.scripts.run(&path, &args, tab) {
                     Ok(()) => {
@@ -903,6 +908,18 @@ impl App {
         Task::batch(tasks)
     }
 
+    /// A tab for `launch`; the session's `script` (if any) runs on it.
+    fn open_tab(&mut self, launch: tabs::Launch, script: &str) -> Task<Message> {
+        let open = self.tabs.open(launch, &look());
+        match (self.tabs.last_opened(), script.trim()) {
+            (Some(tab), s) if !s.is_empty() => Task::batch([
+                open,
+                self.script(crate::script::ScMsg::StartOn(tab, s.into(), Vec::new())),
+            ]),
+            _ => open,
+        }
+    }
+
     /// Each session in a tab of its own; one that can't start says why under the tree.
     fn open_sessions(&mut self, ids: &[String]) -> Task<Message> {
         let mut tasks = Vec::new();
@@ -921,12 +938,12 @@ impl App {
                                 scheme: s.color_scheme.clone(),
                                 ..tabs::Launch::local_shell()
                             };
-                            tasks.push(self.tabs.open(l, &look()));
+                            tasks.push(self.open_tab(l, &s.script));
                             continue;
                         }
                         P::Telnet | P::Serial => {
                             match program_launch(&s, name, Some(id)) {
-                                Ok(l) => tasks.push(self.tabs.open(l, &look())),
+                                Ok(l) => tasks.push(self.open_tab(l, &s.script)),
                                 Err(e) => self.sessions.notice = Some(e),
                             }
                             continue;
@@ -934,7 +951,7 @@ impl App {
                         P::Ssh2 => {}
                     }
                     match ssh_launch(&self.control_dir, creds.as_ref(), &s, name, Some(id)) {
-                        Ok(l) => tasks.push(self.tabs.open(l, &look())),
+                        Ok(l) => tasks.push(self.open_tab(l, &s.script)),
                         Err(e) => self.sessions.notice = Some(e),
                     }
                 }

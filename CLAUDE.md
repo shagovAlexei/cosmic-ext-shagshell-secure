@@ -49,7 +49,7 @@ We do **not** implement SSH. The system OpenSSH does it; we drive it.
 
 ### Button Bar and scripting (SecureCRT style)
 
-- **Button Bar:** several named bars, a session may pick its own; a button = Send String (escapes), Run Script, Menu Function (same `Action` enum as key bindings) or Launch App; target current / all tabs. Stored in `~/.config/shagshell/buttonbars.toml`.
+- **Button Bar:** several named bars, a session may pick its own; a button = Send String (escapes), Run Script (`kind = "script"`: `arg` the .py, `args` its arguments), Menu Function (same `Action` enum as key bindings) or Launch App; target current / all tabs. Stored in `~/.config/shagshell/buttonbars.toml`.
 - **Python scripts:** a separate `python3` process (not PyO3: a crash can't take the app down, no libpython dependency, user's pip packages work). We ship `crt.py` (`/usr/share/shagshell/python/`), started with `PYTHONPATH` to it and `SHAGSHELL_SCRIPT_SOCK=$XDG_RUNTIME_DIR/shagshell/script-<n>.sock`; every `crt.*` call is a JSON line over that socket. The `crt` object mirrors SecureCRT's model (`crt.Screen.Send / WaitForString / ReadString`, `crt.Session.Connect`, `crt.Dialog.MessageBox / Prompt`, `crt.GetTab(n)`, `crt.Sleep`, `crt.Arguments`) so SecureCRT Python scripts port with minimal edits. Waits run app-side on the tab's output stream. Run from Script menu, Button Bar, a key, a session's logon script, or `shagshell --script file.py`.
 
 ### Storage

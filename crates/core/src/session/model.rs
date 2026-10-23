@@ -169,6 +169,9 @@ pub struct Session {
     /// Logon Actions: what to answer to what the session says after connecting.
     #[serde(rename = "logon", skip_serializing_if = "Vec::is_empty")]
     pub logon: Vec<crate::logon::Step>,
+    /// A Python script run on the tab when the session is opened (`core::script`).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub script: String,
     /// Log file name template (`core::logfile`); empty: no log on connect.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub log_file: String,
