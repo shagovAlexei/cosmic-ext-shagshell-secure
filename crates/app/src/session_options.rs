@@ -91,10 +91,14 @@ impl SessionOptions {
             })
             .insert(|b| b.text(fl!("so-ssh2")).data(Category::Ssh2))
             .build();
+        let name = match &target {
+            Target::Edit { id } => name_of(id).to_string(),
+            _ => String::new(),
+        };
         Self {
             window,
+            form: Form::from_session(&name, s),
             target,
-            form: Form::from_session("", s),
             categories,
             error: None,
             first_id: widget::Id::unique(),
@@ -201,8 +205,8 @@ impl SessionOptions {
             _ => {
                 let mut v = Vec::new();
                 let new = matches!(self.target, Target::New { .. });
-                if new {
-                    v.push(field(fl!("so-name"), Field::Name, &f.name, true));
+                if self.target != Target::Default {
+                    v.push(field(fl!("so-name"), Field::Name, &f.name, new));
                 }
                 v.extend([
                     field(fl!("qc-host"), Field::Host, &f.host, !new),

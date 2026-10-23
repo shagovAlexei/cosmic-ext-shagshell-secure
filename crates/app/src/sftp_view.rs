@@ -210,6 +210,20 @@ impl SftpView {
         self.browse = Some(self.worker());
     }
 
+    /// Disconnect: both workers go (a running copy is cancelled, for a Retry).
+    pub fn disconnect(&mut self) {
+        if let Some(id) = self.queue.running().map(|j| j.id) {
+            self.queue.cancel(id);
+        }
+        if matches!(self.dialog, Some(Dialog::Conflict { .. })) {
+            self.dialog = None;
+        }
+        (self.browse, self.transfer, self.started) = (None, None, None);
+        self.connected = false;
+        self.paused = false;
+        self.status = Some(fl!("sftp-not-connected"));
+    }
+
     fn list_local(&mut self, path: PathBuf, focus: Option<OsString>) {
         match read_local(&path) {
             Ok(entries) => {

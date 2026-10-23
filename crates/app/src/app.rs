@@ -233,13 +233,13 @@ impl Application for App {
             }
             // Esc in Session Options (no field took it): Cancel, as SecureCRT's dialogs.
             Message::Input(w, m) if self.options.as_ref().is_some_and(|o| o.window == w) => {
-                if let Message::Sessions(SmMsg::Key(TreeKey::Clear)) = *m {
+                if is_escape(&m) {
                     return self.session_options(SoMsg::Cancel);
                 }
             }
             // Esc in the Credentials Manager: Close.
             Message::Input(w, m) if self.creds_win.as_ref().is_some_and(|c| c.window == w) => {
-                if let Message::Sessions(SmMsg::Key(TreeKey::Clear)) = *m {
+                if is_escape(&m) {
                     return self.credentials(CwMsg::Close);
                 }
             }
@@ -976,13 +976,15 @@ impl App {
                 {
                     s.credential = base.credential.clone();
                 }
-                if let Err(e) = self.save_options(&s) {
-                    if let Some(o) = &mut self.options {
-                        o.error = Some(e);
+                return match self.save_options(&s) {
+                    Ok(task) => Task::batch([task, self.session_options(SoMsg::Cancel)]),
+                    Err(e) => {
+                        if let Some(o) = &mut self.options {
+                            o.error = Some(e);
+                        }
+                        Task::none()
                     }
-                    return Task::none();
-                }
-                return self.session_options(SoMsg::Cancel);
+                };
             }
             m => o.update(m),
         }
@@ -990,9 +992,12 @@ impl App {
     }
 
     /// OK: the session written where the window's target says.
-    fn save_options(&mut self, s: &shagshell_core::session::Session) -> Result<(), String> {
+    fn save_options(
+        &mut self,
+        s: &shagshell_core::session::Session,
+    ) -> Result<Task<Message>, String> {
         let Some(o) = &self.options else {
-            return Ok(());
+            return Ok(Task::none());
         };
         let store = &self.sessions.store;
         let io = |e: std::io::Error| crate::session_manager::io_text(&e);
@@ -1006,14 +1011,31 @@ impl App {
                 self.save_config();
             }
             Target::Edit { id } => {
-                let id = id.clone();
+                let (id, name) = (id.clone(), o.name());
+                let renamed = name != shagshell_core::session::store::name_of(&id);
+                if renamed {
+                    crate::session_manager::check(
+                        &name,
+                        crate::session_manager::parent(&id).is_empty(),
+                    )?;
+                }
                 store.save(&id, s).map_err(io)?;
+                let new = match renamed {
+                    true => store.rename(&id, &name).map_err(io)?,
+                    false => id.clone(),
+                };
                 self.sessions.reload();
-                self.sessions_changed(&id, &id);
+                self.sessions_changed(&id, &new);
+                if renamed {
+                    self.sessions.select(&new);
+                    return Ok(keyring_task(move || {
+                        shagshell_core::keyring::retarget(&id, &new)
+                    }));
+                }
             }
             Target::Default => store.save(DEFAULT, s).map_err(io)?,
         }
-        Ok(())
+        Ok(Task::none())
     }
 
     fn import_ssh_config(&mut self) {
@@ -1182,6 +1204,11 @@ fn over_fields(a: Action) -> bool {
     )
 }
 
+/// An Esc no widget took (`Message::Key`, as the subscription tags it).
+fn is_escape(m: &Message) -> bool {
+    matches!(m, Message::Key(Physical::Code(Code::Escape), mods) if mods.is_empty())
+}
+
 /// Keys no widget took, other than the app's (`key_action`): Enter connects from the tree or
 /// restarts an ended tab; the tree's own keys.
 fn route_key(key: &Physical, mods: Modifiers) -> Option<Message> {
@@ -1241,6 +1268,16 @@ pub fn key_action(key: &Physical, mods: Modifiers) -> Option<Action> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn regression_escape_in_a_secondary_window_is_seen() {
+        let esc = Message::Key(Physical::Code(Code::Escape), Modifiers::empty());
+        assert!(is_escape(&esc));
+        assert!(!is_escape(&Message::Key(
+            Physical::Code(Code::Escape),
+            Modifiers::CTRL
+        )));
+    }
+
     use super::*;
 
     #[test]

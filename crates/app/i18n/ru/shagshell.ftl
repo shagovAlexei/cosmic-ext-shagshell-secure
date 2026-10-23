@@ -58,6 +58,7 @@ status-ended = Отключено
 options-terminal = Терминал
 options-copy-on-select = Копировать при выделении
 options-paste-on-middle = Вставлять средней кнопкой мыши
+term-disconnected = Отключено — Enter, чтобы подключиться заново
 term-exited = Процесс завершился — Enter, чтобы запустить заново
 term-exited-code = Процесс завершился с кодом { $code } — Enter, чтобы запустить заново
 menu-import-ssh-config = Импорт из ~/.ssh/config

@@ -141,6 +141,7 @@ pub type Look = (term::style::Style, bool, u32);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TabCmd {
     Reconnect,
+    Disconnect,
     Clone,
     /// «Connect SFTP Tab»: an SFTP tab over this ssh tab's connection.
     Sftp,
@@ -284,11 +285,11 @@ impl Tabs {
         let Some((pane, _, id)) = self.active() else {
             return (false, false, false);
         };
-        let ended = self.tabs.get(&id).is_some_and(|t| !t.live());
+        let live = self.tabs.get(&id).is_some_and(Tab::live);
         let many = (self.grid.as_ref())
             .and_then(|g| g.get(pane))
             .is_some_and(|g| g.model.len() > 1);
-        (true, ended, many)
+        (true, live, many)
     }
 
     fn tab_at(&self, pane: pane_grid::Pane, e: Entity) -> Option<(pane_grid::Pane, Entity, TabId)> {
@@ -373,6 +374,29 @@ impl Tabs {
 
     /// Start the program again in a tab whose program ended (SecureCRT's Reconnect / Enter).
     /// Under a new id: the old program's late events (Exit after ChildExit) find no tab.
+    /// Disconnect: the program (or the SFTP connection) ends, the tab stays (✗, Enter restarts).
+    fn disconnect(&mut self, id: TabId) {
+        let Some(tab) = self.tabs.get_mut(&id) else {
+            return;
+        };
+        match &mut tab.body {
+            Body::Terminal(t) if tab.alive => {
+                t.get_mut().unwrap_or_else(|e| e.into_inner()).shutdown();
+                term::print(t, &format!("\r\n[{}]\r\n", fl!("term-disconnected")));
+                tab.alive = false;
+            }
+            Body::Sftp(v) => v.disconnect(),
+            Body::Terminal(_) => {}
+        }
+        self.retitle(id);
+    }
+
+    /// Reconnect: a live tab is disconnected first.
+    fn reconnect(&mut self, id: TabId, look: &Look) -> Task<Message> {
+        self.disconnect(id);
+        self.restart(id, look)
+    }
+
     fn restart(&mut self, id: TabId, look: &Look) -> Task<Message> {
         if self.tabs.get(&id).is_none_or(|t| t.live()) {
             return Task::none();
@@ -492,7 +516,11 @@ impl Tabs {
         look: &Look,
     ) -> Task<Message> {
         match cmd {
-            TabCmd::Reconnect => self.restart(t.2, look),
+            TabCmd::Reconnect => self.reconnect(t.2, look),
+            TabCmd::Disconnect => {
+                self.disconnect(t.2);
+                Task::none()
+            }
             TabCmd::Clone => {
                 self.focus = Some(t.0); // its group
                 match self.tabs.get(&t.2).map(|tab| tab.launch.clone()) {
@@ -523,6 +551,7 @@ impl Tabs {
             Action::NewLocalShell => self.open(Launch::local_shell(), look),
             Action::CloseTab => on_active(self, TabCmd::Close),
             Action::Reconnect => on_active(self, TabCmd::Reconnect),
+            Action::Disconnect => on_active(self, TabCmd::Disconnect),
             Action::ConnectSftp => on_active(self, TabCmd::Sftp),
             Action::NextTab | Action::PrevTab => {
                 if let Some(group) = self.focused_group_mut() {
@@ -825,10 +854,11 @@ fn tab_menu(
     };
     let one = |e: Entity| {
         let tab = model.data::<TabId>(e).and_then(|id| tabs.get(id));
-        let ended = tab.is_some_and(|t| !t.live());
+        let live = tab.is_some_and(Tab::live);
         let sftp = tab.is_some_and(|t| t.launch.sftp().is_some());
         let items = vec![
-            on(ended, fl!("menu-reconnect"), TabCmd::Reconnect),
+            Button(fl!("menu-reconnect"), None, TabCmd::Reconnect),
+            on(live, fl!("menu-disconnect"), TabCmd::Disconnect),
             Button(fl!("menu-clone"), None, TabCmd::Clone),
             on(sftp, fl!("menu-connect-sftp"), TabCmd::Sftp),
             Divider,

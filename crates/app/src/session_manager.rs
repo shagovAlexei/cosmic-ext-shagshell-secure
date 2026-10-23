@@ -753,7 +753,7 @@ fn unfocus() -> Task<Message> {
     widget::text_input::focus(widget::Id::unique())
 }
 
-fn parent(id: &str) -> &str {
+pub fn parent(id: &str) -> &str {
     id.rsplit_once('/').map_or("", |(p, _)| p)
 }
 
