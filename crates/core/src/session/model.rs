@@ -3,9 +3,29 @@
 
 use serde::{Deserialize, Serialize};
 
+/// What a session connects with (Session Options → Protocol).
+fn is_ssh2(p: &Protocol) -> bool {
+    *p == Protocol::Ssh2
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Protocol {
+    #[default]
+    Ssh2,
+    /// The user's `$SHELL` in a tab: no host.
+    Local,
+}
+
+impl Protocol {
+    pub const ALL: [Protocol; 2] = [Protocol::Ssh2, Protocol::Local];
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Session {
+    #[serde(skip_serializing_if = "is_ssh2")]
+    pub protocol: Protocol,
     pub host: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub port: Option<u16>,

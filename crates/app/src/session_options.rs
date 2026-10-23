@@ -6,9 +6,9 @@ use crate::fl;
 use cosmic::iced::{Length, window};
 use cosmic::widget::{self, segmented_button};
 use cosmic::{Element, theme};
-use shagshell_core::session::Session;
 use shagshell_core::session::form::{Form, FormError};
 use shagshell_core::session::store::name_of;
+use shagshell_core::session::{Protocol, Session};
 
 /// What OK writes.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -45,6 +45,8 @@ pub enum Field {
 pub enum SoMsg {
     Field(Field, String),
     Category(segmented_button::Entity),
+    /// The protocol dropdown: the n-th of `Protocol::ALL`.
+    Protocol(usize),
     Browse,
     /// The file chooser's pick (`None`: cancelled), for the window that asked.
     Browsed(window::Id, Option<String>),
@@ -70,6 +72,7 @@ pub struct SessionOptions {
     /// The credential sets (name, user), for the dropdown; `labels[0]` is «(none)».
     sets: Vec<(String, String)>,
     labels: Vec<String>,
+    protocols: Vec<String>,
     first_id: widget::Id,
 }
 
@@ -104,6 +107,7 @@ impl SessionOptions {
             first_id: widget::Id::unique(),
             sets,
             labels,
+            protocols: vec![fl!("so-protocol-ssh2"), fl!("so-protocol-local")],
             saved: false,
         }
     }
@@ -150,6 +154,7 @@ impl SessionOptions {
                 Field::Extra => f.extra = v,
             },
             SoMsg::Category(e) => self.categories.activate(e),
+            SoMsg::Protocol(i) => f.protocol = Protocol::ALL.get(i).copied().unwrap_or_default(),
             SoMsg::Saved(w, saved) if w == self.window => self.saved = saved,
             SoMsg::Credential(i) => {
                 f.credential = match i {
@@ -181,7 +186,9 @@ impl SessionOptions {
                 .into()
         };
         let f = &self.form;
+        let local = f.protocol == Protocol::Local;
         let fields: Vec<Element<'_, Message>> = match category {
+            Some(Category::Ssh2) if local => vec![widget::text::body(fl!("so-ssh-only")).into()],
             Some(Category::Ssh2) => vec![
                 widget::column::with_children(vec![
                     widget::text::caption(fl!("so-identity")).into(),
@@ -207,6 +214,19 @@ impl SessionOptions {
                 let new = matches!(self.target, Target::New { .. });
                 if self.target != Target::Default {
                     v.push(field(fl!("so-name"), Field::Name, &f.name, new));
+                }
+                let at = Protocol::ALL.iter().position(|p| *p == f.protocol);
+                v.push(
+                    widget::column::with_children(vec![
+                        widget::text::caption(fl!("so-protocol")).into(),
+                        widget::dropdown(&self.protocols, at, move |i| m(SoMsg::Protocol(i)))
+                            .into(),
+                    ])
+                    .spacing(2)
+                    .into(),
+                );
+                if local {
+                    return self.frame(v, focused);
                 }
                 v.extend([
                     field(fl!("qc-host"), Field::Host, &f.host, !new),
@@ -253,6 +273,16 @@ impl SessionOptions {
                 v
             }
         };
+        self.frame(fields, focused)
+    }
+
+    /// The window around a page's fields: header, categories, [Cancel] [OK].
+    fn frame<'a>(
+        &'a self,
+        fields: Vec<Element<'a, Message>>,
+        focused: bool,
+    ) -> Element<'a, Message> {
+        let m = Message::SessionOptions;
         let nav = segmented_button::vertical(&self.categories)
             .on_activate(move |e| m(SoMsg::Category(e)))
             .width(Length::Fixed(180.0));

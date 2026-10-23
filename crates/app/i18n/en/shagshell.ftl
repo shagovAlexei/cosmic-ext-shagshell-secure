@@ -155,6 +155,10 @@ cw-delete-confirm = { $count ->
     [one] Used in one session: it keeps the username and will ask for the password
    *[other] Used in { $count } sessions: they keep the username and will ask for the password
 }
+so-protocol = Protocol
+so-protocol-ssh2 = SSH2
+so-protocol-local = Local Shell
+so-ssh-only = Applies to SSH2 sessions only.
 so-credential = Credential
 so-credential-none = (none)
 options-passwords = Passwords

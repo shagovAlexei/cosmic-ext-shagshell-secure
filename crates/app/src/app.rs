@@ -550,6 +550,14 @@ impl App {
             match self.sessions.store.get(id) {
                 Ok(s) => {
                     let name = shagshell_core::session::store::name_of(id).to_string();
+                    if s.protocol == shagshell_core::session::Protocol::Local {
+                        let l = tabs::Launch {
+                            title: name,
+                            ..tabs::Launch::local_shell()
+                        };
+                        tasks.push(self.tabs.open(l, &look()));
+                        continue;
+                    }
                     match ssh_launch(&self.control_dir, creds.as_ref(), &s, name, Some(id)) {
                         Ok(l) => tasks.push(self.tabs.open(l, &look())),
                         Err(e) => self.sessions.notice = Some(e),
@@ -571,6 +579,10 @@ impl App {
                 return Task::none();
             }
         };
+        if s.protocol == shagshell_core::session::Protocol::Local {
+            self.sessions.notice = Some(fl!("so-ssh-only"));
+            return Task::none();
+        }
         let name = shagshell_core::session::store::name_of(id).to_string();
         let creds = load_credentials();
         match ssh_launch(&self.control_dir, creds.as_ref(), &s, name, Some(id)) {
