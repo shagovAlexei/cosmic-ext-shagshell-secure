@@ -129,3 +129,4 @@
 | `sftp::proto::tests::list_non_utf8_names` | имя файла не в UTF-8 на сервере не рвёт SFTP-соединение (было в `openssh-sftp-client`) |
 | `sftp::proto::tests::regression_local_failure_keeps_the_stream_in_step` | локальная ошибка посреди передачи (диск полон) не сбивает ответы SFTP следующих команд |
 | `sftp::ops::tests::regression_failed_overwrite_keeps_the_original` | неудачная / отменённая перезапись (в обе стороны) оставляет прежний файл, без `.part` |
+| `tabs::tests::regression_tab_menu_items_are_cosmic_actions` (app) | ПКМ по вкладке открывает меню (popup с view не того типа libcosmic молча не показывал: «Invalid view for subsurface view») |

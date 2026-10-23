@@ -149,10 +149,11 @@ pub enum TabCmd {
     Close,
 }
 
+/// `cosmic::Action`: the tab bar's menu is a popup of its own (see `Tabs::view`).
 impl menu::Action for TabCmd {
-    type Message = Message;
-    fn message(&self) -> Message {
-        Message::Tabs(TabsMsg::Cmd(*self))
+    type Message = cosmic::Action<Message>;
+    fn message(&self) -> Self::Message {
+        cosmic::Action::App(Message::Tabs(TabsMsg::Cmd(*self)))
     }
 }
 
@@ -719,8 +720,13 @@ impl Tabs {
         let copy = config.copy_on_select;
         let middle = config.paste_on_middle_click;
         let pg = pane_grid::PaneGrid::new(grid, move |pane, group, _| {
-            let m =
-                move |f: fn(pane_grid::Pane, Entity) -> TabsMsg| move |e| Message::Tabs(f(pane, e));
+            // The tab bar speaks `cosmic::Action`: at this libcosmic rev it boxes its menu popup's
+            // view as `Element<its Message>`, and the runtime only shows one of
+            // `Element<Action<Message>>` («Invalid view for subsurface view», no menu).
+            let app = |m: Message| cosmic::Action::App(m);
+            let m = move |f: fn(pane_grid::Pane, Entity) -> TabsMsg| {
+                move |e| app(Message::Tabs(f(pane, e)))
+            };
             let bar = tab_bar::horizontal(&group.model)
                 .on_activate(m(TabsMsg::Activate))
                 .on_close(m(TabsMsg::Close))
@@ -728,9 +734,13 @@ impl Tabs {
                 .on_context(m(TabsMsg::Context))
                 .context_menu(Some(tab_menu(&group.model, &self.tabs)))
                 .window_id(window)
-                .on_surface_action(Message::Surface)
+                .on_surface_action(move |a| app(Message::Surface(a)))
                 .enable_tab_drag(TAB_MIME.to_string())
-                .on_reorder(move |ev| Message::Tabs(TabsMsg::Reorder(pane, ev)));
+                .on_reorder(move |ev| app(Message::Tabs(TabsMsg::Reorder(pane, ev))));
+            let bar = Element::from(bar).map(|a| match a {
+                cosmic::Action::App(m) => m,
+                other => Message::Cosmic(Box::new(other)),
+            });
             let body: Element<'_, Message> =
                 match group.active_id().and_then(|id| self.tabs.get(&id)) {
                     Some(Tab {
@@ -757,7 +767,7 @@ impl Tabs {
                         .into(),
                 };
             let active = many && focus == Some(pane);
-            let content = widget::container(widget::column::with_children(vec![bar.into(), body]))
+            let content = widget::container(widget::column::with_children(vec![bar, body]))
                 .padding(1)
                 .class(cosmic::theme::Container::custom(move |theme| {
                     let mut s = widget::container::Style::default();
@@ -803,7 +813,10 @@ fn detach(model: &mut SingleSelectModel, e: Entity) -> bool {
 
 /// Right click on a tab: about that tab (`TabsMsg::Context` came first). libcosmic wants one
 /// root whose children are the tabs' menus, one per tab in order.
-fn tab_menu(model: &SingleSelectModel, tabs: &HashMap<TabId, Tab>) -> Vec<menu::Tree<Message>> {
+fn tab_menu(
+    model: &SingleSelectModel,
+    tabs: &HashMap<TabId, Tab>,
+) -> Vec<menu::Tree<cosmic::Action<Message>>> {
     use menu::Item::{Button, ButtonDisabled, Divider};
     let can_split = model.len() > 1;
     let on = |yes: bool, label: String, cmd| match yes {
@@ -838,4 +851,19 @@ fn tab_menu(model: &SingleSelectModel, tabs: &HashMap<TabId, Tab>) -> Vec<menu::
 /// key, any layout). Everything else, every Ctrl+letter and Alt+letter, is the terminal's.
 pub fn is_app_key(mods: Modifiers, _: &Key, key: &Physical) -> bool {
     crate::app::key_action(key, mods).is_some()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cosmic::widget::menu::Action as _;
+
+    /// The tab menu is a popup: libcosmic shows it only if its items speak `cosmic::Action`.
+    #[test]
+    fn regression_tab_menu_items_are_cosmic_actions() {
+        assert!(matches!(
+            TabCmd::Clone.message(),
+            cosmic::Action::App(Message::Tabs(TabsMsg::Cmd(TabCmd::Clone)))
+        ));
+    }
 }

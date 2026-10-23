@@ -64,6 +64,8 @@ pub enum Message {
     /// Enter while the active tab's program has ended.
     EnterKey,
     Surface(cosmic::surface::Action),
+    /// Anything else a widget speaking `cosmic::Action` says (the tab bar): to the runtime.
+    Cosmic(Box<cosmic::Action<Message>>),
     Sessions(SmMsg),
     QuickConnect(QcMsg),
     SessionOptions(SoMsg),
@@ -185,6 +187,7 @@ impl Application for App {
                     cosmic::app::Action::Surface(a),
                 ));
             }
+            Message::Cosmic(a) => return cosmic::task::message(*a),
             Message::Sessions(m) => {
                 let out = self.sessions.update(m);
                 if out.save {
