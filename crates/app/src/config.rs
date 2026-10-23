@@ -42,6 +42,36 @@ fn pinned(t: cosmic::Theme, dark: bool) -> cosmic::Theme {
     cosmic::Theme::custom(std::sync::Arc::new(p))
 }
 
+/// SFTP: what to do when the target file is already there.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ExistsRule {
+    #[default]
+    Ask,
+    Overwrite,
+    Newer,
+    Skip,
+}
+
+impl ExistsRule {
+    pub const ALL: [ExistsRule; 4] = [
+        ExistsRule::Ask,
+        ExistsRule::Overwrite,
+        ExistsRule::Newer,
+        ExistsRule::Skip,
+    ];
+
+    /// The queue's answer to every conflict; `None`: ask.
+    pub fn choice(self) -> Option<shagshell_core::sftp::queue::Choice> {
+        use shagshell_core::sftp::queue::Choice;
+        match self {
+            ExistsRule::Ask => None,
+            ExistsRule::Overwrite => Some(Choice::Overwrite),
+            ExistsRule::Newer => Some(Choice::Newer),
+            ExistsRule::Skip => Some(Choice::Skip),
+        }
+    }
+}
+
 /// Interface languages we ship; `""` in the config = the system's.
 pub const LANGUAGES: [&str; 2] = ["en", "ru"];
 
@@ -69,6 +99,10 @@ pub struct Config {
     /// Interface language: "" (system), "en", "ru".
     pub language: String,
     pub app_theme: AppTheme,
+    /// SFTP tabs open with dot files shown (Ctrl+H flips it in a tab).
+    pub sftp_show_hidden: bool,
+    /// SFTP: the target is already there.
+    pub sftp_overwrite: ExistsRule,
 }
 
 impl Default for Config {
@@ -81,6 +115,8 @@ impl Default for Config {
             expanded: Vec::new(),
             language: String::new(),
             app_theme: AppTheme::System,
+            sftp_show_hidden: true,
+            sftp_overwrite: ExistsRule::Ask,
         }
     }
 }

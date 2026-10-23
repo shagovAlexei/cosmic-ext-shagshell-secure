@@ -13,7 +13,7 @@ use cosmic::iced::widget::scrollable::{self as scroll, AbsoluteOffset};
 use cosmic::iced::{Alignment, Length, Subscription, futures::SinkExt};
 use cosmic::widget;
 use cosmic::{Element, theme};
-use shagshell_core::panel::{Entry, Panel, size_text, time_text};
+use shagshell_core::panel::{Entry, Panel, SortKey, mode_text, size_text, time_text};
 use shagshell_core::sftp::queue::{Choice, Dir, Queue, State};
 use std::collections::HashMap;
 use std::ffi::OsString;
@@ -24,6 +24,8 @@ use std::time::Instant;
 const LOCAL: usize = 0;
 const REMOTE: usize = 1;
 const ROW: f32 = 26.0;
+/// The server panel's rights column.
+const PERM_W: f32 = 100.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Key {
@@ -44,6 +46,10 @@ pub enum Key {
     Mkdir,
     Delete,
     Refresh,
+    /// Ctrl+H.
+    Hidden,
+    /// Alt+Enter: permissions (the server's panel).
+    Chmod,
 }
 
 /// The commander's keys, by physical key (any layout).
@@ -65,6 +71,8 @@ pub fn key(k: &Physical, m: Modifiers) -> Option<Key> {
         Code::Insert | Code::Space if plain && !m.shift() => Key::Mark,
         Code::KeyA if m.control() && !m.shift() && !m.alt() => Key::MarkAll,
         Code::KeyR if m.control() && !m.shift() && !m.alt() => Key::Refresh,
+        Code::KeyH if m.control() && !m.shift() && !m.alt() => Key::Hidden,
+        Code::Enter | Code::NumpadEnter if m.alt() && !m.control() && !m.shift() => Key::Chmod,
         Code::F5 if plain => Key::Copy,
         Code::F6 if plain && m.shift() => Key::Rename,
         Code::F6 if plain => Key::Move,
@@ -94,6 +102,12 @@ pub enum SftpMsg {
     Reconnect,
     /// The path over a panel clicked.
     Goto(usize),
+    /// A column's header clicked.
+    Sort(usize, SortKey),
+    /// The chmod dialog: a bit (`0o400`…) flipped, the octal text typed, «inside folders».
+    ChmodBit(u32),
+    ChmodText(String),
+    ChmodRecursive(bool),
 }
 
 enum Dialog {
@@ -113,6 +127,17 @@ enum Dialog {
         batch: u64,
         name: String,
         all: bool,
+        /// «Resume» is offered when the target is shorter than the source.
+        resumable: bool,
+    },
+    Chmod {
+        paths: Vec<PathBuf>,
+        /// The first one's bits when the dialog opened: only what is changed from them is applied.
+        init: u32,
+        bits: u32,
+        text: String,
+        recursive: bool,
+        has_dir: bool,
     },
 }
 
@@ -148,10 +173,17 @@ pub struct SftpView {
     views: [(f32, f32); 2],
     /// A row is held: dropping it on the other panel copies.
     drag: Option<usize>,
+    /// The answer to every conflict (Global Options → SFTP); `None`: ask.
+    rule: Option<Choice>,
 }
 
 impl SftpView {
-    pub fn new(id: TabId, connect: Connect, events: Events) -> Self {
+    pub fn new(
+        id: TabId,
+        connect: Connect,
+        events: Events,
+        (rule, show_hidden): (Option<Choice>, bool),
+    ) -> Self {
         let home = std::env::home_dir().unwrap_or_else(|| "/".into());
         let mut v = Self {
             id,
@@ -172,10 +204,19 @@ impl SftpView {
             scroll_ids: [widget::Id::unique(), widget::Id::unique()],
             views: [(0.0, 0.0); 2],
             drag: None,
+            rule,
         };
+        for p in &mut v.panels {
+            p.set_show_hidden(show_hidden);
+        }
         v.list_local(home, None);
         v.browse = Some(v.worker());
         v
+    }
+
+    /// Global Options → SFTP changed: the rule applies to the next conflict.
+    pub fn set_rule(&mut self, rule: Option<Choice>) {
+        self.rule = rule;
     }
 
     fn worker(&self) -> Worker {
@@ -310,6 +351,31 @@ impl SftpView {
             }
             SftpMsg::Release(None) => self.drag = None,
             SftpMsg::Scrolled(panel, y, h) => self.views[panel] = (y, h),
+            SftpMsg::Sort(panel, key) => {
+                self.panels[panel].sort_by(key);
+                return self.reveal_in(panel);
+            }
+            SftpMsg::ChmodBit(bit) => {
+                if let Some(Dialog::Chmod { bits, text, .. }) = &mut self.dialog {
+                    *bits ^= bit;
+                    *text = format!("{:03o}", *bits);
+                }
+            }
+            SftpMsg::ChmodText(t) => {
+                if let Some(Dialog::Chmod { bits, text, .. }) = &mut self.dialog {
+                    if let Ok(n) = u32::from_str_radix(&t, 8)
+                        && t.len() <= 4
+                    {
+                        *bits = n & 0o7777;
+                    }
+                    *text = t;
+                }
+            }
+            SftpMsg::ChmodRecursive(on) => {
+                if let Some(Dialog::Chmod { recursive, .. }) = &mut self.dialog {
+                    *recursive = on;
+                }
+            }
             SftpMsg::Input(v) => match &mut self.dialog {
                 Some(Dialog::Copy { dest, .. }) => *dest = v,
                 Some(Dialog::Mkdir(s)) | Some(Dialog::Rename(_, s)) | Some(Dialog::Goto(s)) => {
@@ -428,16 +494,27 @@ impl SftpView {
                 self.pump();
             }
             Event::Progress(id, n) => self.queue.progress(id, n),
-            Event::Conflict(id) => {
+            Event::Conflict(id, target) => {
                 let Some(job) = self.queue.jobs().iter().find(|j| j.id == id).cloned() else {
                     return Task::none();
                 };
+                // A rule from Global Options answers it: no dialog.
+                if let Some(choice) = self.rule {
+                    if let Some(w) = &self.transfer {
+                        w.send(Cmd::Run {
+                            job,
+                            choice: Some(choice),
+                        });
+                    }
+                    return Task::none();
+                }
                 let name = job.dst.to_string_lossy().into_owned();
                 self.dialog = Some(Dialog::Conflict {
                     job: id,
                     batch: job.batch,
                     name,
                     all: false,
+                    resumable: target.is_some_and(|t| t > 0 && t < job.size),
                 });
             }
             Event::Finished(id, r) => {
@@ -523,6 +600,31 @@ impl SftpView {
                     let focus = cwd.file_name().map(OsString::from);
                     self.list(self.active, up.to_path_buf(), focus);
                 }
+            }
+            Key::Hidden => {
+                let on = !p.show_hidden();
+                for p in &mut self.panels {
+                    p.set_show_hidden(on);
+                }
+            }
+            Key::Chmod if self.active == LOCAL => self.status = Some(fl!("sftp-chmod-local")),
+            Key::Chmod => {
+                let targets = p.targets();
+                let Some(first) = targets.first().and_then(|e| e.mode) else {
+                    return Task::none();
+                };
+                let has_dir = targets.iter().any(|e| e.dir);
+                let paths: Vec<PathBuf> = targets.iter().map(|e| p.cwd().join(&e.name)).collect();
+                let bits = first & 0o777;
+                self.dialog = Some(Dialog::Chmod {
+                    paths,
+                    init: bits,
+                    bits,
+                    text: format!("{bits:03o}"),
+                    recursive: false,
+                    has_dir,
+                });
+                return widget::text_input::focus(self.input_id.clone());
             }
             Key::Copy => return self.ask_copy(false),
             Key::Move => return self.ask_copy(true),
@@ -676,6 +778,18 @@ impl SftpView {
             Dialog::Goto(path) if !path.trim().is_empty() => {
                 self.list(side, PathBuf::from(path.trim()), None);
             }
+            Dialog::Chmod {
+                paths,
+                init,
+                bits,
+                recursive,
+                ..
+            } => self.send_browse(Cmd::Chmod {
+                paths,
+                set: bits & !init,
+                clear: init & !bits,
+                recursive,
+            }),
             Dialog::Conflict { .. } | Dialog::Mkdir(_) | Dialog::Rename(..) | Dialog::Goto(_) => {}
         }
     }
@@ -771,6 +885,78 @@ impl SftpView {
                 ok_cancel(m, fl!("sftp-rename-title"), input(name), fl!("sm-rename"))
             }
             Dialog::Goto(path) => ok_cancel(m, fl!("sftp-goto-title"), input(path), fl!("sftp-go")),
+            Dialog::Chmod {
+                paths,
+                bits,
+                text,
+                recursive,
+                has_dir,
+                ..
+            } => {
+                let what = match paths.as_slice() {
+                    [one] => one
+                        .file_name()
+                        .map_or_else(String::new, |n| n.to_string_lossy().into_owned()),
+                    many => fl!("sftp-n-items", count = many.len()),
+                };
+                let head = |s: String| -> Element<'_, Message> {
+                    widget::text::caption(s).width(Length::Fixed(90.0)).into()
+                };
+                let mut grid =
+                    widget::column::with_capacity(4)
+                        .spacing(6)
+                        .push(widget::row::with_children(vec![
+                            widget::Space::new().width(Length::Fixed(110.0)).into(),
+                            head(fl!("sftp-chmod-r")),
+                            head(fl!("sftp-chmod-w")),
+                            head(fl!("sftp-chmod-x")),
+                        ]));
+                for (who, shift) in [
+                    (fl!("sftp-chmod-owner"), 6),
+                    (fl!("sftp-chmod-group"), 3),
+                    (fl!("sftp-chmod-other"), 0),
+                ] {
+                    let mut r = widget::row::with_capacity(4)
+                        .spacing(0)
+                        .align_y(Alignment::Center)
+                        .push(widget::text::body(who).width(Length::Fixed(110.0)));
+                    for bit in [0o4, 0o2, 0o1] {
+                        let mask = bit << shift;
+                        r = r.push(
+                            widget::container(
+                                widget::checkbox(bits & mask != 0)
+                                    .on_toggle(move |_| m(SftpMsg::ChmodBit(mask))),
+                            )
+                            .width(Length::Fixed(90.0)),
+                        );
+                    }
+                    grid = grid.push(r);
+                }
+                let mut body = widget::column::with_children(vec![
+                    grid.into(),
+                    widget::text::caption(fl!("sftp-chmod-mode")).into(),
+                    widget::text_input("", text.clone())
+                        .id(self.input_id.clone())
+                        .on_input(move |t| m(SftpMsg::ChmodText(t)))
+                        .on_submit(move |_| m(SftpMsg::DialogOk))
+                        .width(Length::Fixed(90.0))
+                        .into(),
+                ])
+                .spacing(8);
+                if *has_dir {
+                    body = body.push(
+                        widget::checkbox(*recursive)
+                            .label(fl!("sftp-chmod-recursive"))
+                            .on_toggle(move |v| m(SftpMsg::ChmodRecursive(v))),
+                    );
+                }
+                ok_cancel(
+                    m,
+                    fl!("sftp-chmod-title", what = what),
+                    body.into(),
+                    fl!("sftp-apply"),
+                )
+            }
             Dialog::Delete(paths) => {
                 let what = match paths.as_slice() {
                     [one] => one.to_string_lossy().into_owned(),
@@ -788,11 +974,32 @@ impl SftpView {
                     )
                     .into()
             }
-            Dialog::Conflict { name, all, .. } => widget::dialog()
+            Dialog::Conflict {
+                name,
+                all,
+                resumable,
+                ..
+            } => widget::dialog()
                 .title(fl!("sftp-exists-title"))
                 .control(
                     widget::column::with_children(vec![
                         widget::text::body(name.clone()).into(),
+                        widget::row::with_children(
+                            [
+                                (fl!("sftp-newer"), Choice::Newer, true),
+                                (fl!("sftp-resume"), Choice::Resume, *resumable),
+                            ]
+                            .into_iter()
+                            .filter(|(_, _, shown)| *shown)
+                            .map(|(label, c, _)| {
+                                widget::button::standard(label)
+                                    .on_press(m(SftpMsg::Conflict(Some(c))))
+                                    .into()
+                            })
+                            .collect::<Vec<_>>(),
+                        )
+                        .spacing(8)
+                        .into(),
                         widget::checkbox(*all)
                             .label(fl!("sftp-for-all"))
                             .on_toggle(move |v| m(SftpMsg::ConflictAll(v)))
@@ -868,9 +1075,9 @@ impl SftpView {
                     i == p.cursor() && active,
                     i == p.cursor(),
                     p.is_marked(e),
-                    side,
-                    i,
+                    (side, i),
                     self.id,
+                    side == REMOTE,
                 )
             })
             .collect();
@@ -885,7 +1092,43 @@ impl SftpView {
             })
             .height(Length::Fill)
             .width(Length::Fill);
-        let body = widget::column::with_children(vec![header.into(), list.into()]).spacing(2);
+        let col = |label: String, key: SortKey, w: Length, right: bool| -> Element<'_, Message> {
+            let arrow = match (p.sort().key == key, p.sort().asc) {
+                (true, true) => " ▲",
+                (true, false) => " ▼",
+                _ => "",
+            };
+            let t = widget::text::caption(format!("{label}{arrow}")).width(w);
+            let t = if right { t.align_x(Alignment::End) } else { t };
+            widget::mouse_area(t)
+                .on_release(m(SftpMsg::Sort(side, key)))
+                .into()
+        };
+        let mut cols = widget::row::with_capacity(4).spacing(8).padding([0, 8]);
+        cols = cols.push(col(
+            fl!("sftp-col-name"),
+            SortKey::Name,
+            Length::Fill,
+            false,
+        ));
+        if side == REMOTE {
+            cols =
+                cols.push(widget::text::caption(fl!("sftp-col-perm")).width(Length::Fixed(PERM_W)));
+        }
+        cols = cols.push(col(
+            fl!("sftp-col-size"),
+            SortKey::Size,
+            Length::Fixed(90.0),
+            true,
+        ));
+        cols = cols.push(col(
+            fl!("sftp-col-date"),
+            SortKey::Date,
+            Length::Fixed(130.0),
+            true,
+        ));
+        let body =
+            widget::column::with_children(vec![header.into(), cols.into(), list.into()]).spacing(2);
         widget::mouse_area(
             widget::container(body)
                 .width(Length::FillPortion(1))
@@ -1015,9 +1258,9 @@ fn row(
     focused: bool,
     cursor: bool,
     marked: bool,
-    side: usize,
-    i: usize,
+    (side, i): (usize, usize),
     id: TabId,
+    perm: bool,
 ) -> Element<'static, Message> {
     let m = move |x| Message::Sftp(id, x);
     // A newline or another control character in a name would break the row: shown as `?`.
@@ -1044,8 +1287,15 @@ fn row(
             false => t,
         }
     };
-    let content = widget::row::with_children(vec![
-        text(name).width(Length::Fill).into(),
+    let mut cells: Vec<Element<'static, Message>> = vec![text(name).width(Length::Fill).into()];
+    if perm {
+        let rights = match (e.is_parent(), e.mode) {
+            (false, Some(mode)) => mode_text(mode, e.dir),
+            _ => String::new(),
+        };
+        cells.push(text(rights).width(Length::Fixed(PERM_W)).into());
+    }
+    cells.extend([
         text(size)
             .width(Length::Fixed(90.0))
             .align_x(Alignment::End)
@@ -1054,11 +1304,12 @@ fn row(
             .width(Length::Fixed(130.0))
             .align_x(Alignment::End)
             .into(),
-    ])
-    .spacing(8)
-    .padding([0, 8])
-    .height(Length::Fixed(ROW))
-    .align_y(Alignment::Center);
+    ]);
+    let content = widget::row::with_children(cells)
+        .spacing(8)
+        .padding([0, 8])
+        .height(Length::Fixed(ROW))
+        .align_y(Alignment::Center);
     // The active panel's cursor: the accent; the other panel's: an outline.
     let cell = widget::container(content)
         .width(Length::Fill)
@@ -1097,6 +1348,7 @@ fn read_local(path: &std::path::Path) -> std::io::Result<Vec<Entry>> {
             dir: meta.is_dir(),
             size: meta.len(),
             mtime,
+            mode: None,
         });
     }
     Ok(out)

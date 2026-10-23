@@ -36,6 +36,7 @@ pub fn list<R: Read, W: Write>(c: &mut Client<R, W>, path: &Path) -> io::Result<
             dir: a.is_dir(),
             size: a.size.unwrap_or(0),
             mtime: a.mtime.map(i64::from),
+            mode: a.perm.map(|p| p & 0o7777),
         });
     }
     Ok(out)
@@ -50,6 +51,34 @@ pub fn delete_remote<R: Read, W: Write>(c: &mut Client<R, W>, p: &Path) -> io::R
         delete_remote(c, &p.join(&e.name))?;
     }
     c.rmdir(p)
+}
+
+/// Turn on `set` and off `clear` (only the bits the user changed: files that differ keep their
+/// other bits) on `paths`, and under folders when `recursive`. Links are left alone (chmod would
+/// change their target). The first failure stops it.
+pub fn chmod_remote<R: Read, W: Write>(
+    c: &mut Client<R, W>,
+    paths: &[PathBuf],
+    set: u32,
+    clear: u32,
+    recursive: bool,
+) -> io::Result<()> {
+    for p in paths {
+        let a = c.lstat(p)?;
+        if a.is_link() {
+            continue;
+        }
+        let old = a.perm.unwrap_or(0) & 0o7777;
+        let new = (old & !clear) | set;
+        if new != old {
+            c.chmod(p, new)?;
+        }
+        if recursive && a.is_dir() {
+            let inside: Vec<PathBuf> = (c.read_dir(p)?.iter()).map(|e| p.join(&e.name)).collect();
+            chmod_remote(c, &inside, set, clear, true)?;
+        }
+    }
+    Ok(())
 }
 
 /// `mkdir -p` on the server.
@@ -160,8 +189,56 @@ fn part(dst: &Path) -> PathBuf {
     dst.with_file_name(n)
 }
 
+/// What the target's state and the answer come to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Plan1 {
+    Skip,
+    /// The whole file, replacing what is there.
+    Full,
+    /// From byte n on, onto the shorter target.
+    Resume(u64),
+}
+
+/// `(size, mtime secs)` of the source and of the target.
+type Stat = (u64, i64);
+
+fn decide(choice: Choice, src: Stat, dst: Stat) -> Plan1 {
+    match choice {
+        Choice::Skip => Plan1::Skip,
+        Choice::Overwrite => Plan1::Full,
+        Choice::Newer if src.1 > dst.1 => Plan1::Full,
+        Choice::Newer => Plan1::Skip,
+        Choice::Resume if dst.0 < src.0 && dst.0 > 0 => Plan1::Resume(dst.0),
+        Choice::Resume => Plan1::Full,
+    }
+}
+
+fn local_stat(p: &Path) -> io::Result<Stat> {
+    let m = std::fs::metadata(p)?;
+    let secs = m
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_secs() as i64);
+    Ok((m.len(), secs))
+}
+
+fn remote_stat<R: Read, W: Write>(c: &mut Client<R, W>, p: &Path) -> io::Result<Stat> {
+    let a = c.stat(p)?;
+    Ok((a.size.unwrap_or(0), i64::from(a.mtime.unwrap_or(0))))
+}
+
+/// The size of the file a job would replace, if it is there.
+pub fn target_size<R: Read, W: Write>(c: &mut Client<R, W>, job: &Job) -> Option<u64> {
+    match job.dir {
+        Dir::Down => std::fs::metadata(&job.dst).ok().map(|m| m.len()),
+        Dir::Up => c.stat(&job.dst).ok().and_then(|a| a.size),
+    }
+}
+
 /// One file of the queue. `progress(bytes)` false cancels (`Interrupted`); the target is replaced
-/// only by a complete copy; a move removes the source only then.
+/// only by a complete copy; a move removes the source only then. A resumed copy is written onto
+/// the shorter target itself (it was incomplete anyway), so a cancel leaves it resumable again.
 pub fn transfer<R: Read, W: Write>(
     c: &mut Client<R, W>,
     job: &Job,
@@ -172,14 +249,34 @@ pub fn transfer<R: Read, W: Write>(
         Dir::Down => job.dst.symlink_metadata().is_ok(),
         Dir::Up => c.lstat(&job.dst).is_ok(),
     };
-    match (exists, choice) {
-        (true, None) => return Ok(Copied::Exists),
-        (true, Some(Choice::Skip)) => return Ok(Copied::Skipped),
-        _ => {}
+    let mut how = Plan1::Full;
+    if exists {
+        let Some(choice) = choice else {
+            return Ok(Copied::Exists);
+        };
+        let (src, dst) = match job.dir {
+            Dir::Down => (remote_stat(c, &job.src)?, local_stat(&job.dst)?),
+            Dir::Up => (local_stat(&job.src)?, remote_stat(c, &job.dst)?),
+        };
+        how = decide(choice, src, dst);
+        if how == Plan1::Skip {
+            return Ok(Copied::Skipped);
+        }
     }
     let tmp = part(&job.dst);
-    match job.dir {
-        Dir::Down => {
+    match (job.dir, how) {
+        (Dir::Down, Plan1::Resume(from)) => {
+            let mut out = std::fs::OpenOptions::new().append(true).open(&job.dst)?;
+            c.download_from(&job.src, from, &mut out, progress)?;
+            out.sync_all()?;
+        }
+        (Dir::Up, Plan1::Resume(from)) => {
+            use std::io::{Seek, SeekFrom};
+            let mut input = std::fs::File::open(&job.src)?;
+            input.seek(SeekFrom::Start(from))?;
+            c.upload_from(&mut input, &job.dst, from, progress)?;
+        }
+        (Dir::Down, _) => {
             if let Some(parent) = job.dst.parent() {
                 std::fs::create_dir_all(parent)?;
             }
@@ -195,7 +292,7 @@ pub fn transfer<R: Read, W: Write>(
             }
             std::fs::rename(&tmp, &job.dst)?;
         }
-        Dir::Up => {
+        (Dir::Up, _) => {
             let mut input = std::fs::File::open(&job.src)?;
             if let Err(e) = c.upload(&mut input, &tmp, progress) {
                 if !is_fatal(&e) {
@@ -387,5 +484,94 @@ mod tests {
         let mut l = list(&mut c, d.path()).unwrap();
         l.sort_by(|a, b| a.name.cmp(&b.name));
         assert!(l.iter().all(|e| e.dir), "{l:?}");
+    }
+
+    #[test]
+    fn decide_rules() {
+        let (new, old) = ((10, 200), (10, 100));
+        assert_eq!(decide(Choice::Newer, new, old), Plan1::Full);
+        assert_eq!(decide(Choice::Newer, old, new), Plan1::Skip);
+        assert_eq!(decide(Choice::Newer, old, old), Plan1::Skip);
+        assert_eq!(decide(Choice::Resume, (10, 1), (4, 1)), Plan1::Resume(4));
+        assert_eq!(decide(Choice::Resume, (10, 1), (10, 1)), Plan1::Full);
+        assert_eq!(decide(Choice::Resume, (10, 1), (12, 1)), Plan1::Full);
+        assert_eq!(decide(Choice::Resume, (10, 1), (0, 1)), Plan1::Full);
+    }
+
+    #[test]
+    fn newer_skips_an_older_source() {
+        let Some((_s, mut c)) = server() else { return };
+        let (r, l) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let (src, dst) = (r.path().join("f"), l.path().join("f"));
+        std::fs::write(&src, "source").unwrap();
+        std::fs::write(&dst, "target").unwrap();
+        let t = |secs| std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs);
+        let set = |p: &Path, secs| {
+            std::fs::File::options()
+                .write(true)
+                .open(p)
+                .unwrap()
+                .set_modified(t(secs))
+                .unwrap()
+        };
+        let j = job(Dir::Down, &src, &dst, false);
+        set(&src, 1000);
+        set(&dst, 2000);
+        let newer = Some(Choice::Newer);
+        assert_eq!(
+            transfer(&mut c, &j, newer, |_| true).unwrap(),
+            Copied::Skipped
+        );
+        assert_eq!(std::fs::read_to_string(&dst).unwrap(), "target");
+        set(&src, 3000);
+        assert_eq!(transfer(&mut c, &j, newer, |_| true).unwrap(), Copied::Done);
+        assert_eq!(std::fs::read_to_string(&dst).unwrap(), "source");
+    }
+
+    #[test]
+    fn resume_carries_on_in_both_directions() {
+        let Some((_s, mut c)) = server() else { return };
+        let (r, l) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let whole: Vec<u8> = (0..300_000u32).map(|i| (i % 251) as u8).collect();
+        let resume = Some(Choice::Resume);
+        for dir in [Dir::Down, Dir::Up] {
+            let (src, dst) = match dir {
+                Dir::Down => (r.path().join("d"), l.path().join("d")),
+                Dir::Up => (l.path().join("u"), r.path().join("u")),
+            };
+            std::fs::write(&src, &whole).unwrap();
+            std::fs::write(&dst, &whole[..100_000]).unwrap();
+            let j = job(dir, &src, &dst, false);
+            assert_eq!(
+                transfer(&mut c, &j, resume, |_| true).unwrap(),
+                Copied::Done
+            );
+            assert_eq!(std::fs::read(&dst).unwrap(), whole, "{dir:?}");
+        }
+    }
+
+    #[test]
+    fn chmod_changes_only_the_asked_bits_recursively() {
+        use std::os::unix::fs::PermissionsExt;
+        let Some((_s, mut c)) = server() else { return };
+        let d = tempfile::tempdir().unwrap();
+        let top = d.path().join("top");
+        std::fs::create_dir_all(top.join("sub")).unwrap();
+        let (a, b) = (top.join("a"), top.join("sub/b"));
+        std::fs::write(&a, "").unwrap();
+        std::fs::write(&b, "").unwrap();
+        let mode =
+            |p: &Path, m| std::fs::set_permissions(p, std::fs::Permissions::from_mode(m)).unwrap();
+        mode(&a, 0o644);
+        mode(&b, 0o600);
+        // group write on, other read off
+        chmod_remote(&mut c, std::slice::from_ref(&top), 0o020, 0o004, true).unwrap();
+        let got = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o7777;
+        assert_eq!(got(&a), 0o660);
+        assert_eq!(got(&b), 0o620);
+        // not recursive: the folder only
+        chmod_remote(&mut c, std::slice::from_ref(&top), 0o001, 0, false).unwrap();
+        assert_eq!(got(&a), 0o660);
+        assert_eq!(got(&top) & 0o001, 0o001);
     }
 }

@@ -29,6 +29,10 @@ pub enum State {
 pub enum Choice {
     Overwrite,
     Skip,
+    /// Overwrite if the source is newer, else skip.
+    Newer,
+    /// The target is shorter than the source: carry on from its end (else overwrite).
+    Resume,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
