@@ -59,17 +59,20 @@ class _Screen:
         return bool(_call("Screen.WaitForString", self._tab, text, timeout, bCaseInsensitive))
 
     def WaitForStrings(self, *texts, **kw):
-        # WaitForStrings("a", "b", timeout) or WaitForStrings(["a", "b"], timeout)
+        # WaitForStrings("a", "b"[, timeout[, bCaseInsensitive]]) or WaitForStrings(["a", "b"], …)
         texts = list(texts)
         timeout = kw.get("timeout", 0)
+        fold = kw.get("bCaseInsensitive", False)
+        if texts and isinstance(texts[-1], bool):
+            fold = texts.pop()
         if texts and isinstance(texts[0], (list, tuple)):
             items = list(texts[0])
             timeout = texts[1] if len(texts) > 1 else timeout
         else:
-            if texts and isinstance(texts[-1], (int, float)) and not isinstance(texts[-1], bool):
+            if texts and isinstance(texts[-1], (int, float)):
                 timeout = texts.pop()
             items = texts
-        return _call("Screen.WaitForStrings", self._tab, items, timeout, kw.get("bCaseInsensitive", False))
+        return _call("Screen.WaitForStrings", self._tab, items, timeout, fold)
 
     def ReadString(self, text, timeout=0, bCaseInsensitive=False):
         r = _call("Screen.ReadString", self._tab, text, timeout, bCaseInsensitive)

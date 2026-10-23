@@ -33,7 +33,7 @@ impl std::fmt::Debug for Reply {
 }
 
 impl Reply {
-    fn send(&self, a: Answer) {
+    pub fn send(&self, a: Answer) {
         if let Some(tx) = self.0.lock().unwrap_or_else(|e| e.into_inner()).take() {
             let _ = tx.send(a);
         }
@@ -102,7 +102,7 @@ pub struct Outcome {
     /// The last dialog went: the keys back to the terminal.
     pub refocus: bool,
     /// `Session.Connect` of a script: the saved session to open.
-    pub connect: Option<String>,
+    pub connect: Option<(String, Reply)>,
 }
 
 impl Scripts {
@@ -126,6 +126,9 @@ impl Scripts {
 
     /// Starts `script` on tab `tab`.
     pub fn run(&mut self, script: &Path, args: &[String], tab: u64) -> Result<(), String> {
+        if !script.is_file() {
+            return Err(fl!("script-missing", name = script.display().to_string()));
+        }
         let n = self.next;
         let sock = self
             .dir
@@ -158,7 +161,7 @@ impl Scripts {
             .unwrap_or_else(|e| e.into_inner())
             .get(&tab)
         {
-            tap.script_buffer().arm();
+            tap.script_buffer().arm_once();
         }
         self.next += 1;
         let cancel = Arc::new(AtomicBool::new(false));
@@ -213,10 +216,8 @@ impl Scripts {
                     }
                     "Session.Connect" => {
                         match connect_arg(c.args.first().and_then(Value::as_str).unwrap_or("")) {
-                            Some(name) => {
-                                out.connect = Some(name);
-                                c.reply.send(Ok(Value::Null));
-                            }
+                            // Answered once the tab exists (the app opens it).
+                            Some(name) => out.connect = Some((name, c.reply.clone())),
                             None => c.reply.send(Err(
                                 "Session.Connect: only \"/S name\" (a saved session) is supported"
                                     .into(),
@@ -232,10 +233,11 @@ impl Scripts {
                 let (gone, kept): (VecDeque<_>, VecDeque<_>) =
                     self.asks.drain(..).partition(|a| a.call.run == n);
                 self.asks = kept;
+                let gone_any = !gone.is_empty();
                 for a in gone {
                     a.call.reply.send(Err("cancelled".into()));
                 }
-                out.refocus = self.asks.is_empty();
+                out.refocus = gone_any && self.asks.is_empty();
                 if self.runs.is_empty() {
                     for tap in self.taps.lock().unwrap_or_else(|e| e.into_inner()).values() {
                         tap.script_buffer().disarm();
@@ -450,12 +452,18 @@ fn open_log() -> (Option<std::fs::File>, u64) {
     if let Some(d) = path.parent() {
         let _ = std::fs::create_dir_all(d);
     }
+    // Not endless: over 1 MiB it starts again.
+    let big = std::fs::metadata(&path).is_ok_and(|m| m.len() > 1 << 20);
     let f = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
+        .truncate(false)
         .mode(0o600)
         .open(&path)
         .ok();
+    if big && let Some(f) = &f {
+        let _ = f.set_len(0);
+    }
     let len = f
         .as_ref()
         .and_then(|f| f.metadata().ok())

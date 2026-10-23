@@ -13,7 +13,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 /// Text kept for waiting: the last bytes of it.
-const WINDOW: usize = 1 << 20;
+const WINDOW: usize = 256 << 10;
 
 /// How often a blocked wait looks at the cancel flag.
 const TICK: Duration = Duration::from_millis(100);
@@ -109,11 +109,17 @@ impl Buffer {
         let needles: Vec<String> = needles.iter().map(|n| fold(n)).collect();
         let mut g = self.lock();
         loop {
-            let text = format!("{}{}", g.seen, g.clean.partial());
-            let from = (g.skip.min(text.len())..text.len())
-                .find(|&i| text.is_char_boundary(i))
-                .unwrap_or(text.len());
-            let tail = &text[from..];
+            // What no wait has used up: the rest of `seen` and the line being written.
+            let partial = g.clean.partial();
+            let seen_len = g.seen.len();
+            let (from, tail) = if g.skip < seen_len {
+                let f = boundary(&g.seen, g.skip);
+                (f, format!("{}{partial}", &g.seen[f..]))
+            } else {
+                let f = boundary(&partial, g.skip - seen_len);
+                (seen_len + f, partial[f..].to_string())
+            };
+            let tail = tail.as_str();
             let hay = fold(tail);
             // ASCII folding keeps every length, so positions in `hay` are positions in `tail`.
             let hit = needles
@@ -147,6 +153,13 @@ impl Buffer {
                 .0;
         }
     }
+}
+
+/// The first char boundary of `s` at or after `i` (`s.len()` past the end).
+fn boundary(s: &str, i: usize) -> usize {
+    (i.min(s.len())..=s.len())
+        .find(|&j| s.is_char_boundary(j))
+        .unwrap_or(s.len())
 }
 
 /// What the app gives a running script.
@@ -296,6 +309,7 @@ pub fn command(
     let env = vec![
         ("PYTHONPATH".into(), python.display().to_string()),
         ("PYTHONUNBUFFERED".into(), "1".into()),
+        ("PYTHONDONTWRITEBYTECODE".into(), "1".into()),
         ("SHAGSHELL_SCRIPT_SOCK".into(), sock.display().to_string()),
         ("SHAGSHELL_SCRIPT_TAB".into(), tab.to_string()),
         ("SHAGSHELL_SCRIPT".into(), script.display().to_string()),
@@ -422,6 +436,28 @@ mod tests {
             &no(),
         );
         assert!(matches!(w, Wait::Found(0, _)));
+    }
+
+    #[test]
+    fn regression_text_after_a_consumed_partial_line_is_found() {
+        // A prompt was used up while still the unfinished line; the output that follows it
+        // (same line, then new lines) is searched from there.
+        let b = armed();
+        b.feed(b"router# ");
+        assert!(matches!(
+            b.wait(&s(&["#"]), Some(Duration::from_millis(20)), false, &no()),
+            Wait::Found(..)
+        ));
+        b.feed(b"show ver\r\nVersion 15\r\nrouter# ");
+        let w = b.wait(
+            &s(&["Version"]),
+            Some(Duration::from_millis(20)),
+            false,
+            &no(),
+        );
+        assert_eq!(w, Wait::Found(0, " show ver\n".into()));
+        let w = b.wait(&s(&["#"]), Some(Duration::from_millis(20)), false, &no());
+        assert_eq!(w, Wait::Found(0, " 15\nrouter".into()));
     }
 
     struct Fake {

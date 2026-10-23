@@ -360,3 +360,4 @@ script-stopped = Script stopped: { $name }
 script-failed = Script { $name }: { $error }
 script-no-tab = Open a terminal tab first: a script works on it
 script-no-python = Cannot start python3: { $error }
+script-missing = No such script: { $name }

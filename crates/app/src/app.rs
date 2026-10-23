@@ -415,17 +415,12 @@ impl App {
             Message::TermTx(tx) => {
                 self.tabs.set_sender(tx);
                 if let Some((path, args)) = self.startup.take() {
+                    // The shell is the active tab at once; what it prints waits in the script's buffer.
                     let open = self.tabs.open(tabs::Launch::local_shell(), &look());
-                    let run = Task::perform(
-                        tokio::time::sleep(std::time::Duration::from_millis(500)),
-                        move |()| {
-                            cosmic::Action::App(Message::Script(crate::script::ScMsg::Start(
-                                path.clone(),
-                                args.clone(),
-                            )))
-                        },
-                    );
-                    return open.chain(run);
+                    return Task::batch([
+                        open,
+                        self.script(crate::script::ScMsg::Start(path, args)),
+                    ]);
                 }
             }
             Message::Term(id, e) => {
@@ -901,8 +896,9 @@ impl App {
         if out.refocus {
             tasks.push(self.tabs.focus_active());
         }
-        if let Some(name) = out.connect {
+        if let Some((name, reply)) = out.connect {
             tasks.push(self.open_sessions(&[name]));
+            reply.send(Ok(serde_json::Value::Null)); // the tab is there now
         }
         Task::batch(tasks)
     }
