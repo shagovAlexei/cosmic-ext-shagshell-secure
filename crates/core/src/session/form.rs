@@ -16,6 +16,9 @@ pub struct Form {
     pub credential: String,
     /// Button Bar name, "" = the one picked on the bar itself.
     pub button_bar: String,
+    pub log_file: String,
+    pub log_append: bool,
+    pub log_raw: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -45,6 +48,9 @@ impl Form {
             extra: s.extra.clone(),
             credential: text(&s.credential),
             button_bar: text(&s.button_bar),
+            log_file: s.log_file.clone(),
+            log_append: s.log_append,
+            log_raw: s.log_raw,
         }
     }
 
@@ -78,6 +84,9 @@ impl Form {
             extra,
             credential: opt(&self.credential),
             button_bar: opt(&self.button_bar),
+            log_file: self.log_file.trim().to_string(),
+            log_append: self.log_append,
+            log_raw: self.log_raw,
             ..base.clone()
         })
     }

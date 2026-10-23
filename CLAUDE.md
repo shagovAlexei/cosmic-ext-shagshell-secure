@@ -74,7 +74,7 @@ We do **not** implement SSH. The system OpenSSH does it; we drive it.
   - `sftp/{proto,queue}.rs` — the SFTP v3 client (tested against `/usr/lib/openssh/sftp-server` run directly) and the transfer queue (a pure state machine: one job at a time, retry, cancel, per-batch «for all»);
   - `bookmarks.rs` — SFTP bookmarks (`bookmarks.toml`, per place); `uri.rs` — `text/uri-list` of dropped files → paths;
   - `panel.rs` — a file panel (listing, cursor, marks, targets) and size / time text, after shagoff-commander;
-  - `logfile.rs` — log name templates `%H %S %Y %M %D %h %m %s %P %U`;
+  - `logfile.rs` — log name templates `%H %S %Y %M %D %h %m %s %P %U`, `Cleaner` (output → plain text), `Logger`; the app copies a PTY's output to it through `term::log::TeePty`;
   - `macros.rs` — Button Bar / Command Window escapes (`\r \n \t \e \\ \p`);
   - `buttonbar.rs` — named bars, buttons (Send String / Run Script / Menu Function / Launch App), `buttonbars.toml`;
   - `script.rs` — the `crt` JSON-lines socket protocol for Python scripts.

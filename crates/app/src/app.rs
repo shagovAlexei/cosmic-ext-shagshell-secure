@@ -126,6 +126,7 @@ impl Application for App {
         let asks = crate::askpass::Asks::new(askpass_sock(&control_dir));
         let mut tabs = Tabs::default();
         tabs.set_sftp_prefs(&config);
+        tabs.set_log_prefs(&config);
         let mut app = Self {
             core,
             config,
@@ -149,6 +150,184 @@ impl Application for App {
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
+        let task = self.handle(message);
+        // A log that could not start, or stopped by itself (disk full): said in the status bar.
+        if let Some(n) = self.tabs.take_notice() {
+            self.sessions.notice = Some(n);
+        }
+        task
+    }
+
+    fn subscription(&self) -> Subscription<Message> {
+        Subscription::batch([
+            // Not a held key's repeat. Keys no widget took: all of the app's (the terminal lets
+            // them through). Taken by a text field: only the Alt / Ctrl+Tab ones (Alt+Q would be a
+            // «q» there), never Ctrl+Shift+C / V / W — the field's paste must not paste into the
+            // terminal too. Enter and the tree's keys only when no widget took them.
+            event::listen_with(|e, status, w| {
+                input(
+                    w,
+                    match e {
+                        cosmic::iced::Event::Keyboard(keyboard::Event::KeyPressed {
+                            physical_key,
+                            modifiers,
+                            repeat: false,
+                            ..
+                        }) => match key_action(&physical_key, modifiers) {
+                            Some(a) if status == event::Status::Ignored || over_fields(a) => {
+                                Some(Message::Action(a))
+                            }
+                            Some(_) => None,
+                            None if status == event::Status::Ignored => {
+                                Some(Message::Key(physical_key, modifiers))
+                            }
+                            None => None,
+                        },
+                        _ => None,
+                    },
+                )
+            }),
+            // Ctrl / Shift for clicks in the session tree; from any window, or a Ctrl let go in
+            // Session Options would stay held for the tree.
+            event::listen_with(|e, _, _| match e {
+                cosmic::iced::Event::Keyboard(keyboard::Event::ModifiersChanged(m)) => {
+                    Some(Message::Sessions(SmMsg::Mods(m)))
+                }
+                _ => None,
+            }),
+            // A row (drag) or the splitter is held: where the pointer goes, where it comes up.
+            match self.sessions.holding() {
+                true => event::listen_with(|e, _, w| {
+                    use cosmic::iced::mouse::{Button, Event as M};
+                    input(
+                        w,
+                        match e {
+                            cosmic::iced::Event::Mouse(M::ButtonReleased(Button::Left)) => {
+                                Some(Message::Sessions(SmMsg::Release))
+                            }
+                            cosmic::iced::Event::Mouse(M::CursorMoved { position }) => {
+                                Some(Message::Sessions(SmMsg::Cursor(position.x)))
+                            }
+                            _ => None,
+                        },
+                    )
+                }),
+                false => Subscription::none(),
+            },
+            // Session Options' × / Alt+F4: Cancel.
+            cosmic::iced::window::close_requests().map(Message::CloseRequested),
+            crate::term::subscription(),
+            crate::sftp_view::subscription(),
+            match self.tabs.has_edits() {
+                true => cosmic::iced::time::every(std::time::Duration::from_secs(2))
+                    .map(|_| Message::EditTick),
+                false => Subscription::none(),
+            },
+            crate::askpass::subscription(askpass_sock(&self.control_dir)),
+            self.core()
+                .watch_config::<Config>(APP_ID)
+                .map(|u| Message::Config(u.config)),
+        ])
+    }
+
+    fn system_theme_update(
+        &mut self,
+        _: &[&'static str],
+        _: &cosmic::cosmic_theme::Theme,
+    ) -> Task<Message> {
+        self.tabs.restyle(&look());
+        Task::none()
+    }
+
+    fn system_theme_mode_update(
+        &mut self,
+        _: &[&'static str],
+        _: &cosmic::cosmic_theme::ThemeMode,
+    ) -> Task<Message> {
+        self.tabs.restyle(&look());
+        Task::none()
+    }
+
+    fn context_drawer(&self) -> Option<cosmic::app::context_drawer::ContextDrawer<'_, Message>> {
+        match self.drawer? {
+            Drawer::About => Some(about::view(&self.about)),
+            Drawer::Options => Some(options::view(&self.config, self.separate)),
+        }
+    }
+
+    /// Session Options; popups (menus) are windows too, libcosmic draws them itself, only
+    /// asking here.
+    fn view_window(&self, id: cosmic::iced::window::Id) -> Element<'_, Message> {
+        let focused = self.core.focused_window() == Some(id);
+        if let Some(o) = self.options.as_ref().filter(|o| o.window == id) {
+            return o.view(focused);
+        }
+        match self.creds_win.as_ref().filter(|c| c.window == id) {
+            Some(c) => c.view(focused),
+            None => widget::Space::new().into(),
+        }
+    }
+
+    fn dialog(&self) -> Option<Element<'_, Message>> {
+        (self.asks.dialog(|t| self.tabs.title(t)))
+            .or_else(|| self.buttons.dialog())
+            .or_else(|| self.tabs.dialog())
+            .or_else(|| self.quick.as_ref().map(QuickConnect::view))
+            .or_else(|| self.sessions.dialog())
+    }
+
+    fn header_start(&self) -> Vec<Element<'_, Message>> {
+        vec![menu::bar(
+            (
+                self.config.session_manager_visible,
+                self.config.command_window_visible,
+                self.config.button_bar_visible,
+            ),
+            self.tabs.menu_state(),
+        )]
+    }
+
+    fn view(&self) -> Element<'_, Message> {
+        let window = (self.core.main_window_id()).unwrap_or(cosmic::iced::window::Id::RESERVED);
+        let center = match self
+            .tabs
+            .view(&self.config, window, self.dialog().is_none())
+        {
+            Some(tabs) => tabs,
+            None => widget::container(
+                widget::column::with_children(vec![
+                    widget::text::title3(fl!("no-sessions")).into(),
+                    widget::text(fl!("no-sessions-hint")).into(),
+                ])
+                .spacing(8)
+                .align_x(cosmic::iced::Alignment::Center),
+            )
+            .center(Length::Fill)
+            .into(),
+        };
+        let mut middle = widget::row::with_capacity(2).spacing(2);
+        if self.config.session_manager_visible {
+            middle = middle.push(self.sessions.view(window));
+        }
+        let mut col = widget::column::with_capacity(4)
+            .push(toolbar::view())
+            .push(middle.push(center).height(Length::Fill));
+        if self.config.command_window_visible {
+            col = col.push(self.command.view());
+        }
+        if self.config.button_bar_visible {
+            col = col.push(self.buttons.view(self.shown_bar(), window));
+        }
+        col.push(status_bar::view(
+            self.tabs.status(),
+            self.sessions.notice.as_deref(),
+        ))
+        .into()
+    }
+}
+
+impl App {
+    fn handle(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::Action(a) => return self.act(a),
             Message::Config(c) => self.config = c,
@@ -160,6 +339,7 @@ impl Application for App {
                 self.config = c;
                 self.save_config();
                 self.tabs.set_sftp_prefs(&self.config);
+                self.tabs.set_log_prefs(&self.config);
                 let mut tasks = Vec::new();
                 if lang {
                     crate::i18n::init(&config::languages(
@@ -410,175 +590,6 @@ impl Application for App {
         Task::none()
     }
 
-    fn subscription(&self) -> Subscription<Message> {
-        Subscription::batch([
-            // Not a held key's repeat. Keys no widget took: all of the app's (the terminal lets
-            // them through). Taken by a text field: only the Alt / Ctrl+Tab ones (Alt+Q would be a
-            // «q» there), never Ctrl+Shift+C / V / W — the field's paste must not paste into the
-            // terminal too. Enter and the tree's keys only when no widget took them.
-            event::listen_with(|e, status, w| {
-                input(
-                    w,
-                    match e {
-                        cosmic::iced::Event::Keyboard(keyboard::Event::KeyPressed {
-                            physical_key,
-                            modifiers,
-                            repeat: false,
-                            ..
-                        }) => match key_action(&physical_key, modifiers) {
-                            Some(a) if status == event::Status::Ignored || over_fields(a) => {
-                                Some(Message::Action(a))
-                            }
-                            Some(_) => None,
-                            None if status == event::Status::Ignored => {
-                                Some(Message::Key(physical_key, modifiers))
-                            }
-                            None => None,
-                        },
-                        _ => None,
-                    },
-                )
-            }),
-            // Ctrl / Shift for clicks in the session tree; from any window, or a Ctrl let go in
-            // Session Options would stay held for the tree.
-            event::listen_with(|e, _, _| match e {
-                cosmic::iced::Event::Keyboard(keyboard::Event::ModifiersChanged(m)) => {
-                    Some(Message::Sessions(SmMsg::Mods(m)))
-                }
-                _ => None,
-            }),
-            // A row (drag) or the splitter is held: where the pointer goes, where it comes up.
-            match self.sessions.holding() {
-                true => event::listen_with(|e, _, w| {
-                    use cosmic::iced::mouse::{Button, Event as M};
-                    input(
-                        w,
-                        match e {
-                            cosmic::iced::Event::Mouse(M::ButtonReleased(Button::Left)) => {
-                                Some(Message::Sessions(SmMsg::Release))
-                            }
-                            cosmic::iced::Event::Mouse(M::CursorMoved { position }) => {
-                                Some(Message::Sessions(SmMsg::Cursor(position.x)))
-                            }
-                            _ => None,
-                        },
-                    )
-                }),
-                false => Subscription::none(),
-            },
-            // Session Options' × / Alt+F4: Cancel.
-            cosmic::iced::window::close_requests().map(Message::CloseRequested),
-            crate::term::subscription(),
-            crate::sftp_view::subscription(),
-            match self.tabs.has_edits() {
-                true => cosmic::iced::time::every(std::time::Duration::from_secs(2))
-                    .map(|_| Message::EditTick),
-                false => Subscription::none(),
-            },
-            crate::askpass::subscription(askpass_sock(&self.control_dir)),
-            self.core()
-                .watch_config::<Config>(APP_ID)
-                .map(|u| Message::Config(u.config)),
-        ])
-    }
-
-    fn system_theme_update(
-        &mut self,
-        _: &[&'static str],
-        _: &cosmic::cosmic_theme::Theme,
-    ) -> Task<Message> {
-        self.tabs.restyle(&look());
-        Task::none()
-    }
-
-    fn system_theme_mode_update(
-        &mut self,
-        _: &[&'static str],
-        _: &cosmic::cosmic_theme::ThemeMode,
-    ) -> Task<Message> {
-        self.tabs.restyle(&look());
-        Task::none()
-    }
-
-    fn context_drawer(&self) -> Option<cosmic::app::context_drawer::ContextDrawer<'_, Message>> {
-        match self.drawer? {
-            Drawer::About => Some(about::view(&self.about)),
-            Drawer::Options => Some(options::view(&self.config, self.separate)),
-        }
-    }
-
-    /// Session Options; popups (menus) are windows too, libcosmic draws them itself, only
-    /// asking here.
-    fn view_window(&self, id: cosmic::iced::window::Id) -> Element<'_, Message> {
-        let focused = self.core.focused_window() == Some(id);
-        if let Some(o) = self.options.as_ref().filter(|o| o.window == id) {
-            return o.view(focused);
-        }
-        match self.creds_win.as_ref().filter(|c| c.window == id) {
-            Some(c) => c.view(focused),
-            None => widget::Space::new().into(),
-        }
-    }
-
-    fn dialog(&self) -> Option<Element<'_, Message>> {
-        (self.asks.dialog(|t| self.tabs.title(t)))
-            .or_else(|| self.buttons.dialog())
-            .or_else(|| self.tabs.dialog())
-            .or_else(|| self.quick.as_ref().map(QuickConnect::view))
-            .or_else(|| self.sessions.dialog())
-    }
-
-    fn header_start(&self) -> Vec<Element<'_, Message>> {
-        vec![menu::bar(
-            (
-                self.config.session_manager_visible,
-                self.config.command_window_visible,
-                self.config.button_bar_visible,
-            ),
-            self.tabs.menu_state(),
-        )]
-    }
-
-    fn view(&self) -> Element<'_, Message> {
-        let window = (self.core.main_window_id()).unwrap_or(cosmic::iced::window::Id::RESERVED);
-        let center = match self
-            .tabs
-            .view(&self.config, window, self.dialog().is_none())
-        {
-            Some(tabs) => tabs,
-            None => widget::container(
-                widget::column::with_children(vec![
-                    widget::text::title3(fl!("no-sessions")).into(),
-                    widget::text(fl!("no-sessions-hint")).into(),
-                ])
-                .spacing(8)
-                .align_x(cosmic::iced::Alignment::Center),
-            )
-            .center(Length::Fill)
-            .into(),
-        };
-        let mut middle = widget::row::with_capacity(2).spacing(2);
-        if self.config.session_manager_visible {
-            middle = middle.push(self.sessions.view(window));
-        }
-        let mut col = widget::column::with_capacity(4)
-            .push(toolbar::view())
-            .push(middle.push(center).height(Length::Fill));
-        if self.config.command_window_visible {
-            col = col.push(self.command.view());
-        }
-        if self.config.button_bar_visible {
-            col = col.push(self.buttons.view(self.shown_bar(), window));
-        }
-        col.push(status_bar::view(
-            self.tabs.status(),
-            self.sessions.notice.as_deref(),
-        ))
-        .into()
-    }
-}
-
-impl App {
     /// The bar on screen: the active session's own, else the one picked on the bar.
     fn shown_bar(&self) -> Option<usize> {
         let own = (self.tabs.active_session())
@@ -1408,6 +1419,13 @@ fn ssh_launch(
             session: session.map(str::to_string),
         },
         sftp: false,
+        log: (!s.log_file.is_empty()).then(|| tabs::LogSpec {
+            file: s.log_file.clone(),
+            append: s.log_append,
+            raw: s.log_raw,
+            port: s.port,
+            user: s.user.clone().unwrap_or_default(),
+        }),
     })
 }
 

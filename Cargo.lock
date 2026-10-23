@@ -4319,7 +4319,7 @@ dependencies = [
 
 [[package]]
 name = "shagshell"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "alacritty_terminal",
  "cosmic-text",
@@ -4328,6 +4328,7 @@ dependencies = [
  "indexmap",
  "libcosmic",
  "log",
+ "polling",
  "pollster",
  "rust-embed",
  "serde",
@@ -4339,7 +4340,7 @@ dependencies = [
 
 [[package]]
 name = "shagshell-core"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "jiff",
  "log",

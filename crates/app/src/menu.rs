@@ -18,6 +18,8 @@ pub enum Action {
     ToggleCommandWindow,
     /// View → Button Bar.
     ToggleButtonBar,
+    /// File → Log Session.
+    ToggleLog,
     About,
     GlobalOptions,
     NewLocalShell,
@@ -118,7 +120,7 @@ fn key_binds() -> HashMap<KeyBind, Action> {
 /// more than one tab (`Tabs::menu_state`).
 pub fn bar(
     (session_manager, command_window, button_bar): (bool, bool, bool),
-    (tabs, live, split): (bool, bool, bool),
+    (tabs, live, split, logging): (bool, bool, bool, bool),
 ) -> Element<'static, Message> {
     use menu::Item::{Button, ButtonDisabled, CheckBox, Divider};
     let off = |label: String| ButtonDisabled(label, None, Action::Pending);
@@ -136,6 +138,7 @@ pub fn bar(
                 Button(fl!("menu-new-local-shell"), None, Action::NewLocalShell),
                 tab(fl!("menu-reconnect"), Action::Reconnect),
                 on(live, fl!("menu-disconnect"), Action::Disconnect),
+                CheckBox(fl!("menu-log-session"), None, logging, Action::ToggleLog),
                 tab(fl!("menu-close-tab"), Action::CloseTab),
                 Divider,
                 Button(fl!("menu-import-ssh-config"), None, Action::ImportSshConfig),

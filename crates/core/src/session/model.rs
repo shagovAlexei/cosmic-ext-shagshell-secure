@@ -4,6 +4,10 @@
 use serde::{Deserialize, Serialize};
 
 /// What a session connects with (Session Options → Protocol).
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
 fn is_ssh2(p: &Protocol) -> bool {
     *p == Protocol::Ssh2
 }
@@ -46,6 +50,15 @@ pub struct Session {
     /// The Button Bar shown while this session's tab is in front (`buttonbars.toml`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub button_bar: Option<String>,
+    /// Log file name template (`core::logfile`); empty: no log on connect.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub log_file: String,
+    /// Add to the file instead of starting it over.
+    #[serde(skip_serializing_if = "is_false")]
+    pub log_append: bool,
+    /// The bytes as they came, escape sequences and all.
+    #[serde(skip_serializing_if = "is_false")]
+    pub log_raw: bool,
     /// Fields this version doesn't know, written back unchanged.
     #[serde(flatten)]
     pub rest: toml::Table,
