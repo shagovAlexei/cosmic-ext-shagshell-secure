@@ -91,6 +91,14 @@ impl ButtonBar {
         s
     }
 
+    /// A function's label in the current language (the name itself if unknown).
+    pub fn function_label_of(name: &str) -> String {
+        FUNCTIONS
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map_or_else(|| name.to_string(), |(_, l)| l())
+    }
+
     /// The language may change.
     pub fn relabel(&mut self) {
         self.kinds = vec![

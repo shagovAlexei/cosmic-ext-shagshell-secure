@@ -7,6 +7,7 @@ mod config;
 mod credentials_window;
 mod i18n;
 mod keygen;
+mod keymap_editor;
 mod menu;
 mod options;
 mod quick_connect;

@@ -5,6 +5,7 @@ pub mod check;
 pub mod credentials;
 pub mod highlight;
 pub mod keygen;
+pub mod keymap;
 pub mod keyring;
 pub mod launch;
 pub mod logfile;

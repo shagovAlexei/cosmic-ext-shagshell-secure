@@ -39,6 +39,11 @@ pub struct App {
     quick: Option<QuickConnect>,
     /// Tools → Create / Upload Public Key…, while its dialog is open.
     keys: Option<Keys>,
+    /// Tools → Keymap Editor…, while its dialog is open.
+    keymap: Option<crate::keymap_editor::Editor>,
+    /// The user's keys (`keymap.toml`); a file that could not be read is never written over.
+    user_keys: shagshell_core::keymap::Keymap,
+    user_keys_broken: bool,
     /// The Session Options window, when open (one at a time).
     options: Option<SessionOptions>,
     /// The Credentials Manager window, when open.
@@ -109,6 +114,7 @@ pub enum Message {
     Script(crate::script::ScMsg),
     QuickConnect(QcMsg),
     KeyGen(crate::keygen::KgMsg),
+    KeyMap(crate::keymap_editor::KmMsg),
     SessionOptions(SoMsg),
     /// Keys and the pointer: acted on only when from the main window (not Session Options).
     Input(cosmic::iced::window::Id, Box<Message>),
@@ -170,6 +176,14 @@ impl Application for App {
         tabs.set_sftp_prefs(&config);
         tabs.set_log_prefs(&config);
         let scripts = crate::script::Scripts::new(tabs.taps.clone(), control_dir.clone());
+        let (user_keys, keys_error) = match shagshell_core::keymap::Keymap::load(
+            &shagshell_core::keymap::Keymap::default_path(),
+        ) {
+            Ok(k) => (k, None),
+            Err(e) => (Default::default(), Some(format!("keymap.toml: {e}"))),
+        };
+        let user_keys_broken = keys_error.is_some();
+        crate::keymap_editor::set_bindings(&user_keys);
         let mut app = Self {
             core,
             config,
@@ -180,6 +194,9 @@ impl Application for App {
             sessions,
             quick: None,
             keys: None,
+            keymap: None,
+            user_keys,
+            user_keys_broken,
             options: None,
             creds_win: None,
             separate: None,
@@ -194,7 +211,9 @@ impl Application for App {
             startup: None,
         };
         // A broken buttonbars.toml is said, and left alone.
-        app.sessions.notice = app.buttons.broken().map(String::from).or(hl_error);
+        app.sessions.notice = (app.buttons.broken().map(String::from))
+            .or(hl_error)
+            .or(keys_error);
         app.tabs.set_looks(&app.config, &app.hl, &look());
         app.startup = startup;
         (app, theme.unwrap_or_else(Task::none))
@@ -219,6 +238,14 @@ impl Application for App {
                 input(
                     w,
                     match e {
+                        cosmic::iced::Event::Keyboard(keyboard::Event::KeyPressed {
+                            physical_key,
+                            modifiers,
+                            repeat: false,
+                            ..
+                        }) if crate::keymap_editor::capturing() => Some(Message::KeyMap(
+                            crate::keymap_editor::KmMsg::Captured(physical_key, modifiers),
+                        )),
                         cosmic::iced::Event::Keyboard(keyboard::Event::KeyPressed {
                             physical_key,
                             modifiers,
@@ -324,6 +351,7 @@ impl Application for App {
         (self.asks.dialog(|t| self.tabs.title(t)))
             .or_else(|| self.scripts.dialog())
             .or_else(|| self.keys.as_ref().map(Keys::view))
+            .or_else(|| self.keymap.as_ref().map(crate::keymap_editor::Editor::view))
             .or_else(|| {
                 self.sc_import
                     .as_ref()
@@ -477,6 +505,13 @@ impl App {
             Message::Sessions(SmMsg::Key(TreeKey::Clear)) if self.keys.is_some() => {
                 return self.key_dialog(crate::keygen::KgMsg::Close);
             }
+            Message::Sessions(SmMsg::Key(TreeKey::Clear)) if self.keymap.is_some() => {
+                let editing = self.keymap.as_ref().is_some_and(|k| k.editing());
+                return self.keymap_dialog(match editing {
+                    true => crate::keymap_editor::KmMsg::Cancel,
+                    false => crate::keymap_editor::KmMsg::Close,
+                });
+            }
             Message::Sessions(SmMsg::Key(TreeKey::Clear)) if self.scripts.active() => {
                 return self.script(crate::script::ScMsg::Cancel);
             }
@@ -622,6 +657,7 @@ impl App {
                 return Task::batch(tasks);
             }
             Message::KeyGen(m) => return self.key_dialog(m),
+            Message::KeyMap(m) => return self.keymap_dialog(m),
             Message::QuickConnect(QcMsg::Cancel) => self.quick = None,
             Message::QuickConnect(m) => {
                 let Some(req) = self.quick.as_mut().and_then(|q| q.update(m)) else {
@@ -869,6 +905,17 @@ impl App {
             }
             Action::EditDefault => return self.open_options(Target::Default),
             Action::Credentials => return self.open_credentials(),
+            Action::KeyMap => {
+                if self.keymap.is_none() {
+                    self.keymap = Some(crate::keymap_editor::Editor::new(self.user_keys.clone()));
+                }
+                return widget::text_input::focus(widget::Id::unique());
+            }
+            Action::Bound(i) => {
+                if let Some(b) = crate::keymap_editor::binding(usize::from(i)) {
+                    return self.run_button(b);
+                }
+            }
             Action::CreateKey => {
                 let k = crate::keygen::KeyGen::new();
                 let focus = k.focus();
@@ -957,6 +1004,41 @@ impl App {
             reply.send(Ok(serde_json::Value::Null)); // the tab is there now
         }
         Task::batch(tasks)
+    }
+
+    /// Tools → Keymap Editor…: the editor's messages; a change is saved and put in force.
+    fn keymap_dialog(&mut self, m: crate::keymap_editor::KmMsg) -> Task<Message> {
+        use crate::keymap_editor::KmMsg;
+        let Some(ed) = self.keymap.as_mut() else {
+            return Task::none();
+        };
+        let builtin = match &m {
+            KmMsg::Captured(k, mods) => builtin_action(k, *mods).is_some(),
+            _ => false,
+        };
+        let out = ed.update(m, builtin);
+        if out.save {
+            if self.user_keys_broken {
+                self.sessions.notice = Some(fl!("km-broken"));
+            } else {
+                self.user_keys = ed.keymap.clone();
+                crate::keymap_editor::set_bindings(&self.user_keys);
+                if let Err(e) = self
+                    .user_keys
+                    .save(&shagshell_core::keymap::Keymap::default_path())
+                {
+                    self.sessions.notice = Some(format!("keymap.toml: {e}"));
+                }
+            }
+        }
+        if out.close {
+            self.keymap = None;
+            return self.tabs.focus_active();
+        }
+        match out.unfocus {
+            true => widget::text_input::focus(widget::Id::unique()),
+            false => Task::none(),
+        }
     }
 
     /// Create / Upload Public Key: what the dialogs ask for.
@@ -1945,6 +2027,21 @@ fn route_key(key: &Physical, mods: Modifiers) -> Option<Message> {
 /// The app's keys, by physical key so they work in any layout. The one list: the terminal
 /// lets exactly these through (`tabs::is_app_key`), everything else is the program's.
 pub fn key_action(key: &Physical, mods: Modifiers) -> Option<Action> {
+    // A chord is being recorded (Keymap Editor): nothing acts.
+    if crate::keymap_editor::capturing() {
+        return None;
+    }
+    builtin_action(key, mods).or_else(|| {
+        let Physical::Code(code) = *key else {
+            return None;
+        };
+        let i = crate::keymap_editor::lookup(mods, &format!("{code:?}"))?;
+        Some(Action::Bound(u16::try_from(i).ok()?))
+    })
+}
+
+/// The program's own keys (the user's cannot take these).
+fn builtin_action(key: &Physical, mods: Modifiers) -> Option<Action> {
     let Physical::Code(code) = *key else {
         return None;
     };

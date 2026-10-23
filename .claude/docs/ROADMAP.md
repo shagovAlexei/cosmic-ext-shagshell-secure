@@ -16,6 +16,7 @@
 - [x] 9. ~~9a — Logon Actions (expect/send)~~; ~~9b — keyword highlighting, color schemes~~; ~~9c — импорт из SecureCRT `.ini` (сессии, кнопки)~~
 - [x] 10. ~~Скрипты на Python~~: ~~10a — модуль `crt`, меню Script, `--script`~~; ~~10b — запуск с кнопки / из сессии, импорт кнопок Run Script~~
 - [x] 11. ~~Создание ключей (`ssh-keygen`) и загрузка на сервер (`ssh-copy-id`)~~
+- [x] 12. ~~Key Map: свои горячие клавиши на строку / функцию меню / программу / скрипт~~
 
 ## Бэклог
 
