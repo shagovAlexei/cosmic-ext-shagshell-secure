@@ -24,6 +24,7 @@
 - Синхронизация папок в SFTP
 - X/Y/Zmodem (`rz`/`sz`)
 - Command Manager (дерево сохранённых команд)
+- Импорт кнопок Button Bar из SecureCRT (из `.ini` / экспорта: Send String → Send String, Menu Function → ближайшая функция, Run Script → скрипт)
 - Перетаскивание вкладки между группами и в новое окно
 - Шрифт и его размер в Global Options
 - Запись скрипта (Script → Start Recording)
