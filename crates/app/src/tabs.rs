@@ -603,6 +603,18 @@ impl Tabs {
     }
 
     /// Enter on a tab whose program ended: start it again. `false`: not such a tab.
+    /// A «Close tab?» dialog is up.
+    pub fn confirming(&self) -> bool {
+        self.confirm.is_some()
+    }
+
+    /// The active tab is an ssh one: an SFTP tab can use its connection.
+    pub fn can_sftp(&self) -> bool {
+        (self.active())
+            .and_then(|(_, _, id)| self.tabs.get(&id))
+            .is_some_and(|t| t.launch.sftp().is_some())
+    }
+
     pub fn enter_on_dead(&self) -> bool {
         self.active()
             .and_then(|(_, _, id)| self.tabs.get(&id))

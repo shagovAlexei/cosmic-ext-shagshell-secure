@@ -41,6 +41,7 @@ menu-about = About
 sessions-empty = No sessions
 no-sessions = No open sessions
 no-sessions-hint = Use Quick Connect (Alt+Q) or Ctrl+Shift+T for a local shell
+sftp-needs-ssh = SFTP needs an SSH session: select one in the tree or open its tab
 status-disconnected = Not connected
 
 menu-new-local-shell = New Local Shell

@@ -284,6 +284,20 @@ impl Application for App {
             Message::CloseRequested(_) => {}
             Message::Credentials(m) => return self.credentials(m),
             Message::Key(k, m) => {
+                // «Close tab?»: Enter is Close, Esc Cancel.
+                if self.tabs.confirming()
+                    && !self.asks.active()
+                    && m.is_empty()
+                    && let Physical::Code(code) = k
+                {
+                    match code {
+                        Code::Enter | Code::NumpadEnter => {
+                            return self.tabs.update(TabsMsg::CloseConfirmed, &look());
+                        }
+                        Code::Escape => return self.tabs.update(TabsMsg::CloseCancelled, &look()),
+                        _ => {}
+                    }
+                }
                 // An SFTP dialog with no field (delete, overwrite): Enter is its OK, Esc Cancel.
                 if let Some(id) = self.tabs.sftp_dialog()
                     && !self.asks.active()
@@ -486,7 +500,7 @@ impl Application for App {
         widget::column::with_children(vec![
             toolbar::view(),
             middle.push(center).height(Length::Fill).into(),
-            status_bar::view(self.tabs.status()),
+            status_bar::view(self.tabs.status(), self.sessions.notice.as_deref()),
         ])
         .into()
     }
@@ -494,6 +508,16 @@ impl Application for App {
 
 impl App {
     fn act(&mut self, action: Action) -> Task<Message> {
+        // SFTP: the active ssh tab's connection, else the session selected in the tree.
+        if action == Action::ConnectSftp && !self.tabs.can_sftp() {
+            return match self.sessions.one_session() {
+                Some(id) => self.open_sftp(&id),
+                None => {
+                    self.sessions.notice = Some(fl!("sftp-needs-ssh"));
+                    Task::none()
+                }
+            };
+        }
         if let Some(task) = self.tabs.act(action, &look()) {
             return task;
         }
@@ -580,7 +604,7 @@ impl App {
             }
         };
         if s.protocol == shagshell_core::session::Protocol::Local {
-            self.sessions.notice = Some(fl!("so-ssh-only"));
+            self.sessions.notice = Some(fl!("sftp-needs-ssh"));
             return Task::none();
         }
         let name = shagshell_core::session::store::name_of(id).to_string();

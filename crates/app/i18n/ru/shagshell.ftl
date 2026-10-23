@@ -41,6 +41,7 @@ menu-about = О программе
 sessions-empty = Нет сессий
 no-sessions = Нет открытых сессий
 no-sessions-hint = Используйте быстрое подключение (Alt+Q) или Ctrl+Shift+T — локальный shell
+sftp-needs-ssh = SFTP нужна ssh-сессия: выдели её в дереве или открой её вкладку
 status-disconnected = Не подключено
 
 menu-new-local-shell = Новый локальный shell
