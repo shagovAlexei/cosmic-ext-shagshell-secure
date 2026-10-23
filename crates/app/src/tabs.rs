@@ -194,10 +194,15 @@ impl Tabs {
     }
 
     pub fn set_sftp_prefs(&mut self, config: &Config) {
+        let hidden_changed = self.sftp_prefs.1 != config.sftp_show_hidden;
         self.sftp_prefs = (config.sftp_overwrite.choice(), config.sftp_show_hidden);
         for tab in self.tabs.values_mut() {
             if let Body::Sftp(v) = &mut tab.body {
                 v.set_rule(self.sftp_prefs.0);
+                // The option flips every tab; a Ctrl+H in a tab lasts until it does.
+                if hidden_changed {
+                    v.set_show_hidden(self.sftp_prefs.1);
+                }
             }
         }
     }

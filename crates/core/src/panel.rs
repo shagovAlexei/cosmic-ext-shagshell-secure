@@ -66,7 +66,7 @@ pub struct Panel {
     raw: Vec<Entry>,
     sort: Sort,
     /// Files with a leading dot shown.
-    hidden: bool, // = shown; `Panel::default()` hides them, the tab sets what the config says
+    show_hidden: bool,
     /// `..` first (unless at `/`), folders, then files, in `sort` order, minus hidden ones.
     entries: Vec<Entry>,
     cursor: usize,
@@ -154,7 +154,7 @@ impl Panel {
     }
 
     pub fn show_hidden(&self) -> bool {
-        self.hidden
+        self.show_hidden
     }
 
     /// A click on a column's header: that column, ascending; the same again: descending.
@@ -171,7 +171,7 @@ impl Panel {
 
     /// Ctrl+H: files with a leading dot shown or not.
     pub fn set_show_hidden(&mut self, on: bool) {
-        self.hidden = on;
+        self.show_hidden = on;
         self.rebuild(None);
     }
 
@@ -206,14 +206,17 @@ impl Panel {
     fn rebuild(&mut self, name: Option<OsString>) {
         let name = name.or_else(|| self.current().map(|e| e.name.clone()));
         let mut v: Vec<Entry> = (self.raw.iter())
-            .filter(|e| self.hidden || !e.name.as_encoded_bytes().starts_with(b"."))
+            .filter(|e| self.show_hidden || !e.name.as_encoded_bytes().starts_with(b"."))
             .cloned()
             .collect();
         v.sort_by(order(self.sort));
         if self.cwd.parent().is_some() {
             v.insert(0, Entry::parent());
         }
-        self.marked.retain(|m| v.iter().any(|e| e.name == *m));
+        // A mark of a hidden name waits for it to come back (it is never acted on unseen:
+        // `targets` goes by the rows shown).
+        self.marked
+            .retain(|m| self.raw.iter().any(|e| e.name == *m));
         self.entries = v;
         let at = name.and_then(|n| self.entries.iter().position(|e| e.name == n));
         self.cursor = at.unwrap_or(self.cursor.min(self.entries.len().saturating_sub(1)));
@@ -460,8 +463,9 @@ mod tests {
         p.set_show_hidden(false);
         assert_eq!(names(&p), ["..", "b", "c"]);
         assert_eq!(p.current().unwrap().name, "c");
-        assert_eq!(p.targets().len(), 1); // the mark of a hidden name is gone with it
+        assert_eq!(p.targets().len(), 1); // a hidden mark is not acted on
         p.set_show_hidden(true);
+        assert!(p.is_marked(&e(".a", false))); // back with its row
         assert_eq!(names(&p), ["..", ".a", "b", "c"]);
         assert_eq!(p.current().unwrap().name, "c");
     }

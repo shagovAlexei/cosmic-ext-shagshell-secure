@@ -364,6 +364,33 @@ impl<R: Read, W: Write> Client<R, W> {
         self.expect_ok(Msg::new(RENAME, id).path(from).path(to))
     }
 
+    /// Up to `len` bytes at `off` (fewer at the end of the file).
+    pub fn read_range(&mut self, p: &Path, off: u64, len: u32) -> io::Result<Vec<u8>> {
+        let handle = self.open(p, READ_FLAG)?;
+        let id = self.id();
+        let sent = self.send(Msg::new(READ, id).bytes(&handle).u64(off).u32(len));
+        let got = sent.and_then(|()| {
+            self.w.flush()?;
+            let (kind, rid, body) = self.recv()?;
+            if rid != id {
+                return Err(bad());
+            }
+            let mut b = Body(&body);
+            match kind {
+                DATA => b.bytes(),
+                STATUS => match b.u32()? {
+                    FX_EOF => Ok(Vec::new()),
+                    code => Err(status_error(code, &b.bytes().unwrap_or_default())),
+                },
+                _ => Err(bad()),
+            }
+        });
+        let closed = self.close(&handle);
+        let data = got?;
+        closed?;
+        Ok(data)
+    }
+
     fn open(&mut self, p: &Path, flags: u32) -> io::Result<Vec<u8>> {
         let id = self.id();
         let body = self.expect(Msg::new(OPEN, id).path(p).u32(flags).u32(0), HANDLE)?;

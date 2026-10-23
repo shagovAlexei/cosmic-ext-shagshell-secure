@@ -143,4 +143,6 @@
 | `sftp::proto::tests::regression_local_failure_keeps_the_stream_in_step` | локальная ошибка посреди передачи (диск полон) не сбивает ответы SFTP следующих команд |
 | `sftp::ops::tests::regression_failed_overwrite_keeps_the_original` | неудачная / отменённая перезапись (в обе стороны) оставляет прежний файл, без `.part` |
 | `tabs::tests::regression_tab_menu_items_are_cosmic_actions` (app) | ПКМ по вкладке открывает меню (popup с view не того типа libcosmic молча не показывал: «Invalid view for subsurface view») |
+| `sftp::ops::tests::regression_resume_refuses_a_different_older_file` | «Докачать» не дописывает новый файл к старому другому файлу того же имени: сверяется конец цели с тем же местом источника, иначе файл копируется заново |
+| `sftp::ops::tests::regression_skip_and_overwrite_need_no_stat` | «Пропустить» / «Перезаписать» работают и при битой ссылке-цели (stat нужен только «Только если новее» и «Докачать») |
 | `app::tests::regression_escape_in_a_secondary_window_is_seen` (app) | Esc в окне параметров / менеджера учётных данных закрывает его (сообщение сравнивалось не с тем типом) |

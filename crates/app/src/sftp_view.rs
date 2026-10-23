@@ -26,6 +26,9 @@ const REMOTE: usize = 1;
 const ROW: f32 = 26.0;
 /// The server panel's rights column.
 const PERM_W: f32 = 100.0;
+/// The size and date columns (header and rows).
+const SIZE_W: f32 = 90.0;
+const DATE_W: f32 = 130.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Key {
@@ -214,6 +217,12 @@ impl SftpView {
         v
     }
 
+    pub fn set_show_hidden(&mut self, on: bool) {
+        for p in &mut self.panels {
+            p.set_show_hidden(on);
+        }
+    }
+
     /// Global Options → SFTP changed: the rule applies to the next conflict.
     pub fn set_rule(&mut self, rule: Option<Choice>) {
         self.rule = rule;
@@ -363,10 +372,12 @@ impl SftpView {
             }
             SftpMsg::ChmodText(t) => {
                 if let Some(Dialog::Chmod { bits, text, .. }) = &mut self.dialog {
-                    if let Ok(n) = u32::from_str_radix(&t, 8)
-                        && t.len() <= 4
+                    // Three octal digits (the special bits are not offered): anything else is
+                    // kept as typed but not applied (`dialog_ok`).
+                    if t.len() <= 3
+                        && let Ok(n) = u32::from_str_radix(&t, 8)
                     {
-                        *bits = n & 0o7777;
+                        *bits = n;
                     }
                     *text = t;
                 }
@@ -709,6 +720,12 @@ impl SftpView {
     }
 
     fn dialog_ok(&mut self) {
+        // Not an octal mode: the dialog stays, nothing is applied.
+        if let Some(Dialog::Chmod { text, .. }) = &self.dialog
+            && (text.len() > 3 || u32::from_str_radix(text, 8).is_err())
+        {
+            return;
+        }
         let Some(d) = self.dialog.take() else {
             return;
         };
@@ -1118,13 +1135,13 @@ impl SftpView {
         cols = cols.push(col(
             fl!("sftp-col-size"),
             SortKey::Size,
-            Length::Fixed(90.0),
+            Length::Fixed(SIZE_W),
             true,
         ));
         cols = cols.push(col(
             fl!("sftp-col-date"),
             SortKey::Date,
-            Length::Fixed(130.0),
+            Length::Fixed(DATE_W),
             true,
         ));
         let body =
@@ -1297,11 +1314,11 @@ fn row(
     }
     cells.extend([
         text(size)
-            .width(Length::Fixed(90.0))
+            .width(Length::Fixed(SIZE_W))
             .align_x(Alignment::End)
             .into(),
         text(date)
-            .width(Length::Fixed(130.0))
+            .width(Length::Fixed(DATE_W))
             .align_x(Alignment::End)
             .into(),
     ]);

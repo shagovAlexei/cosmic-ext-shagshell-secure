@@ -63,22 +63,33 @@ pub fn chmod_remote<R: Read, W: Write>(
     clear: u32,
     recursive: bool,
 ) -> io::Result<()> {
+    // A file that refuses doesn't stop the rest: the first refusal is reported at the end.
+    let mut first: Option<io::Error> = None;
     for p in paths {
-        let a = c.lstat(p)?;
-        if a.is_link() {
-            continue;
-        }
-        let old = a.perm.unwrap_or(0) & 0o7777;
-        let new = (old & !clear) | set;
-        if new != old {
-            c.chmod(p, new)?;
-        }
-        if recursive && a.is_dir() {
-            let inside: Vec<PathBuf> = (c.read_dir(p)?.iter()).map(|e| p.join(&e.name)).collect();
-            chmod_remote(c, &inside, set, clear, true)?;
+        let r = (|| {
+            let a = c.lstat(p)?;
+            if a.is_link() {
+                return Ok(());
+            }
+            let old = a.perm.unwrap_or(0) & 0o7777;
+            let new = (old & !clear) | set;
+            if new != old {
+                c.chmod(p, new)?;
+            }
+            if recursive && a.is_dir() {
+                let inside: Vec<PathBuf> =
+                    (c.read_dir(p)?.iter()).map(|e| p.join(&e.name)).collect();
+                chmod_remote(c, &inside, set, clear, true)?;
+            }
+            Ok(())
+        })();
+        match r {
+            Err(e) if is_fatal(&e) => return Err(e),
+            Err(e) => drop(first.get_or_insert(e)),
+            Ok(()) => {}
         }
     }
-    Ok(())
+    first.map_or(Ok(()), Err)
 }
 
 /// `mkdir -p` on the server.
@@ -236,6 +247,31 @@ pub fn target_size<R: Read, W: Write>(c: &mut Client<R, W>, job: &Job) -> Option
     }
 }
 
+/// The last bytes of the shorter target (up to 64 KiB) are the same bytes of the source.
+fn tail_matches<R: Read, W: Write>(c: &mut Client<R, W>, job: &Job, len: u64) -> io::Result<bool> {
+    use std::io::{Seek, SeekFrom};
+    let n = len.min(64 * 1024);
+    let at = len - n;
+    let (src, dst) = match job.dir {
+        Dir::Down => {
+            let src = c.read_range(&job.src, at, n as u32)?;
+            let mut f = std::fs::File::open(&job.dst)?;
+            f.seek(SeekFrom::Start(at))?;
+            let mut dst = vec![0; n as usize];
+            f.read_exact(&mut dst)?;
+            (src, dst)
+        }
+        Dir::Up => {
+            let mut f = std::fs::File::open(&job.src)?;
+            f.seek(SeekFrom::Start(at))?;
+            let mut src = vec![0; n as usize];
+            f.read_exact(&mut src)?;
+            (src, c.read_range(&job.dst, at, n as u32)?)
+        }
+    };
+    Ok(src == dst)
+}
+
 /// One file of the queue. `progress(bytes)` false cancels (`Interrupted`); the target is replaced
 /// only by a complete copy; a move removes the source only then. A resumed copy is written onto
 /// the shorter target itself (it was incomplete anyway), so a cancel leaves it resumable again.
@@ -254,11 +290,28 @@ pub fn transfer<R: Read, W: Write>(
         let Some(choice) = choice else {
             return Ok(Copied::Exists);
         };
-        let (src, dst) = match job.dir {
-            Dir::Down => (remote_stat(c, &job.src)?, local_stat(&job.dst)?),
-            Dir::Up => (local_stat(&job.src)?, remote_stat(c, &job.dst)?),
-        };
-        how = decide(choice, src, dst);
+        // Only these two look at the files (a dangling link or an unreadable one must still be
+        // skippable and replaceable).
+        if matches!(choice, Choice::Newer | Choice::Resume) {
+            let (src, dst) = match job.dir {
+                Dir::Down => (remote_stat(c, &job.src)?, local_stat(&job.dst)?),
+                Dir::Up => (local_stat(&job.src)?, remote_stat(c, &job.dst)?),
+            };
+            how = decide(choice, src, dst);
+            // The target must be the start of the source: the end of it is checked, so an
+            // older, different file of the same name is replaced, never extended into garbage.
+            if let Plan1::Resume(from) = how
+                && !tail_matches(c, job, from)?
+            {
+                how = Plan1::Full;
+            }
+        } else {
+            how = if choice == Choice::Skip {
+                Plan1::Skip
+            } else {
+                Plan1::Full
+            };
+        }
         if how == Plan1::Skip {
             return Ok(Copied::Skipped);
         }
@@ -573,5 +626,35 @@ mod tests {
         chmod_remote(&mut c, std::slice::from_ref(&top), 0o001, 0, false).unwrap();
         assert_eq!(got(&a), 0o660);
         assert_eq!(got(&top) & 0o001, 0o001);
+    }
+
+    #[test]
+    fn regression_resume_refuses_a_different_older_file() {
+        let Some((_s, mut c)) = server() else { return };
+        let (r, l) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let (src, dst) = (r.path().join("f"), l.path().join("f"));
+        std::fs::write(&src, vec![1u8; 200_000]).unwrap();
+        std::fs::write(&dst, vec![2u8; 50_000]).unwrap(); // shorter, but not its start
+        let j = job(Dir::Down, &src, &dst, false);
+        let resume = Some(Choice::Resume);
+        assert_eq!(
+            transfer(&mut c, &j, resume, |_| true).unwrap(),
+            Copied::Done
+        );
+        assert_eq!(std::fs::read(&dst).unwrap(), vec![1u8; 200_000]);
+    }
+
+    #[test]
+    fn regression_skip_and_overwrite_need_no_stat() {
+        let Some((_s, mut c)) = server() else { return };
+        let (r, l) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let (src, dst) = (r.path().join("f"), l.path().join("f"));
+        std::fs::write(&src, "new").unwrap();
+        std::os::unix::fs::symlink(l.path().join("gone"), &dst).unwrap(); // dangling
+        let j = job(Dir::Down, &src, &dst, false);
+        assert_eq!(
+            transfer(&mut c, &j, Some(Choice::Skip), |_| true).unwrap(),
+            Copied::Skipped
+        );
     }
 }
