@@ -200,7 +200,7 @@ pub struct SftpView {
     rule: Option<Choice>,
     /// Files being edited locally (F4), and the batches that fetch / send them.
     edits: Vec<Edit>,
-    edit_batches: HashMap<u64, usize>,
+    edit_batches: HashMap<u64, PathBuf>,
 }
 
 /// A server's file opened in the local editor: sent back when it is saved.
@@ -209,6 +209,8 @@ struct Edit {
     local: PathBuf,
     /// Its modification time when last seen (sent); `None` until it is fetched.
     seen: Option<std::time::SystemTime>,
+    /// A newer time seen once: sent when it is the same a tick later (the editor is done writing).
+    pending: Option<std::time::SystemTime>,
 }
 
 impl Drop for SftpView {
@@ -299,19 +301,23 @@ impl SftpView {
             self.edit_opened(i);
             return;
         }
-        let dir = shagshell_core::launch::control_dir()
-            .join("edit")
-            .join(format!(
-                "{}-{}-{}",
-                std::process::id(),
-                self.id,
-                self.edits.len()
-            ));
+        // Under the private (0700) control dir: a copy of a server's file is for us alone.
+        let base = shagshell_core::launch::ensure_control_dir()
+            .unwrap_or_else(|_| shagshell_core::launch::control_dir());
+        let dir = base.join("edit").join(format!(
+            "{}-{}-{}",
+            std::process::id(),
+            self.id,
+            self.edits.len()
+        ));
         if let Err(err) = std::fs::create_dir_all(&dir) {
             self.status = Some(format!("{}: {err}", dir.display()));
             return;
         }
         let local = dir.join(&e.name);
+        // A fetch that failed before: its entry is used again, not a second one made.
+        self.edits
+            .retain(|x| x.remote != remote || x.seen.is_some());
         let batch = self.queue.batch();
         self.queue.add(
             batch,
@@ -320,11 +326,12 @@ impl SftpView {
             false,
         );
         self.queue.answer(batch, Choice::Overwrite);
-        self.edit_batches.insert(batch, self.edits.len());
+        self.edit_batches.insert(batch, remote.clone());
         self.edits.push(Edit {
             remote,
             local,
             seen: None,
+            pending: None,
         });
         self.pump();
     }
@@ -333,18 +340,24 @@ impl SftpView {
         self.edits.iter().any(|e| e.seen.is_some())
     }
 
-    /// Every few seconds: a file saved in the editor goes back to the server.
+    /// Every few seconds: a file saved in the editor goes back to the server. A changed time is
+    /// sent when it holds still for a tick: an editor that truncates and rewrites in place is not
+    /// caught half way.
     fn edit_tick(&mut self) {
         let mut sends = Vec::new();
         for e in &mut self.edits {
             let Some(seen) = e.seen else { continue };
-            let Ok(now) = std::fs::metadata(&e.local).and_then(|m| m.modified()) else {
+            let Ok(meta) = std::fs::metadata(&e.local) else {
                 continue;
             };
-            if now != seen {
-                e.seen = Some(now);
-                let size = std::fs::metadata(&e.local).map_or(0, |m| m.len());
-                sends.push((e.local.clone(), e.remote.clone(), size));
+            let Ok(now) = meta.modified() else { continue };
+            if now == seen {
+                e.pending = None;
+            } else if e.pending == Some(now) {
+                (e.seen, e.pending) = (Some(now), None);
+                sends.push((e.local.clone(), e.remote.clone(), meta.len()));
+            } else {
+                e.pending = Some(now);
             }
         }
         for files in sends {
@@ -524,7 +537,12 @@ impl SftpView {
             }
             SftpMsg::EditTick => self.edit_tick(),
             SftpMsg::Dropped(paths) => {
-                if paths.is_empty() || !self.connected {
+                // (Nothing dropped: a drag only left the panel.) Not over another dialog.
+                if paths.is_empty() || self.dialog.is_some() {
+                    return Task::none();
+                }
+                if !self.connected {
+                    self.status = Some(fl!("sftp-not-connected"));
                     return Task::none();
                 }
                 let dest = self.panels[REMOTE].cwd().to_string_lossy().into_owned();
@@ -537,27 +555,25 @@ impl SftpView {
                 return widget::text_input::focus(self.input_id.clone());
             }
             SftpMsg::BmAdd => {
-                let side = self.active;
-                let cwd = self.panels[side].cwd().to_string_lossy().into_owned();
+                let cwd = self.panels[self.active]
+                    .cwd()
+                    .to_string_lossy()
+                    .into_owned();
                 if let Some(Dialog::Bookmarks { place, list }) = &mut self.dialog {
-                    let mut b = Bookmarks::load(&bookmarks::default_path()).unwrap_or_default();
-                    b.add(place, &cwd);
-                    self.status = b
-                        .save(&bookmarks::default_path())
-                        .err()
-                        .map(|e| e.to_string());
-                    *list = b.of(place).to_vec();
+                    match edit_bookmarks(place, |b| {
+                        b.add(place, &cwd);
+                    }) {
+                        Ok(l) => *list = l,
+                        Err(e) => self.status = Some(e),
+                    }
                 }
             }
             SftpMsg::BmDel(folder) => {
                 if let Some(Dialog::Bookmarks { place, list }) = &mut self.dialog {
-                    let mut b = Bookmarks::load(&bookmarks::default_path()).unwrap_or_default();
-                    b.remove(place, &folder);
-                    self.status = b
-                        .save(&bookmarks::default_path())
-                        .err()
-                        .map(|e| e.to_string());
-                    *list = b.of(place).to_vec();
+                    match edit_bookmarks(place, |b| b.remove(place, &folder)) {
+                        Ok(l) => *list = l,
+                        Err(e) => self.status = Some(e),
+                    }
                 }
             }
             SftpMsg::BmGo(folder) => {
@@ -723,11 +739,25 @@ impl SftpView {
                 }
                 self.started = None;
                 if let Some(job) = &job
-                    && let Some(i) = self.edit_batches.get(&job.batch).copied()
+                    && self.queue.batch_done(job.batch)
+                    && !matches!(
+                        self.queue
+                            .jobs()
+                            .iter()
+                            .find(|j| j.id == job.id)
+                            .map(|j| &j.state),
+                        Some(State::Done)
+                    )
+                {
+                    // A fetch for editing that failed or was cancelled: forgotten.
+                    self.edit_batches.remove(&job.batch);
+                }
+                if let Some(job) = &job
                     && matches!(job.dir, Dir::Down)
                     && self.queue.batch_done(job.batch)
+                    && let Some(remote) = self.edit_batches.remove(&job.batch)
+                    && let Some(i) = self.edits.iter().position(|e| e.remote == remote)
                 {
-                    self.edit_batches.remove(&job.batch);
                     self.edit_opened(i);
                 }
                 if let Some(job) = job {
@@ -835,7 +865,13 @@ impl SftpView {
             Key::Edit => {}
             Key::Bookmarks => {
                 let place = self.bookmark_place();
-                let list = bookmarks_of(&place);
+                let list = match load_bookmarks() {
+                    Ok(b) => b.of(&place).to_vec(),
+                    Err(e) => {
+                        self.status = Some(e);
+                        Vec::new()
+                    }
+                };
                 self.dialog = Some(Dialog::Bookmarks { place, list });
             }
             Key::Copy => return self.ask_copy(false),
@@ -1394,7 +1430,7 @@ impl SftpView {
                             id,
                             match d {
                                 Some(Dropped(p)) => SftpMsg::Dropped(p),
-                                None => SftpMsg::Release(None),
+                                None => SftpMsg::Dropped(Vec::new()),
                             },
                         )
                     },
@@ -1655,11 +1691,20 @@ pub fn subscription() -> Subscription<Message> {
     })
 }
 
-fn bookmarks_of(place: &str) -> Vec<String> {
-    Bookmarks::load(&bookmarks::default_path())
-        .unwrap_or_default()
-        .of(place)
-        .to_vec()
+/// The bookmarks file, or why it can't be read (never replaced by an empty one then).
+fn load_bookmarks() -> Result<Bookmarks, String> {
+    let path = bookmarks::default_path();
+    Bookmarks::load(&path).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// `change` on the file, written back; the folders of `place` as they are after.
+fn edit_bookmarks(place: &str, change: impl FnOnce(&mut Bookmarks)) -> Result<Vec<String>, String> {
+    let mut b = load_bookmarks()?;
+    change(&mut b);
+    let path = bookmarks::default_path();
+    b.save(&path)
+        .map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok(b.of(place).to_vec())
 }
 
 /// What a file manager offers when files are dropped.

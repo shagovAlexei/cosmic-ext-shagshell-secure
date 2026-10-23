@@ -8,7 +8,13 @@ use std::path::PathBuf;
 pub fn paths_of(list: &[u8]) -> Vec<PathBuf> {
     list.split(|&b| b == b'\n')
         .map(|l| l.strip_suffix(b"\r").unwrap_or(l))
-        .filter_map(|l| l.strip_prefix(b"file://"))
+        .filter_map(|l| {
+            // `file:/path` is the same as `file:///path`.
+            match l.strip_prefix(b"file://") {
+                Some(rest) => Some(rest),
+                None => l.strip_prefix(b"file:").filter(|r| r.starts_with(b"/")),
+            }
+        })
         .filter_map(|rest| {
             // `file://host/path`: the path starts at the next slash; an empty host is this one.
             let at = rest.iter().position(|&b| b == b'/')?;
@@ -58,6 +64,14 @@ mod tests {
                 PathBuf::from("/tmp/x"),
                 PathBuf::from("/café"),
             ]
+        );
+    }
+
+    #[test]
+    fn single_slash_form() {
+        assert_eq!(
+            paths_of(b"file:/home/u/a.txt"),
+            [PathBuf::from("/home/u/a.txt")]
         );
     }
 
