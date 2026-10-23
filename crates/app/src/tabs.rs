@@ -490,11 +490,11 @@ impl Tabs {
         self.tabs.get(&id)?.terminal()
     }
 
-    /// A new tab running `launch` in the focused group (the first group if none).
     pub fn last_opened(&self) -> Option<TabId> {
         self.last_opened
     }
 
+    /// A new tab running `launch` in the focused group (the first group if none).
     pub fn open(&mut self, launch: Launch, look: &Look) -> Task<Message> {
         self.last_opened = None;
         let taken: Vec<&str> = self.tabs.values().map(|t| t.base.as_str()).collect();

@@ -367,3 +367,4 @@ script-no-python = Cannot start python3: { $error }
 script-missing = No such script: { $name }
 so-script = Script run when the session opens (.py, empty: none)
 so-script-hint = Runs on the new tab as Script → Run… does; it can wait for the login prompts itself (crt.Screen.WaitForString).
+script-bad-args = The button's arguments have an unclosed quote

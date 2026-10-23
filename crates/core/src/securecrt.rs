@@ -411,7 +411,11 @@ fn windows_path(path: &str, prefix: Option<&Path>) -> String {
     let (Some(d), Some(prefix)) = (drive, prefix) else {
         return p.replace('\\', "/");
     };
-    let mut out = prefix.join(format!("drive_{}", d.to_ascii_lowercase()));
+    // Wine's Z: is the Linux root.
+    let mut out = match d.to_ascii_lowercase() {
+        'z' => std::path::PathBuf::from("/"),
+        d => prefix.join(format!("drive_{d}")),
+    };
     for seg in p[2..].split(['\\', '/']).filter(|s| !s.is_empty()) {
         out.push(seg);
     }
@@ -661,6 +665,7 @@ mod tests {
             windows_path("d:/x//y.py", Some(pre)),
             "/home/u/.wine/drive_d/x/y.py"
         );
+        assert_eq!(windows_path("Z:\\home\\u\\a.py", Some(pre)), "/home/u/a.py");
         assert_eq!(windows_path("C:\\x\\a.py", None), "C:/x/a.py");
         assert_eq!(windows_path("/opt/a.py", Some(pre)), "/opt/a.py");
     }

@@ -368,3 +368,4 @@ script-no-python = Не удаётся запустить python3: { $error }
 script-missing = Нет такого скрипта: { $name }
 so-script = Скрипт при открытии сессии (.py, пусто: нет)
 so-script-hint = Запускается на новой вкладке, как Script → Запустить…; сам может ждать приглашений входа (crt.Screen.WaitForString).
+script-bad-args = В аргументах кнопки не закрыта кавычка
