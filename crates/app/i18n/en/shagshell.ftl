@@ -174,7 +174,7 @@ sm-sftp = Open SFTP
 sftp-connecting = Connecting…
 sftp-disconnected = Not connected: { $why }
 sftp-not-connected = Not connected
-sftp-keys = Tab panel · Enter open · Backspace up · Insert mark · F5 copy · F6 move · Shift+F6 rename · F7 folder · F8 delete · Alt+Enter rights · Ctrl+H hidden · Ctrl+R refresh
+sftp-keys = Tab panel · Enter open · Backspace up · Insert mark · F5 copy · F6 move · Shift+F6 rename · F7 folder · F8 delete · F4 edit · Ctrl+D bookmarks · Alt+Enter rights · Ctrl+H hidden · Ctrl+R refresh
 sftp-n-items = { $count ->
     [one] { $count } item
    *[other] { $count } items
@@ -191,6 +191,10 @@ sftp-delete-title = Delete { $what }?
 sftp-delete-body = Folders are deleted with everything in them.
 sftp-exists-title = Already exists
 sftp-for-all = For all files of this copy
+sftp-bm-title = Bookmarks
+sftp-bm-none = No bookmarks yet
+sftp-bm-add = Add this folder
+sftp-close = Close
 sftp-newer = Only if newer
 sftp-resume = Resume
 sftp-apply = Apply

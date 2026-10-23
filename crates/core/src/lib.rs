@@ -1,4 +1,5 @@
 pub mod askpass;
+pub mod bookmarks;
 pub mod check;
 pub mod credentials;
 pub mod keyring;
@@ -9,3 +10,4 @@ pub mod sftp;
 pub mod shell;
 pub mod sshconfig;
 pub mod tabs;
+pub mod uri;

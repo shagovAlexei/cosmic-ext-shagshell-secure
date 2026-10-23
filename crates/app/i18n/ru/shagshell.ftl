@@ -174,7 +174,7 @@ sm-sftp = Открыть SFTP
 sftp-connecting = Подключение…
 sftp-disconnected = Нет подключения: { $why }
 sftp-not-connected = Нет подключения
-sftp-keys = Tab панель · Enter открыть · Backspace вверх · Insert отметить · F5 копировать · F6 перенести · Shift+F6 переименовать · F7 папка · F8 удалить · Alt+Enter права · Ctrl+H скрытые · Ctrl+R обновить
+sftp-keys = Tab панель · Enter открыть · Backspace вверх · Insert отметить · F5 копировать · F6 перенести · Shift+F6 переименовать · F7 папка · F8 удалить · F4 править · Ctrl+D закладки · Alt+Enter права · Ctrl+H скрытые · Ctrl+R обновить
 sftp-n-items = { $count ->
     [one] { $count } объект
     [few] { $count } объекта
@@ -192,6 +192,10 @@ sftp-delete-title = Удалить { $what }?
 sftp-delete-body = Папки удаляются со всем содержимым.
 sftp-exists-title = Уже есть
 sftp-for-all = Для всех файлов этого копирования
+sftp-bm-title = Закладки
+sftp-bm-none = Закладок пока нет
+sftp-bm-add = Добавить эту папку
+sftp-close = Закрыть
 sftp-newer = Только если новее
 sftp-resume = Докачать
 sftp-apply = Применить
