@@ -71,6 +71,10 @@ pub enum Message {
     Input(cosmic::iced::window::Id, Box<Message>),
     CloseRequested(cosmic::iced::window::Id),
     Ask(crate::askpass::AskMsg),
+    /// A key no widget took (not one of the app's): the tree's, Enter, an SFTP tab's.
+    Key(Physical, Modifiers),
+    SftpTx(crate::sftp_worker::Events),
+    Sftp(crate::term::TabId, crate::sftp_view::SftpMsg),
     Credentials(crate::credentials_window::CwMsg),
     /// Global Options: the master-password keyring wanted on / off.
     SetSeparate(bool),
@@ -200,6 +204,9 @@ impl Application for App {
                         shagshell_core::keyring::retarget(&old, &new)
                     }));
                 }
+                for id in &out.sftp {
+                    tasks.push(self.open_sftp(id));
+                }
                 if let Some(id) = out.deleted.clone() {
                     tasks.push(keyring_task(move || {
                         shagshell_core::keyring::forget_under(&id)
@@ -244,6 +251,47 @@ impl Application for App {
             }
             Message::CloseRequested(_) => {}
             Message::Credentials(m) => return self.credentials(m),
+            Message::Key(k, m) => {
+                // An SFTP dialog with no field (delete, overwrite): Enter is its OK, Esc Cancel.
+                if let Some(id) = self.tabs.sftp_dialog()
+                    && !self.asks.active()
+                    && m.is_empty()
+                    && let Physical::Code(code) = k
+                {
+                    use crate::sftp_view::SftpMsg;
+                    match code {
+                        Code::Enter | Code::NumpadEnter => {
+                            return self.tabs.on_sftp(id, SftpMsg::DialogOk);
+                        }
+                        Code::Escape => return self.tabs.on_sftp(id, SftpMsg::DialogCancel),
+                        _ => {}
+                    }
+                }
+                // The active SFTP tab's commander keys, unless the tree or a dialog has them.
+                if let Some(id) = self.tabs.active_sftp()
+                    && !self.sessions.focused
+                    && self.dialog().is_none()
+                    && let Some(key) = crate::sftp_view::key(&k, m)
+                {
+                    return self.tabs.on_sftp(id, crate::sftp_view::SftpMsg::Key(key));
+                }
+                if let Some(msg) = route_key(&k, m) {
+                    return self.update(msg);
+                }
+            }
+            Message::SftpTx(tx) => self.tabs.set_sftp_sender(tx),
+            Message::Sftp(id, m) => {
+                use crate::sftp_view::SftpMsg;
+                let m = match m {
+                    // The click's Ctrl / Shift: as the tree has them.
+                    SftpMsg::Click(p, i, _) => {
+                        self.sessions.focused = false;
+                        SftpMsg::Click(p, i, self.sessions.mods())
+                    }
+                    m => m,
+                };
+                return self.tabs.on_sftp(id, m);
+            }
             Message::SetSeparate(on) => {
                 self.separate = None;
                 return separate_task(move || {
@@ -283,7 +331,7 @@ impl Application for App {
                             }
                             Some(_) => None,
                             None if status == event::Status::Ignored => {
-                                route_key(&physical_key, modifiers)
+                                Some(Message::Key(physical_key, modifiers))
                             }
                             None => None,
                         },
@@ -321,6 +369,7 @@ impl Application for App {
             // Session Options' × / Alt+F4: Cancel.
             cosmic::iced::window::close_requests().map(Message::CloseRequested),
             crate::term::subscription(),
+            crate::sftp_view::subscription(),
             crate::askpass::subscription(askpass_sock(&self.control_dir)),
             self.core()
                 .watch_config::<Config>(APP_ID)
@@ -478,6 +527,30 @@ impl App {
             }
         }
         Task::batch(tasks)
+    }
+
+    /// The tree's «Открыть SFTP»: an SFTP tab for the session (ssh connects, asking as a
+    /// terminal would).
+    fn open_sftp(&mut self, id: &str) -> Task<Message> {
+        let s = match self.sessions.store.get(id) {
+            Ok(s) => s,
+            Err(e) => {
+                self.sessions.notice = Some(format!("{id}: {e}"));
+                return Task::none();
+            }
+        };
+        let name = shagshell_core::session::store::name_of(id).to_string();
+        let creds = load_credentials();
+        match ssh_launch(&self.control_dir, creds.as_ref(), &s, name, Some(id)) {
+            Ok(l) => match l.sftp() {
+                Some(l) => self.tabs.open(l, &look()),
+                None => Task::none(),
+            },
+            Err(e) => {
+                self.sessions.notice = Some(e);
+                Task::none()
+            }
+        }
     }
 
     /// Tools → Credentials Manager…; open already: raised.
@@ -709,7 +782,18 @@ impl App {
             };
             let relaunch = store.get(&id).ok().and_then(|s| {
                 let title = l.title.clone();
-                ssh_launch(&self.control_dir, creds.as_ref(), &s, title, Some(&id)).ok()
+                let n = ssh_launch(
+                    &self.control_dir,
+                    creds.as_ref(),
+                    &s,
+                    title.clone(),
+                    Some(&id),
+                );
+                // An SFTP tab stays one, under its own title.
+                match l.sftp {
+                    true => n.ok()?.sftp().map(|n| tabs::Launch { title, ..n }),
+                    false => n.ok(),
+                }
             });
             match relaunch {
                 Some(n) => *l = n,
@@ -1063,6 +1147,7 @@ fn ssh_launch(
             host: s.host.clone(),
             session: session.map(str::to_string),
         },
+        sftp: false,
     })
 }
 
@@ -1139,6 +1224,7 @@ pub fn key_action(key: &Physical, mods: Modifiers) -> Option<Action> {
         (Code::KeyM, Modifiers::ALT) => Action::ToggleSessionManager,
         (Code::KeyQ, Modifiers::ALT) => Action::QuickConnect,
         (Code::KeyC, Modifiers::ALT) => Action::Connect,
+        (Code::KeyP, Modifiers::ALT) => Action::ConnectSftp,
         (Code::KeyT, m) if m == ctrl_shift => Action::NewLocalShell,
         (Code::KeyW, m) if m == ctrl_shift => Action::CloseTab,
         (Code::KeyC, m) if m == ctrl_shift => Action::Copy,

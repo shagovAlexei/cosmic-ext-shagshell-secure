@@ -39,6 +39,19 @@ pub fn ssh_argv(s: &Session, control_dir: &Path, home: &Path) -> Result<Vec<Stri
     Ok(a)
 }
 
+/// A terminal tab's ssh arguments (after `ssh`) for its SFTP tab: the same options and
+/// ControlPath (the open connection is reused), `-s -- host sftp`. `None`: not an ssh of ours.
+pub fn sftp_args(ssh_args: &[String]) -> Option<Vec<String>> {
+    let at = ssh_args.iter().rposition(|a| a == "--")?;
+    let host = ssh_args.get(at + 1)?;
+    if at + 2 != ssh_args.len() {
+        return None; // a remote command after the host: not one we built
+    }
+    let mut a = ssh_args[..at].to_vec();
+    a.extend(["-s".into(), "--".into(), host.clone(), "sftp".into()]);
+    Some(a)
+}
+
 /// ssh's environment: every prompt to our askpass (`exe`), which asks the app over `sock`.
 /// `session`: the saved session (its keyring entries); the tab id is added by the tab.
 pub fn askpass_env(
@@ -88,6 +101,27 @@ pub fn ensure_control_dir() -> std::io::Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sftp_from_terminal_args() {
+        let ssh: Vec<String> = ["-p", "22", "-o", "ControlPath=/r/%C", "--", "-weird"]
+            .map(String::from)
+            .to_vec();
+        let want = [
+            "-p",
+            "22",
+            "-o",
+            "ControlPath=/r/%C",
+            "-s",
+            "--",
+            "-weird",
+            "sftp",
+        ];
+        assert_eq!(sftp_args(&ssh).unwrap(), want);
+        assert_eq!(sftp_args(&["host".to_string()]), None);
+        let cmd: Vec<String> = ["--", "h", "ls"].map(String::from).to_vec();
+        assert_eq!(sftp_args(&cmd), None);
+    }
 
     #[test]
     fn askpass_env_names() {

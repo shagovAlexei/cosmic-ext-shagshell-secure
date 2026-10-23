@@ -60,6 +60,7 @@ fn key_binds() -> HashMap<KeyBind, Action> {
         bind(vec![Alt], c("m"), Action::ToggleSessionManager),
         bind(vec![Alt], c("q"), Action::QuickConnect),
         bind(vec![Alt], c("c"), Action::Connect),
+        bind(vec![Alt], c("p"), Action::ConnectSftp),
         bind(vec![Ctrl, Shift], c("t"), Action::NewLocalShell),
         bind(vec![Ctrl, Shift], c("w"), Action::CloseTab),
         bind(vec![Ctrl, Shift], c("c"), Action::Copy),
@@ -131,7 +132,7 @@ pub fn bar(
         (
             fl!("menu-transfer"),
             vec![
-                ButtonDisabled(fl!("menu-connect-sftp"), None, Action::ConnectSftp),
+                tab(fl!("menu-connect-sftp"), Action::ConnectSftp),
                 off(fl!("menu-send-file")),
             ],
         ),

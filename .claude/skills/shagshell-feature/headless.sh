@@ -74,7 +74,8 @@ sshd)
         cp "$S/id_test.pub" "$S/authorized_keys"
         printf '%s\n' "Port 2222" "ListenAddress 127.0.0.1" "HostKey $S/host_key" \
             "AuthorizedKeysFile $S/authorized_keys" "PidFile $S/sshd.pid" "UsePAM no" \
-            "StrictModes no" "PasswordAuthentication no" "KbdInteractiveAuthentication no" >"$S/sshd_config"
+            "StrictModes no" "PasswordAuthentication no" "KbdInteractiveAuthentication no" \
+            "Subsystem sftp /usr/lib/openssh/sftp-server" >"$S/sshd_config"
         kill_pid sshd
         setsid /usr/sbin/sshd -D -f "$S/sshd_config" -E "$S/sshd.log" >/dev/null 2>&1 &
         echo $! >"$DIR/sshd.pid"

@@ -19,6 +19,8 @@ pub const MAX_WIDTH: f32 = 600.0;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SmCmd {
     Connect,
+    /// An SFTP tab for the selected sessions.
+    Sftp,
     /// Session Options for the session.
     Edit,
     Rename,
@@ -103,6 +105,8 @@ pub struct Outcome {
     pub moved: Option<(String, String)>,
     /// A session or folder deleted: its saved passwords go too.
     pub deleted: Option<String>,
+    /// «Открыть SFTP»: an SFTP tab for each.
+    pub sftp: Vec<String>,
 }
 
 pub struct SessionManager {
@@ -404,6 +408,10 @@ impl SessionManager {
         }
     }
 
+    pub fn mods(&self) -> Modifiers {
+        self.mods
+    }
+
     /// The one selected row, if it is a session (Options → Session Options… with no tab).
     pub fn one_session(&self) -> Option<String> {
         let mut it = self.selected.iter();
@@ -423,6 +431,7 @@ impl SessionManager {
         let one = self.anchor.clone().filter(|a| self.selected.contains(a));
         match cmd {
             SmCmd::Connect => out.open = self.connect(),
+            SmCmd::Sftp => out.sftp = self.connect(),
             SmCmd::Edit => out.edit = one.filter(|id| !self.store.is_folder(id)),
             SmCmd::NewSession => out.new_session = Some(self.target_folder()),
             SmCmd::NewFolder => {
@@ -726,6 +735,7 @@ fn row_menu(folder: bool) -> Vec<menu::Tree<Message>> {
         &HashMap::new(),
         vec![
             Button(fl!("sm-connect"), None, SmCmd::Connect),
+            Button(fl!("sm-sftp"), None, SmCmd::Sftp),
             edit,
             Divider,
             Button(fl!("sm-rename-menu"), None, SmCmd::Rename),
