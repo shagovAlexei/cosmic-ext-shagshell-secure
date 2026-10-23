@@ -4319,7 +4319,7 @@ dependencies = [
 
 [[package]]
 name = "shagshell"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "alacritty_terminal",
  "cosmic-text",
@@ -4338,7 +4338,7 @@ dependencies = [
 
 [[package]]
 name = "shagshell-core"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "log",
  "serde",

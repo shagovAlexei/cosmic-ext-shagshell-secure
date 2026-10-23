@@ -155,3 +155,4 @@ options-master = Keep passwords in a keyring with a master password
 options-master-hint = A separate keyring “ShagShell Secure”: its password is asked the first time after login. Saved passwords move in or out.
 options-credentials = Credentials: username + password sets
 options-open = Open…
+credentials-broken = credentials.toml can't be read: fix or remove it to connect this session

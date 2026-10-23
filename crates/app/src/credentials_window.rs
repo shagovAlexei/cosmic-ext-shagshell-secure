@@ -10,6 +10,15 @@ use cosmic::widget::{self, segmented_button};
 use cosmic::{Element, theme};
 use shagshell_core::credentials::Credentials;
 
+/// A save of the selected set (or a new one), as typed.
+#[derive(Clone, Debug)]
+pub struct Edit {
+    pub old: Option<String>,
+    pub name: String,
+    pub user: String,
+    pub password: Hidden,
+}
+
 #[derive(Clone, Debug)]
 pub enum CwMsg {
     Select(segmented_button::Entity),
@@ -19,6 +28,8 @@ pub enum CwMsg {
     Password(Hidden),
     Save,
     Delete,
+    /// The keyring rename of a save came back (then the files are written).
+    Renamed(Edit, Result<(), String>),
     /// The delete confirmed (after «used in N sessions»).
     DeleteConfirmed,
     DeleteCancelled,

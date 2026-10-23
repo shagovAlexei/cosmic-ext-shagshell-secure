@@ -52,8 +52,8 @@ pub struct Incoming {
 #[derive(Clone, Debug)]
 pub enum AskMsg {
     Incoming(Incoming),
-    /// The keyring looked up for a prompt: the secret, none, or why it failed.
-    Saved(Incoming, Result<Option<Hidden>, String>),
+    /// The keyring looked up for a prompt (its owner): the secret, none, or why it failed.
+    Saved(Incoming, Owner, Result<Option<Hidden>, String>),
     Input(Hidden),
     Save(bool),
     Ok,
@@ -123,7 +123,8 @@ impl Asks {
             AskMsg::Incoming(inc) => {
                 let kind = askpass::classify(&inc.req.prompt);
                 let first = self.tries.first(inc.req.ppid, kind);
-                if let (Some(s), Some(owner)) = (secret(kind), owner_of(&inc, kind))
+                let owner = owner_of(&inc, kind);
+                if let (Some(s), Some(owner)) = (secret(kind), owner.clone())
                     && first
                 {
                     return Outcome {
@@ -133,12 +134,12 @@ impl Asks {
                 }
                 // The same ssh asking again: what it was given was wrong.
                 let retry = !first && secret(kind).is_some();
-                return self.push(inc, kind, retry, None);
+                return self.push(inc, kind, owner, retry, None);
             }
-            AskMsg::Saved(inc, Ok(Some(Hidden(p)))) => inc.reply.send(Reply::Answer(p)),
-            AskMsg::Saved(inc, found) => {
+            AskMsg::Saved(inc, _, Ok(Some(Hidden(p)))) => inc.reply.send(Reply::Answer(p)),
+            AskMsg::Saved(inc, owner, found) => {
                 let kind = askpass::classify(&inc.req.prompt);
-                return self.push(inc, kind, false, found.err());
+                return self.push(inc, kind, Some(owner), false, found.err());
             }
             AskMsg::Input(Hidden(v)) => {
                 if let Some(p) = self.queue.front_mut() {
@@ -201,8 +202,15 @@ impl Asks {
         Outcome::default()
     }
 
-    fn push(&mut self, inc: Incoming, kind: Kind, retry: bool, failed: Option<String>) -> Outcome {
-        let owner = owner_of(&inc, kind);
+    /// `owner`: `owner_of` (worked out once per prompt: it reads /proc).
+    fn push(
+        &mut self,
+        inc: Incoming,
+        kind: Kind,
+        owner: Option<Owner>,
+        retry: bool,
+        failed: Option<String>,
+    ) -> Outcome {
         let no_save = match owner {
             Some(_) => failed.map(|e| fl!("ask-keyring-failed", error = e)),
             None => Some(String::new()),

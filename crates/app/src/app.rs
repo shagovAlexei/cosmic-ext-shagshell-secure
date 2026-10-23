@@ -1,7 +1,8 @@
 //! The application: state and routing only; each screen area lives in its own module.
 
+use crate::askpass::Hidden;
 use crate::config::{self, Config};
-use crate::credentials_window::{CredWindow, CwMsg};
+use crate::credentials_window::{CredWindow, CwMsg, Edit};
 use crate::menu::Action;
 use crate::quick_connect::{QcMsg, QuickConnect};
 use crate::session_manager::{SessionManager, SmMsg, TreeKey};
@@ -14,7 +15,7 @@ use cosmic::iced::keyboard::{self, Modifiers, key::Code, key::Physical};
 use cosmic::iced::{Length, Subscription, event};
 use cosmic::widget::{self, about::About};
 use cosmic::{Application, Element};
-use shagshell_core::credentials::{self, Credentials};
+use shagshell_core::credentials::{self, Credentials, PutError};
 use shagshell_core::keyring::{Owner, Secret};
 use shagshell_core::session::store::DEFAULT;
 
@@ -463,11 +464,12 @@ impl App {
     /// Each session in a tab of its own; one that can't start says why under the tree.
     fn open_sessions(&mut self, ids: &[String]) -> Task<Message> {
         let mut tasks = Vec::new();
+        let creds = load_credentials();
         for id in ids {
             match self.sessions.store.get(id) {
                 Ok(s) => {
                     let name = shagshell_core::session::store::name_of(id).to_string();
-                    match ssh_launch(&self.control_dir, &s, name, Some(id)) {
+                    match ssh_launch(&self.control_dir, creds.as_ref(), &s, name, Some(id)) {
                         Ok(l) => tasks.push(self.tabs.open(l, &look())),
                         Err(e) => self.sessions.notice = Some(e),
                     }
@@ -516,6 +518,8 @@ impl App {
             }
             CwMsg::Drag => return cosmic::iced::window::drag(c.window),
             CwMsg::Save => return self.save_credential(),
+            CwMsg::Renamed(edit, Ok(())) => return self.commit_credential(edit),
+            CwMsg::Renamed(_, Err(e)) => c.error = Some(fl!("ask-keyring-failed", error = e)),
             CwMsg::Delete => {
                 if let Some(name) = &c.selected {
                     c.confirm = Some(self.sessions.store.using(name).len());
@@ -531,57 +535,84 @@ impl App {
         Task::none()
     }
 
-    /// «Сохранить»: the set checked and written; a rename moves its sessions and its password.
+    /// «Сохранить»: the set checked; a rename moves its password in the keyring first (failed:
+    /// nothing written), then `commit_credential`.
     fn save_credential(&mut self) -> Task<Message> {
         let Some(c) = &mut self.creds_win else {
             return Task::none();
         };
-        let name = c.name.trim().to_string();
+        if c.confirm.is_some() {
+            return Task::none(); // Enter in a field while the delete is asked
+        }
+        let (name, user) = (c.name.trim().to_string(), c.user.trim().to_string());
         let old = c.selected.clone();
+        if let Err(e) = c.creds.clone().put(old.as_deref(), &name, &user) {
+            c.error = Some(match e {
+                PutError::Taken => fl!("name-taken"),
+                PutError::Name(e) => crate::session_manager::name_text(e),
+            });
+            return Task::none();
+        }
+        let password = Hidden(std::mem::take(&mut c.password));
+        let edit = Edit {
+            old,
+            name,
+            user,
+            password,
+        };
+        match edit.old.clone().filter(|o| *o != edit.name) {
+            Some(o) => {
+                let to = edit.name.clone();
+                off_ui(
+                    move || {
+                        let (from, to) = (Owner::Credential(o), Owner::Credential(to));
+                        shagshell_core::keyring::rename(&from, &to).map_err(|e| e.to_string())
+                    },
+                    move |r| Message::Credentials(CwMsg::Renamed(edit.clone(), r)),
+                )
+            }
+            None => self.commit_credential(edit),
+        }
+    }
+
+    /// The set written; its sessions (renamed: relinked) and their tabs follow; a typed password
+    /// stored, then looked up for the field.
+    fn commit_credential(&mut self, edit: Edit) -> Task<Message> {
+        let Some(c) = &mut self.creds_win else {
+            return Task::none();
+        };
         let mut creds = c.creds.clone();
-        let put = crate::session_manager::check(&name, false).and_then(|()| {
-            creds
-                .put(old.as_deref(), &name, c.user.trim())
-                .map_err(|_| fl!("name-taken"))
-        });
-        if let Err(e) = put.and_then(|()| {
-            creds
-                .save(&credentials::default_path())
-                .map_err(|e| crate::session_manager::io_text(&e))
-        }) {
+        let saved = (creds.put(edit.old.as_deref(), &edit.name, &edit.user))
+            .map_err(|_| fl!("name-taken"))
+            .and_then(|()| {
+                (creds.save(&credentials::default_path()))
+                    .map_err(|e| crate::session_manager::io_text(&e))
+            });
+        if let Err(e) = saved {
             c.error = Some(e);
             return Task::none();
         }
-        let password = std::mem::take(&mut c.password);
         c.creds = creds;
-        c.reload(Some(&name));
+        c.reload(Some(&edit.name));
         let window = c.window;
-        let renamed = old.filter(|o| *o != name);
-        let mut relinked = Vec::new();
-        if let Some(o) = &renamed {
-            match self.sessions.store.relink(o, Some(&name), "") {
-                Ok(ids) => relinked = ids,
-                Err(e) => self.sessions.notice = Some(crate::session_manager::io_text(&e)),
-            }
+        if let Some(o) = edit.old.as_ref().filter(|o| **o != edit.name)
+            && let Err(e) = self.sessions.store.relink(o, Some(&edit.name), "")
+        {
+            self.sessions.notice = Some(crate::session_manager::io_text(&e));
         }
-        // The tabs of its sessions: the new name in their environment.
-        for id in relinked {
+        // Its sessions' tabs: the new name / user for Reconnect and Clone.
+        for id in self.sessions.store.using(&edit.name) {
             self.sessions_changed(&id, &id);
         }
-        // In this order: the rename moves the old password, then a typed one replaces it.
-        let set = name.clone();
-        let save = keyring_task(move || {
-            let to = Owner::Credential(set);
-            if let Some(o) = renamed {
-                shagshell_core::keyring::rename(&Owner::Credential(o), &to)?;
-            }
-            match password.is_empty() {
-                true => Ok(()),
-                false => shagshell_core::keyring::store(&to, Secret::Password, &password),
-            }
-        });
-        // Looked up once written (in a batch the lookup could come first).
-        save.chain(has_password_task(window, name))
+        let lookup = has_password_task(window, edit.name.clone());
+        let Hidden(password) = edit.password;
+        if password.is_empty() {
+            return lookup;
+        }
+        let to = Owner::Credential(edit.name);
+        keyring_task(move || shagshell_core::keyring::store(&to, Secret::Password, &password))
+            // Looked up once written (in a batch the lookup could come first).
+            .chain(lookup)
     }
 
     /// Delete confirmed: its sessions keep its user, its password goes.
@@ -629,12 +660,13 @@ impl App {
     fn ask_outcome(&mut self, out: crate::askpass::Outcome) -> Task<Message> {
         use crate::askpass::{AskMsg, Hidden};
         let mut tasks = Vec::new();
-        if let Some((inc, session, s)) = out.lookup {
+        if let Some((inc, owner, s)) = out.lookup {
+            let who = owner.clone();
             tasks.push(off_ui(
-                move || shagshell_core::keyring::lookup(&session, s),
+                move || shagshell_core::keyring::lookup(&who, s),
                 move |r| {
                     let r = r.map(|v| v.map(Hidden)).map_err(|e| e.to_string());
-                    Message::Ask(AskMsg::Saved(inc.clone(), r))
+                    Message::Ask(AskMsg::Saved(inc.clone(), owner.clone(), r))
                 },
             ));
         }
@@ -664,6 +696,7 @@ impl App {
     /// it follow, and Reconnect / Clone run it as saved now (SecureCRT re-reads the session).
     fn sessions_changed(&mut self, old: &str, new: &str) {
         let store = &self.sessions.store;
+        let creds = load_credentials();
         for l in self.tabs.launches_mut() {
             let tabs::Protocol::Ssh {
                 session: Some(id), ..
@@ -674,10 +707,10 @@ impl App {
             let Some(id) = shagshell_core::session::store::retarget(id, old, new) else {
                 continue;
             };
-            let relaunch = store
-                .get(&id)
-                .ok()
-                .and_then(|s| ssh_launch(&self.control_dir, &s, l.title.clone(), Some(&id)).ok());
+            let relaunch = store.get(&id).ok().and_then(|s| {
+                let title = l.title.clone();
+                ssh_launch(&self.control_dir, creds.as_ref(), &s, title, Some(&id)).ok()
+            });
             match relaunch {
                 Some(n) => *l = n,
                 None => {
@@ -735,7 +768,14 @@ impl App {
             }
         }
         self.quick = None;
-        match ssh_launch(&self.control_dir, &session, title, saved_id.as_deref()) {
+        let creds = load_credentials();
+        match ssh_launch(
+            &self.control_dir,
+            creds.as_ref(),
+            &session,
+            title,
+            saved_id.as_deref(),
+        ) {
             Ok(l) => self.tabs.open(l, &look()),
             Err(e) => {
                 self.sessions.notice = Some(e);
@@ -838,9 +878,17 @@ impl App {
                     Target::New { .. } => self.sessions.store.template(),
                     Target::Default => self.sessions.store.get(DEFAULT).unwrap_or_default(),
                 };
-                let Some(s) = o.checked(&base) else {
+                let Some(mut s) = o.checked(&base) else {
                     return Task::none();
                 };
+                // A set renamed or deleted while the window was open: what the file says now.
+                let sets = load_credentials().unwrap_or_default();
+                if s.credential
+                    .as_ref()
+                    .is_some_and(|c| !sets.0.contains_key(c))
+                {
+                    s.credential = base.credential.clone();
+                }
                 if let Err(e) = self.save_options(&s) {
                     if let Some(o) = &mut self.options {
                         o.error = Some(e);
@@ -975,16 +1023,28 @@ fn keyring_task<E: std::fmt::Display + Send + 'static>(
     })
 }
 
+/// `credentials.toml`, `None` if it can't be read (a session using a set then won't connect).
+fn load_credentials() -> Option<Credentials> {
+    Credentials::load(&credentials::default_path())
+        .inspect_err(|e| log::warn!("credentials.toml: {e}"))
+        .ok()
+}
+
+/// `creds`: `load_credentials`, once for every launch built together.
 fn ssh_launch(
     control_dir: &std::path::Path,
+    creds: Option<&Credentials>,
     s: &shagshell_core::session::Session,
     title: String,
     session: Option<&str>,
 ) -> Result<tabs::Launch, String> {
-    use shagshell_core::credentials::{self, Credentials};
     let home = std::env::home_dir().unwrap_or_default();
     // A credential set: its user here, its password through askpass (a set that is gone: none).
-    let creds = Credentials::load(&credentials::default_path()).unwrap_or_default();
+    let creds = match (creds, &s.credential) {
+        (Some(c), _) => c,
+        (None, Some(_)) => return Err(fl!("credentials-broken")),
+        (None, None) => &Credentials::default(),
+    };
     let credential = (s.credential.as_ref()).filter(|c| creds.0.contains_key(*c));
     let s = &creds.resolve(s);
     let mut argv =

@@ -318,6 +318,9 @@ pub fn set_separate(on: bool) -> zbus::Result<()> {
         }
         (false, Some(own)) => {
             let default: OwnedObjectPath = svc.service()?.call("ReadAlias", &("default",))?;
+            if default.as_str() == "/" {
+                return Err(zbus::Error::Failure("no default keyring".into()));
+            }
             (Some(own), default)
         }
     };

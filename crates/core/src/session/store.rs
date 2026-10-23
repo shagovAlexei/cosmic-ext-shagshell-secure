@@ -175,7 +175,6 @@ impl Store {
         !id.is_empty() && self.root.join(id).is_dir()
     }
 
-    /// A session or folder by that id (a folder and a session never share one).
     /// The sessions (Default too) that use credential set `name`.
     pub fn using(&self, name: &str) -> Vec<String> {
         let mut all = Vec::new();
@@ -204,6 +203,7 @@ impl Store {
         Ok(ids)
     }
 
+    /// A session or folder by that id (a folder and a session never share one).
     fn exists(&self, id: &str) -> bool {
         self.file(id).exists() || self.is_folder(id)
     }
