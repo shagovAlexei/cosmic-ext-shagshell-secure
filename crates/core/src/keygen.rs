@@ -94,7 +94,7 @@ fn public_of(file: &Path) -> PathBuf {
 /// Makes the key. `askpass`: the program `SSH_ASKPASS` runs to get the passphrase (our binary).
 pub fn generate(s: &Spec, askpass: &Path) -> Result<Generated, Error> {
     use std::os::unix::fs::DirBuilderExt;
-    if s.file.as_os_str().is_empty() || s.file.is_dir() {
+    if !s.file.is_absolute() || s.file.is_dir() {
         return Err(Error::NoFile);
     }
     let public = public_of(&s.file);
@@ -131,7 +131,8 @@ pub fn generate(s: &Spec, askpass: &Path) -> Result<Generated, Error> {
         ));
     }
     Ok(Generated {
-        fingerprint: fingerprint(&public)?,
+        // Only for show: the key exists whatever this says.
+        fingerprint: fingerprint(&public).unwrap_or_default(),
         public: std::fs::read_to_string(&public)
             .map_err(|e| Error::Failed(format!("{}: {e}", public.display())))?
             .trim()
@@ -177,6 +178,7 @@ pub fn copy_id_args(
     user: &str,
     port: Option<u16>,
     jump: &str,
+    identity: &str,
     control_dir: &Path,
 ) -> Vec<String> {
     let mut a = vec!["-i".to_string(), public.display().to_string()];
@@ -186,6 +188,9 @@ pub fn copy_id_args(
     let mut opt = |o: String| a.extend(["-o".to_string(), o]);
     if !jump.trim().is_empty() {
         opt(format!("ProxyJump={}", jump.trim()));
+    }
+    if !identity.trim().is_empty() {
+        opt(format!("IdentityFile={}", identity.trim()));
     }
     opt("ControlMaster=auto".into());
     opt(format!("ControlPath={}/%C", control_dir.display()));
@@ -256,6 +261,7 @@ mod tests {
             "u",
             Some(2222),
             "j@x",
+            "~/.ssh/k",
             Path::new("/c"),
         );
         assert_eq!(
@@ -268,6 +274,8 @@ mod tests {
                 "-o",
                 "ProxyJump=j@x",
                 "-o",
+                "IdentityFile=~/.ssh/k",
+                "-o",
                 "ControlMaster=auto",
                 "-o",
                 "ControlPath=/c/%C",
@@ -277,7 +285,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            copy_id_args(Path::new("/k.pub"), "h", "", None, "", Path::new("/c"))
+            copy_id_args(Path::new("/k.pub"), "h", "", None, "", "", Path::new("/c"))
                 .last()
                 .unwrap(),
             "h"

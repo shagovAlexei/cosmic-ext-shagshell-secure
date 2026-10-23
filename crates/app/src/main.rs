@@ -32,7 +32,9 @@ fn main() -> cosmic::iced::Result {
         std::process::exit(shagshell_core::askpass::run_helper(sock.as_ref(), prompt));
     }
     // ssh-keygen's passphrase prompt (Create Public Key): the phrase is in our environment only.
-    if let (Some(p), [_]) = (std::env::var_os("SHAGSHELL_ASKPASS_FIXED"), &args[..]) {
+    if let (Some(p), [prompt]) = (std::env::var_os("SHAGSHELL_ASKPASS_FIXED"), &args[..])
+        && prompt.to_ascii_lowercase().contains("passphrase")
+    {
         use std::io::Write;
         let _ = writeln!(std::io::stdout(), "{}", p.to_string_lossy());
         std::process::exit(0);

@@ -963,6 +963,8 @@ impl App {
     fn key_dialog(&mut self, m: crate::keygen::KgMsg) -> Task<Message> {
         use crate::keygen::KgMsg;
         match (&mut self.keys, m) {
+            // A key is being made: its result has to land in this dialog.
+            (Some(Keys::Gen(g)), KgMsg::Close) if g.busy() => {}
             (_, KgMsg::Close) => {
                 self.keys = None;
                 return self.tabs.focus_active();
@@ -1024,6 +1026,13 @@ impl App {
             }
         };
         let s = creds.unwrap_or_default().resolve(&s);
+        // ssh-copy-id has no `--`: a host that looks like an option would be one.
+        if s.host.starts_with('-') {
+            self.sessions.notice = Some(fl!("ku-bad-host"));
+            return Task::none();
+        }
+        // Its own tab, not the session's: a rebuilt launch, Clone or SFTP must not take it for ssh.
+        l.protocol = tabs::Protocol::Local;
         l.program = "ssh-copy-id".into();
         l.args = shagshell_core::keygen::copy_id_args(
             key,
@@ -1031,6 +1040,7 @@ impl App {
             s.user.as_deref().unwrap_or_default(),
             s.port,
             &s.jump,
+            s.identity.as_deref().unwrap_or_default(),
             &self.control_dir,
         );
         l.title = fl!("ku-tab", name = name);

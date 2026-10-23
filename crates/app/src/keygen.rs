@@ -77,6 +77,10 @@ impl KeyGen {
         }
     }
 
+    pub fn busy(&self) -> bool {
+        self.busy
+    }
+
     pub fn focus(&self) -> cosmic::app::Task<Message> {
         widget::text_input::focus(self.first.clone())
     }

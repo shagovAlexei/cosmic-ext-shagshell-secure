@@ -394,3 +394,4 @@ ku-hint = Runs ssh-copy-id in a new tab; the password is asked as for any connec
 ku-run = Upload
 ku-no-keys = No public keys in ~/.ssh: create one first (Tools → Create Public Key…)
 ku-tab = Upload key — { $name }
+ku-bad-host = The session's host name starts with “-”: not uploaded
