@@ -1,6 +1,7 @@
 mod about;
 mod app;
 mod askpass;
+mod command_window;
 mod config;
 mod credentials_window;
 mod i18n;
