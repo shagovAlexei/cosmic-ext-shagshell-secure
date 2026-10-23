@@ -127,3 +127,5 @@
 | `askpass::tests::regression_jump_ssh_is_not_direct` | ssh до jump-хоста (`-J` / ProxyJump) не получает и не перезаписывает сохранённый пароль сессии |
 | `askpass::tests::regression_reused_pid_starts_afresh` | новый ssh с pid завершённого не наследует его «отменено» / «уже отвечали» |
 | `sftp::proto::tests::list_non_utf8_names` | имя файла не в UTF-8 на сервере не рвёт SFTP-соединение (было в `openssh-sftp-client`) |
+| `sftp::proto::tests::regression_local_failure_keeps_the_stream_in_step` | локальная ошибка посреди передачи (диск полон) не сбивает ответы SFTP следующих команд |
+| `sftp::ops::tests::regression_failed_overwrite_keeps_the_original` | неудачная / отменённая перезапись (в обе стороны) оставляет прежний файл, без `.part` |

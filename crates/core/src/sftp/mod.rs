@@ -1,4 +1,5 @@
-//! SFTP: the protocol client and the transfer queue.
+//! SFTP: the protocol client, the transfer queue, and the file operations over them.
 
+pub mod ops;
 pub mod proto;
 pub mod queue;

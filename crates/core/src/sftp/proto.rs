@@ -230,11 +230,15 @@ impl<R: Read, W: Write> Client<R, W> {
         Ok((kind, id, rest))
     }
 
-    /// One request, its one answer.
+    /// One request, its one answer (another request's answer here: the stream is out of step).
     fn call(&mut self, m: &Msg) -> io::Result<(u8, Vec<u8>)> {
+        let want = u32::from_be_bytes(m.0[1..5].try_into().map_err(|_| bad())?);
         self.send(m)?;
         self.w.flush()?;
-        let (kind, _, body) = self.recv()?;
+        let (kind, id, body) = self.recv()?;
+        if id != want {
+            return Err(bad());
+        }
         Ok((kind, body))
     }
 
@@ -427,7 +431,12 @@ impl<R: Read, W: Write> Client<R, W> {
             while failure.is_none()
                 && let Some(d) = ready.remove(&written)
             {
-                out.write_all(&d)?;
+                // A local failure (a full disk) stops the requests, not the draining: the answers
+                // in flight must be read, or the next command would get them.
+                if let Err(e) = out.write_all(&d) {
+                    failure = Some(e);
+                    break;
+                }
                 written += d.len() as u64;
                 if !progress(written) {
                     failure = Some(cancelled());
@@ -468,7 +477,13 @@ impl<R: Read, W: Write> Client<R, W> {
         let mut buf = vec![0; CHUNK as usize];
         loop {
             while failure.is_none() && !done_reading && inflight.len() < WINDOW {
-                let n = read_full(input, &mut buf)?;
+                let n = match read_full(input, &mut buf) {
+                    Ok(n) => n,
+                    Err(e) => {
+                        failure = Some(e); // drained below, as a cancel
+                        break;
+                    }
+                };
                 if n == 0 {
                     done_reading = true;
                     break;
@@ -629,6 +644,52 @@ mod tests {
         assert!(out.len() < 3 << 20);
         // The answers in flight were drained: the next call works.
         assert!(c.stat(&remote).is_ok());
+    }
+
+    /// A writer that fails after `left` bytes (a full disk).
+    struct Full(usize);
+
+    impl Write for Full {
+        fn write(&mut self, b: &[u8]) -> io::Result<usize> {
+            match self.0.checked_sub(b.len()) {
+                Some(l) => {
+                    self.0 = l;
+                    Ok(b.len())
+                }
+                None => Err(io::Error::new(ErrorKind::StorageFull, "full")),
+            }
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn regression_local_failure_keeps_the_stream_in_step() {
+        let Some((_s, mut c)) = server() else { return };
+        let d = tempfile::tempdir().unwrap();
+        let remote = d.path().join("big");
+        std::fs::write(&remote, vec![1u8; 3 << 20]).unwrap();
+        let e = c
+            .download(&remote, &mut Full(200_000), |_| true)
+            .unwrap_err();
+        assert_eq!(e.kind(), ErrorKind::StorageFull);
+        assert_eq!(c.stat(&remote).unwrap().size, Some(3 << 20)); // its own answer
+        // An upload whose input fails half-way: the same.
+        struct Broken(usize);
+        impl Read for Broken {
+            fn read(&mut self, b: &mut [u8]) -> io::Result<usize> {
+                if self.0 == 0 {
+                    return Err(io::Error::other("EIO"));
+                }
+                let n = b.len().min(self.0);
+                self.0 -= n;
+                Ok(n)
+            }
+        }
+        let up = d.path().join("up");
+        assert!(c.upload(&mut Broken(1 << 20), &up, |_| true).is_err());
+        assert!(c.read_dir(d.path()).is_ok());
     }
 
     #[test]

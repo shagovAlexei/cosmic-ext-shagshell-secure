@@ -376,8 +376,16 @@ impl Tabs {
         if self.tabs.get(&id).is_none_or(|t| t.live()) {
             return Task::none();
         }
-        // SFTP: a new connection in the same tab (its old workers' events are told apart).
-        if let Some(Body::Sftp(v)) = self.tabs.get_mut(&id).map(|t| &mut t.body) {
+        // SFTP: a new connection in the same tab (its old workers' events are told apart),
+        // with the session as it is now (`sessions_changed` keeps `launch` current).
+        if let Some(tab) = self.tabs.get_mut(&id)
+            && let Body::Sftp(v) = &mut tab.body
+        {
+            v.set_connect(Connect {
+                program: tab.launch.program.clone(),
+                args: tab.launch.args.clone(),
+                env: tab.launch.env.clone(),
+            });
             v.reconnect();
             self.retitle(id);
             return Task::none();

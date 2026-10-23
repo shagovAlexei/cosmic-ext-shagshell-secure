@@ -5,10 +5,11 @@
 
 use crate::term::TabId;
 use shagshell_core::panel::Entry;
+use shagshell_core::sftp::ops;
 use shagshell_core::sftp::proto::Client;
 use shagshell_core::sftp::queue::{Choice, Dir, Job};
 use std::ffi::OsString;
-use std::io::{self, ErrorKind, Read};
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::{ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -62,6 +63,8 @@ pub enum Event {
     },
     /// A change on the server is done (relist), or why it failed.
     Changed(Option<String>),
+    /// The folder can't be listed: why.
+    ListFailed(PathBuf, String),
     Planned {
         batch: u64,
         dir: Dir,
@@ -90,6 +93,13 @@ pub struct Worker {
 impl Worker {
     pub fn send(&self, c: Cmd) {
         let _ = self.tx.send(c);
+    }
+}
+
+/// Gone (the tab closed, Reconnect): a copy it runs stops now, not at the end of the file.
+impl Drop for Worker {
+    fn drop(&mut self) {
+        self.cancel.store(true, Ordering::SeqCst);
     }
 }
 
@@ -185,37 +195,27 @@ fn run(
     let _ = child.wait();
 }
 
-/// The connection itself failed (the worker ends), not just this command.
-fn fatal(e: &io::Error) -> bool {
-    matches!(
-        e.kind(),
-        ErrorKind::UnexpectedEof
-            | ErrorKind::BrokenPipe
-            | ErrorKind::InvalidData
-            | ErrorKind::ConnectionReset
-    )
-}
-
 /// `Err`: the connection is gone.
 fn handle(c: &mut Sftp, cmd: Cmd, send: &impl Fn(Event), cancel: &AtomicBool) -> io::Result<()> {
     let soft = |r: io::Result<()>| match r {
-        Err(e) if fatal(&e) => Err(e),
+        Err(e) if ops::is_fatal(&e) => Err(e),
         r => Ok(r.err().map(|e| e.to_string())),
     };
     match cmd {
-        Cmd::List { path, focus } => match list(c, &path) {
+        Cmd::List { path, focus } => match ops::list(c, &path) {
             Ok(entries) => send(Event::Listed {
                 path,
                 entries,
                 focus,
             }),
-            Err(e) if fatal(&e) => return Err(e),
-            Err(e) => send(Event::Changed(Some(e.to_string()))),
+            Err(e) if ops::is_fatal(&e) => return Err(e),
+            // Said, not listed again (the folder may be gone: no loop).
+            Err(e) => send(Event::ListFailed(path, e.to_string())),
         },
         Cmd::Mkdir(p) => send(Event::Changed(soft(c.mkdir(&p))?)),
         Cmd::Rename(a, b) => send(Event::Changed(soft(c.rename(&a, &b))?)),
         Cmd::Delete(paths) => {
-            let r = paths.iter().try_for_each(|p| delete_remote(c, p));
+            let r = paths.iter().try_for_each(|p| ops::delete_remote(c, p));
             send(Event::Changed(soft(r)?));
         }
         Cmd::Plan {
@@ -225,32 +225,40 @@ fn handle(c: &mut Sftp, cmd: Cmd, send: &impl Fn(Event), cancel: &AtomicBool) ->
             dst_dir,
             is_move,
         } => {
-            let mut files = Vec::new();
-            let mut dirs = Vec::new();
-            let r = srcs
-                .iter()
-                .try_for_each(|s| plan(c, dir, s, &dst_dir, &mut files, &mut dirs));
-            dirs.reverse(); // deepest first
-            let error = soft(r)?;
+            let (plan, error) = match ops::plan(c, dir, &srcs, &dst_dir) {
+                Ok(p) => (p, None),
+                Err(e) if ops::is_fatal(&e) => return Err(e),
+                Err(e) => (ops::Plan::default(), Some(e.to_string())),
+            };
             send(Event::Planned {
                 batch,
                 dir,
-                files,
-                dirs,
+                files: plan.files,
+                dirs: plan.dirs,
                 is_move,
                 error,
             });
         }
         Cmd::Run { job, choice } => {
             cancel.store(false, Ordering::SeqCst);
-            match transfer(c, &job, choice, send, cancel) {
-                Ok(Some(skipped)) => send(Event::Finished(job.id, Ok(skipped))),
-                Ok(None) => send(Event::Conflict(job.id)),
-                Err(e) if fatal(&e) => {
-                    send(Event::Finished(job.id, Err(e.to_string())));
-                    return Err(e);
+            let mut last = Instant::now();
+            let progress = |n: u64| {
+                // A few updates a second are enough for the queue.
+                if last.elapsed() > Duration::from_millis(150) {
+                    last = Instant::now();
+                    send(Event::Progress(job.id, n));
                 }
-                Err(e) => send(Event::Finished(job.id, Err(e.to_string()))),
+                !cancel.load(Ordering::SeqCst)
+            };
+            match ops::transfer(c, &job, choice, progress) {
+                Ok(ops::Copied::Exists) => send(Event::Conflict(job.id)),
+                Ok(done) => send(Event::Finished(job.id, Ok(done == ops::Copied::Skipped))),
+                Err(e) => {
+                    send(Event::Finished(job.id, Err(e.to_string())));
+                    if ops::is_fatal(&e) {
+                        return Err(e);
+                    }
+                }
             }
         }
         Cmd::RemoveDirs(dir, dirs) => {
@@ -263,173 +271,4 @@ fn handle(c: &mut Sftp, cmd: Cmd, send: &impl Fn(Event), cancel: &AtomicBool) ->
         }
     }
     Ok(())
-}
-
-fn list(c: &mut Sftp, path: &Path) -> io::Result<Vec<Entry>> {
-    let mut out = Vec::new();
-    for e in c.read_dir(path)? {
-        let mut a = e.attrs;
-        // A link: what it points to (a link to a folder opens like one).
-        if a.is_link()
-            && let Ok(t) = c.stat(&path.join(&e.name))
-        {
-            a = t;
-        }
-        out.push(Entry {
-            name: e.name,
-            dir: a.is_dir(),
-            size: a.size.unwrap_or(0),
-            mtime: a.mtime.map(i64::from),
-        });
-    }
-    Ok(out)
-}
-
-fn delete_remote(c: &mut Sftp, p: &Path) -> io::Result<()> {
-    let a = c.lstat(p)?;
-    if !a.is_dir() {
-        return c.remove(p);
-    }
-    for e in c.read_dir(p)? {
-        delete_remote(c, &p.join(&e.name))?;
-    }
-    c.rmdir(p)
-}
-
-/// `src` (a file or a folder, its whole tree) as files under `dst_dir`; the target folders are
-/// made now (an empty folder is copied too).
-fn plan(
-    c: &mut Sftp,
-    dir: Dir,
-    src: &Path,
-    dst_dir: &Path,
-    files: &mut Vec<(PathBuf, PathBuf, u64)>,
-    dirs: &mut Vec<PathBuf>,
-) -> io::Result<()> {
-    let Some(name) = src.file_name() else {
-        return Ok(());
-    };
-    let dst = dst_dir.join(name);
-    let (is_dir, size) = match dir {
-        Dir::Down => {
-            let a = c.stat(src)?;
-            (a.is_dir(), a.size.unwrap_or(0))
-        }
-        Dir::Up => {
-            let m = std::fs::metadata(src)?;
-            (m.is_dir(), m.len())
-        }
-    };
-    if !is_dir {
-        files.push((src.to_path_buf(), dst, size));
-        return Ok(());
-    }
-    // A folder that links back up would never end: links to folders are not followed.
-    let link = match dir {
-        Dir::Down => c.lstat(src)?.is_link(),
-        Dir::Up => std::fs::symlink_metadata(src)?.file_type().is_symlink(),
-    };
-    if link {
-        return Ok(());
-    }
-    let names: Vec<OsString> = match dir {
-        Dir::Down => {
-            ensure_local_dir(&dst)?;
-            c.read_dir(src)?.into_iter().map(|e| e.name).collect()
-        }
-        Dir::Up => {
-            ensure_remote_dir(c, &dst)?;
-            std::fs::read_dir(src)?
-                .filter_map(|e| e.ok().map(|e| e.file_name()))
-                .collect()
-        }
-    };
-    dirs.push(src.to_path_buf());
-    for n in names {
-        plan(c, dir, &src.join(n), &dst, files, dirs)?;
-    }
-    Ok(())
-}
-
-fn ensure_local_dir(p: &Path) -> io::Result<()> {
-    std::fs::create_dir_all(p)
-}
-
-/// `mkdir -p` on the server.
-fn ensure_remote_dir(c: &mut Sftp, p: &Path) -> io::Result<()> {
-    match c.stat(p) {
-        Ok(a) if a.is_dir() => return Ok(()),
-        Ok(_) => {
-            return Err(io::Error::new(
-                ErrorKind::AlreadyExists,
-                p.display().to_string(),
-            ));
-        }
-        Err(e) if e.kind() != ErrorKind::NotFound => return Err(e),
-        Err(_) => {}
-    }
-    if let Some(parent) = p.parent().filter(|p| !p.as_os_str().is_empty()) {
-        ensure_remote_dir(c, parent)?;
-    }
-    c.mkdir(p)
-}
-
-/// One file. `Ok(None)`: the target is there and nobody said what to do; `Ok(Some(true))`:
-/// skipped.
-fn transfer(
-    c: &mut Sftp,
-    job: &Job,
-    choice: Option<Choice>,
-    send: &impl Fn(Event),
-    cancel: &AtomicBool,
-) -> io::Result<Option<bool>> {
-    let exists = match job.dir {
-        Dir::Down => job.dst.exists(),
-        Dir::Up => c.stat(&job.dst).is_ok(),
-    };
-    match (exists, choice) {
-        (true, None) => return Ok(None),
-        (true, Some(Choice::Skip)) => return Ok(Some(true)),
-        _ => {}
-    }
-    let mut last = Instant::now();
-    let progress = |n: u64| {
-        // A few updates a second are enough for the queue.
-        if last.elapsed() > Duration::from_millis(150) {
-            last = Instant::now();
-            send(Event::Progress(job.id, n));
-        }
-        !cancel.load(Ordering::SeqCst)
-    };
-    let r = match job.dir {
-        Dir::Down => {
-            if let Some(parent) = job.dst.parent() {
-                ensure_local_dir(parent)?;
-            }
-            let mut out = std::io::BufWriter::new(std::fs::File::create(&job.dst)?);
-            let r = c.download(&job.src, &mut out, progress);
-            let r = r.and_then(|n| std::io::Write::flush(&mut out).map(|()| n));
-            if r.is_err() {
-                drop(out);
-                let _ = std::fs::remove_file(&job.dst); // not a half file
-            }
-            r
-        }
-        Dir::Up => {
-            let mut input = std::fs::File::open(&job.src)?;
-            let r = c.upload(&mut input, &job.dst, progress);
-            if r.as_ref().is_err_and(|e| !fatal(e)) {
-                let _ = c.remove(&job.dst);
-            }
-            r
-        }
-    };
-    r?;
-    if job.is_move {
-        match job.dir {
-            Dir::Down => c.remove(&job.src)?,
-            Dir::Up => std::fs::remove_file(&job.src)?,
-        }
-    }
-    Ok(Some(false))
 }

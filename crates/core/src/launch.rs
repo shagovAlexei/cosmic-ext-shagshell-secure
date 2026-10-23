@@ -47,8 +47,14 @@ pub fn sftp_args(ssh_args: &[String]) -> Option<Vec<String>> {
     if at + 2 != ssh_args.len() {
         return None; // a remote command after the host: not one we built
     }
-    let mut a = ssh_args[..at].to_vec();
-    a.extend(["-s".into(), "--".into(), host.clone(), "sftp".into()]);
+    // Not what a session's own options may ask of its terminal: a tty would corrupt the SFTP
+    // stream, -N / -f would never start it, its forwards are the terminal's.
+    let mut a: Vec<String> = (ssh_args[..at].iter())
+        .filter(|o| !matches!(o.as_str(), "-t" | "-tt" | "-N" | "-f"))
+        .cloned()
+        .collect();
+    a.extend(["-T", "-o", "ClearAllForwardings=yes", "-s", "--"].map(String::from));
+    a.extend([host.clone(), "sftp".into()]);
     Some(a)
 }
 
@@ -112,12 +118,25 @@ mod tests {
             "22",
             "-o",
             "ControlPath=/r/%C",
+            "-T",
+            "-o",
+            "ClearAllForwardings=yes",
             "-s",
             "--",
             "-weird",
             "sftp",
         ];
         assert_eq!(sftp_args(&ssh).unwrap(), want);
+        // A session's extra -t / -N / -L: not for the SFTP channel.
+        let extra: Vec<String> = ["-t", "-N", "-L", "8080:h:80", "--", "h"]
+            .map(String::from)
+            .to_vec();
+        let got = sftp_args(&extra).unwrap();
+        assert!(!got.iter().any(|a| a == "-t" || a == "-N"), "{got:?}");
+        assert!(
+            got.windows(2)
+                .any(|w| w == ["-o", "ClearAllForwardings=yes"])
+        );
         assert_eq!(sftp_args(&["host".to_string()]), None);
         let cmd: Vec<String> = ["--", "h", "ls"].map(String::from).to_vec();
         assert_eq!(sftp_args(&cmd), None);

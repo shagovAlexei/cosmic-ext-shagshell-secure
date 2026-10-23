@@ -183,12 +183,26 @@ impl SftpView {
         sftp_worker::start(self.id, c.program, c.args, c.env, self.events.clone())
     }
 
-    /// Reconnect (and Enter on a dead tab): a new browse connection, the transfer one on demand.
     pub fn has_dialog(&self) -> bool {
         self.dialog.is_some()
     }
 
+    /// The session's settings as they are now (Reconnect uses them).
+    pub fn set_connect(&mut self, c: Connect) {
+        self.connect = c;
+    }
+
+    /// Reconnect (and Enter on a dead tab): a new browse connection, the transfer one on demand.
+    /// A copy that was running stops (its worker goes): cancelled, for a Retry; the queue goes
+    /// on once connected.
     pub fn reconnect(&mut self) {
+        if let Some(id) = self.queue.running().map(|j| j.id) {
+            self.queue.cancel(id);
+        }
+        if matches!(self.dialog, Some(Dialog::Conflict { .. })) {
+            self.dialog = None;
+        }
+        self.started = None;
         self.transfer = None;
         self.connected = false;
         self.paused = false;
@@ -198,9 +212,20 @@ impl SftpView {
 
     fn list_local(&mut self, path: PathBuf, focus: Option<OsString>) {
         match read_local(&path) {
-            Ok(entries) => self.panels[LOCAL].set_listing(path, entries, focus.as_deref()),
+            Ok(entries) => {
+                if path != self.panels[LOCAL].cwd() {
+                    self.views[LOCAL].0 = 0.0;
+                }
+                self.panels[LOCAL].set_listing(path, entries, focus.as_deref());
+            }
             Err(e) => self.status = Some(format!("{}: {e}", path.display())),
         }
+    }
+
+    /// Another folder: its list from the top.
+    fn scroll_top(&mut self, side: usize) -> Task<Message> {
+        self.views[side].0 = 0.0;
+        self.reveal_in(side)
     }
 
     fn list(&mut self, side: usize, path: PathBuf, focus: Option<OsString>) {
@@ -239,7 +264,7 @@ impl SftpView {
 
     pub fn update(&mut self, msg: SftpMsg) -> Task<Message> {
         match msg {
-            SftpMsg::Event(tag, e) => self.event(tag, e),
+            SftpMsg::Event(tag, e) => return self.event(tag, e),
             SftpMsg::Key(k) => return self.key(k),
             SftpMsg::Click(panel, row, mods) => {
                 self.active = panel;
@@ -295,10 +320,22 @@ impl SftpView {
             }
             SftpMsg::Conflict(choice) => self.conflict(choice),
             SftpMsg::Cancel(id) => {
-                if self.queue.cancel(id)
-                    && let Some(w) = &self.transfer
-                {
-                    w.cancel.store(true, Ordering::SeqCst);
+                let asked = matches!(self.dialog, Some(Dialog::Conflict { job, .. }) if job == id);
+                if self.queue.cancel(id) {
+                    match asked {
+                        // Waiting for the «already exists» answer, the worker runs nothing:
+                        // nobody will finish it — the next one now.
+                        true => {
+                            self.dialog = None;
+                            self.started = None;
+                            self.pump();
+                        }
+                        false => {
+                            if let Some(w) = &self.transfer {
+                                w.cancel.store(true, Ordering::SeqCst);
+                            }
+                        }
+                    }
                 }
             }
             SftpMsg::Retry(id) => {
@@ -318,11 +355,11 @@ impl SftpView {
         Task::none()
     }
 
-    fn event(&mut self, tag: u64, e: Event) {
+    fn event(&mut self, tag: u64, e: Event) -> Task<Message> {
         let browse = self.browse.as_ref().is_some_and(|w| w.tag == tag);
         let transfer = self.transfer.as_ref().is_some_and(|w| w.tag == tag);
         if !browse && !transfer {
-            return; // a replaced worker's
+            return Task::none(); // a replaced worker's
         }
         match e {
             Event::Connected(home) if browse => {
@@ -335,13 +372,23 @@ impl SftpView {
                     cwd
                 };
                 self.list(REMOTE, at, None);
+                self.pump(); // what waited for the connection
             }
             Event::Connected(_) => {}
             Event::Listed {
                 path,
                 entries,
                 focus,
-            } => self.panels[REMOTE].set_listing(path, entries, focus.as_deref()),
+            } => {
+                let moved = path != self.panels[REMOTE].cwd();
+                self.panels[REMOTE].set_listing(path, entries, focus.as_deref());
+                if moved {
+                    return self.scroll_top(REMOTE);
+                }
+            }
+            Event::ListFailed(path, e) => {
+                self.status = Some(format!("{}: {e}", path.display()));
+            }
             Event::Changed(error) => {
                 self.status = error;
                 self.relist(REMOTE);
@@ -369,7 +416,7 @@ impl SftpView {
             Event::Progress(id, n) => self.queue.progress(id, n),
             Event::Conflict(id) => {
                 let Some(job) = self.queue.jobs().iter().find(|j| j.id == id).cloned() else {
-                    return;
+                    return Task::none();
                 };
                 let name = job.dst.to_string_lossy().into_owned();
                 self.dialog = Some(Dialog::Conflict {
@@ -415,6 +462,7 @@ impl SftpView {
                 self.status = Some(fl!("sftp-disconnected", why = why));
             }
         }
+        Task::none()
     }
 
     fn key(&mut self, k: Key) -> Task<Message> {
@@ -426,7 +474,10 @@ impl SftpView {
             self.reconnect();
             return Task::none();
         }
-        let page = ((self.views[self.active].1 / ROW) as isize - 1).max(1);
+        let page = match self.views[self.active].1 {
+            h if h > 0.0 => ((h / ROW) as isize - 1).max(1),
+            _ => 20, // not known yet
+        };
         let p = &mut self.panels[self.active];
         match k {
             Key::Up => p.move_cursor(-1),
@@ -485,8 +536,24 @@ impl SftpView {
 
     /// The cursor's row in sight.
     fn reveal(&self) -> Task<Message> {
-        let p = &self.panels[self.active];
-        let (y, h) = self.views[self.active];
+        self.reveal_in(self.active)
+    }
+
+    fn reveal_in(&self, side: usize) -> Task<Message> {
+        let p = &self.panels[side];
+        let (y, h) = self.views[side];
+        // The height not known yet (not scrolled by hand): the same share of the list as the
+        // cursor of its rows keeps the cursor in sight at any height.
+        if h <= 0.0 {
+            let n = p.entries().len().saturating_sub(1).max(1);
+            return scroll::snap_to(
+                self.scroll_ids[side].clone(),
+                scroll::RelativeOffset {
+                    x: None,
+                    y: Some(p.cursor() as f32 / n as f32),
+                },
+            );
+        }
         let top = p.cursor() as f32 * ROW;
         let to = match () {
             _ if top < y => top,
@@ -494,7 +561,7 @@ impl SftpView {
             _ => return Task::none(),
         };
         scroll::scroll_to(
-            self.scroll_ids[self.active].clone(),
+            self.scroll_ids[side].clone(),
             AbsoluteOffset {
                 x: None,
                 y: Some(to),
