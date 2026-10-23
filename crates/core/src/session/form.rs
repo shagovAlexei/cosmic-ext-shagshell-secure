@@ -148,16 +148,20 @@ impl Form {
         let opt = |v: &str| Some(v.trim().to_string()).filter(|v| !v.is_empty());
         let host = self.host.trim();
         // A local shell and a serial line have no host.
+        let need_host_all = need_host;
         let need_host = need_host && matches!(self.protocol, Protocol::Ssh2 | Protocol::Telnet);
         let device = self.device.trim();
+        // (The Default template, `need_host` false, has no host and no device either.)
         if self.protocol == Protocol::Serial
+            && need_host_all
             && (device.is_empty()
                 || device.starts_with('-')
                 || device.contains(char::is_whitespace))
         {
             return Err(FormError::Device);
         }
-        let baud = match opt(&self.baud) {
+        // What another protocol's page shows is not checked (its field may be hidden).
+        let baud = match opt(&self.baud).filter(|_| self.protocol == Protocol::Serial) {
             None => None,
             Some(b) => Some(
                 b.parse::<u32>()

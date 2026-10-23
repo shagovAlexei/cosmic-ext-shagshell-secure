@@ -749,7 +749,7 @@ impl App {
                             continue;
                         }
                         P::Telnet | P::Serial => {
-                            match program_launch(&s, name) {
+                            match program_launch(&s, name, Some(id)) {
                                 Ok(l) => tasks.push(self.tabs.open(l, &look())),
                                 Err(e) => self.sessions.notice = Some(e),
                             }
@@ -1014,6 +1014,20 @@ impl App {
         let store = &self.sessions.store;
         let creds = load_credentials();
         for l in self.tabs.launches_mut() {
+            // Telnet and Serial tabs: run the session as saved now, under its new name.
+            if let tabs::Protocol::Telnet {
+                session: Some(id), ..
+            }
+            | tabs::Protocol::Serial {
+                session: Some(id), ..
+            } = &l.protocol
+                && let Some(id) = shagshell_core::session::store::retarget(id, old, new)
+                && let Ok(s) = store.get(&id)
+                && let Ok(n) = program_launch(&s, l.title.clone(), Some(&id))
+            {
+                *l = n;
+                continue;
+            }
             let tabs::Protocol::Ssh {
                 session: Some(id), ..
             } = &l.protocol
@@ -1436,24 +1450,21 @@ fn ssh_launch(
             tries: s.reconnect_tries.unwrap_or(10),
         }),
         // An empty file name: no log on connect, the port and user still serve a log by hand.
-        log: Some(tabs::LogSpec {
-            file: s.log_file.clone(),
-            append: s.log_append,
-            raw: s.log_raw,
-            port: s.port,
-            user: s.user.clone().unwrap_or_default(),
-        }),
+        log: Some(log_spec(s)),
     })
 }
 
 /// The session's log wishes (the file name template, how to write it).
 fn log_spec(s: &shagshell_core::session::Session) -> tabs::LogSpec {
+    use shagshell_core::session::Protocol as P;
+    // `%P` / `%U` mean something to a connection that has a port and a user.
+    let net = matches!(s.protocol, P::Ssh2 | P::Telnet);
     tabs::LogSpec {
         file: s.log_file.clone(),
         append: s.log_append,
         raw: s.log_raw,
-        port: s.port,
-        user: s.user.clone().unwrap_or_default(),
+        port: s.port.filter(|_| net),
+        user: (s.user.clone().filter(|_| s.protocol == P::Ssh2)).unwrap_or_default(),
     }
 }
 
@@ -1462,6 +1473,7 @@ fn log_spec(s: &shagshell_core::session::Session) -> tabs::LogSpec {
 fn program_launch(
     s: &shagshell_core::session::Session,
     title: String,
+    id: Option<&str>,
 ) -> Result<tabs::Launch, String> {
     use shagshell_core::session::Protocol as P;
     let (mut argv, protocol) = match s.protocol {
@@ -1469,12 +1481,14 @@ fn program_launch(
             shagshell_core::launch::telnet_argv(s),
             tabs::Protocol::Telnet {
                 host: s.host.clone(),
+                session: id.map(str::to_string),
             },
         ),
         _ => (
             shagshell_core::launch::serial_argv(s),
             tabs::Protocol::Serial {
                 device: s.serial.device.clone(),
+                session: id.map(str::to_string),
             },
         ),
     };

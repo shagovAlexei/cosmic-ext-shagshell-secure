@@ -26,9 +26,11 @@ pub enum Protocol {
     Local,
     Telnet {
         host: String,
+        session: Option<String>,
     },
     Serial {
         device: String,
+        session: Option<String>,
     },
     /// `session`: the saved one it was opened from (Quick Connect without saving: none).
     Ssh {
@@ -105,8 +107,8 @@ impl Launch {
     fn label(&self) -> String {
         match (&self.protocol, self.sftp) {
             (Protocol::Local, _) => fl!("tab-local-shell"),
-            (Protocol::Telnet { host }, _) => format!("Telnet · {host}"),
-            (Protocol::Serial { device }, _) => format!("Serial · {device}"),
+            (Protocol::Telnet { host, .. }, _) => format!("Telnet · {host}"),
+            (Protocol::Serial { device, .. }, _) => format!("Serial · {device}"),
             (Protocol::Ssh { host, .. }, true) => format!("SFTP · {host}"),
             (Protocol::Ssh { host, .. }, false) => format!("SSH · {host}"),
         }
@@ -397,8 +399,10 @@ impl Tabs {
     /// The saved session the active tab was opened from.
     pub fn active_session(&self) -> Option<String> {
         match &self.tabs.get(&self.active()?.2)?.launch.protocol {
-            Protocol::Ssh { session, .. } => session.clone(),
-            _ => None,
+            Protocol::Ssh { session, .. }
+            | Protocol::Telnet { session, .. }
+            | Protocol::Serial { session, .. } => session.clone(),
+            Protocol::Local => None,
         }
     }
 
@@ -521,7 +525,7 @@ impl Tabs {
         use shagshell_core::logfile::{Ctx, resolve};
         let host = match &launch.protocol {
             Protocol::Ssh { host, .. } => host.as_str(),
-            Protocol::Telnet { host } => host.as_str(),
+            Protocol::Telnet { host, .. } => host.as_str(),
             Protocol::Local | Protocol::Serial { .. } => "",
         };
         let ctx = Ctx {
