@@ -55,6 +55,8 @@ pub enum SoMsg {
     Saved(window::Id, bool),
     /// «Учётные данные»: 0 = none, else the n-th set.
     Credential(usize),
+    /// «Button Bar»: 0 = none, else the n-th bar.
+    Bar(usize),
     /// «Забыть»: the session's saved secrets removed.
     Forget,
     Ok,
@@ -72,6 +74,9 @@ pub struct SessionOptions {
     /// The credential sets (name, user), for the dropdown; `labels[0]` is «(none)».
     sets: Vec<(String, String)>,
     labels: Vec<String>,
+    /// The Button Bars (names), for the dropdown; `bar_labels[0]` is «(none)».
+    bars: Vec<String>,
+    bar_labels: Vec<String>,
     protocols: Vec<String>,
     first_id: widget::Id,
 }
@@ -82,7 +87,11 @@ impl SessionOptions {
         target: Target,
         s: &Session,
         sets: Vec<(String, String)>,
+        bars: Vec<String>,
     ) -> Self {
+        let bar_labels = std::iter::once(fl!("so-bar-none"))
+            .chain(bars.iter().cloned())
+            .collect();
         let labels = std::iter::once(fl!("so-credential-none"))
             .chain(sets.iter().map(|(n, _)| n.clone()))
             .collect();
@@ -107,6 +116,8 @@ impl SessionOptions {
             first_id: widget::Id::unique(),
             sets,
             labels,
+            bars,
+            bar_labels,
             protocols: vec![fl!("so-protocol-ssh2"), fl!("so-protocol-local")],
             saved: false,
         }
@@ -156,6 +167,12 @@ impl SessionOptions {
             SoMsg::Category(e) => self.categories.activate(e),
             SoMsg::Protocol(i) => f.protocol = Protocol::ALL.get(i).copied().unwrap_or_default(),
             SoMsg::Saved(w, saved) if w == self.window => self.saved = saved,
+            SoMsg::Bar(i) => {
+                f.button_bar = match i {
+                    0 => String::new(),
+                    i => self.bars.get(i - 1).cloned().unwrap_or_default(),
+                }
+            }
             SoMsg::Credential(i) => {
                 f.credential = match i {
                     0 => String::new(),
@@ -252,6 +269,20 @@ impl SessionOptions {
                         widget::dropdown(&self.labels, Some(selected), move |i| {
                             m(SoMsg::Credential(i))
                         })
+                        .into(),
+                    ])
+                    .spacing(2)
+                    .into(),
+                );
+                let at = self.bars.iter().position(|b| *b == f.button_bar);
+                v.push(
+                    widget::column::with_children(vec![
+                        widget::text::caption(fl!("so-bar")).into(),
+                        widget::dropdown(
+                            &self.bar_labels,
+                            Some(at.map_or(0, |i| i + 1)),
+                            move |i| m(SoMsg::Bar(i)),
+                        )
                         .into(),
                     ])
                     .spacing(2)

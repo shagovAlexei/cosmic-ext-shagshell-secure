@@ -101,6 +101,8 @@ pub struct Config {
     pub app_theme: AppTheme,
     /// View → Command Window.
     pub command_window_visible: bool,
+    /// View → Button Bar.
+    pub button_bar_visible: bool,
     /// SFTP tabs open with dot files shown (Ctrl+H flips it in a tab).
     pub sftp_show_hidden: bool,
     /// SFTP: the target is already there.
@@ -118,6 +120,7 @@ impl Default for Config {
             language: String::new(),
             app_theme: AppTheme::System,
             command_window_visible: false,
+            button_bar_visible: true,
             sftp_show_hidden: true,
             sftp_overwrite: ExistsRule::Ask,
         }

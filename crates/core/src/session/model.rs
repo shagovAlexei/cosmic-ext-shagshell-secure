@@ -43,6 +43,9 @@ pub struct Session {
     /// A credential set (`credentials.toml`): its user and password instead of the session's.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub credential: Option<String>,
+    /// The Button Bar shown while this session's tab is in front (`buttonbars.toml`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub button_bar: Option<String>,
     /// Fields this version doesn't know, written back unchanged.
     #[serde(flatten)]
     pub rest: toml::Table,
