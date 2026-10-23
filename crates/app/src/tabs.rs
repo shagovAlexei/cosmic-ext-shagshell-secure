@@ -593,7 +593,8 @@ impl Tabs {
                 tab.stopped = true;
             }
             Body::Sftp(v) => v.disconnect(),
-            Body::Terminal(_) => {}
+            // Already down, maybe waiting to reconnect by itself: that wait ends.
+            Body::Terminal(_) => tab.stopped = true,
         }
         self.retitle(id);
     }
@@ -860,28 +861,29 @@ impl Tabs {
                 // ssh says 255 when the connection is lost; after it had been up for a while
                 // (or while a series of retries goes on) the session connects by itself.
                 if let Some(r) = tab.launch.auto_reconnect
-                    && code == Some(255)
-                    && !tab.stopped
+                    && let Some(n) = shagshell_core::reconnect::next_attempt(
+                        &shagshell_core::reconnect::Ended {
+                            code,
+                            stopped: tab.stopped,
+                            uptime: tab.started.elapsed(),
+                            attempts: tab.attempts,
+                        },
+                        r.tries,
+                    )
                 {
-                    if tab.started.elapsed() >= std::time::Duration::from_secs(10) {
-                        tab.attempts = 0;
-                    }
-                    let held = tab.started.elapsed() >= std::time::Duration::from_secs(10);
-                    if (held || tab.attempts > 0) && tab.attempts < r.tries {
-                        tab.attempts += 1;
-                        let line = fl!(
-                            "term-reconnecting",
-                            seconds = i64::from(r.delay),
-                            n = i64::from(tab.attempts),
-                            max = i64::from(r.tries)
-                        );
-                        term::print(terminal, &format!("[{line}]\r\n"));
-                        self.retitle(id);
-                        let wait = std::time::Duration::from_secs(u64::from(r.delay));
-                        return Task::perform(tokio::time::sleep(wait), move |()| {
-                            cosmic::Action::App(Message::Tabs(TabsMsg::AutoReconnect(id)))
-                        });
-                    }
+                    tab.attempts = n;
+                    let line = fl!(
+                        "term-reconnecting",
+                        seconds = i64::from(r.delay),
+                        n = i64::from(n),
+                        max = i64::from(r.tries)
+                    );
+                    term::print(terminal, &format!("[{line}]\r\n"));
+                    self.retitle(id);
+                    let wait = std::time::Duration::from_secs(u64::from(r.delay));
+                    return Task::perform(tokio::time::sleep(wait), move |()| {
+                        cosmic::Action::App(Message::Tabs(TabsMsg::AutoReconnect(id)))
+                    });
                 }
                 self.retitle(id);
             }

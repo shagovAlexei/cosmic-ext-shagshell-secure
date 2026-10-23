@@ -52,20 +52,24 @@ pub fn valid_host(host: &str) -> bool {
     !host.is_empty() && !host.contains(char::is_whitespace) && !host.starts_with('-')
 }
 
-/// `[address:]port`: a port 1…65535, an address without spaces.
-fn valid_listen(s: &str) -> bool {
+/// `[address:]port`: a port 1…65535 (0 only for a remote forward: the server picks one), an
+/// address without spaces, an IPv6 one in brackets.
+fn valid_listen(s: &str, zero_ok: bool) -> bool {
     let s = s.trim();
     let (addr, port) = s.rsplit_once(':').map_or(("", s), |(a, p)| (a, p));
-    port.parse::<u16>().is_ok_and(|p| p > 0)
-        && !addr.contains(char::is_whitespace)
-        && !addr.starts_with('-')
-        && (!s.contains(':') || !addr.is_empty())
+    let port_ok = port.parse::<u16>().is_ok_and(|p| p > 0 || zero_ok);
+    let addr_ok = match addr {
+        "" => !s.contains(':'),
+        a if a.starts_with('[') => a.ends_with(']') && !a.contains(char::is_whitespace),
+        a => !a.contains([':', ' ', '\t']) && !a.starts_with('-'),
+    };
+    port_ok && addr_ok
 }
 
 impl FwdRow {
     /// The forward, if what is typed makes one.
     fn checked(&self) -> Option<Forward> {
-        if !valid_listen(&self.listen) {
+        if !valid_listen(&self.listen, self.kind == ForwardKind::Remote) {
             return None;
         }
         let listen = self.listen.trim().to_string();
@@ -156,7 +160,12 @@ impl Form {
         let count = |v: &str| -> Result<Option<u32>, FormError> {
             match opt(v) {
                 None => Ok(None),
-                Some(n) => n.parse().map(Some).map_err(|_| FormError::Reconnect),
+                Some(n) => n
+                    .parse()
+                    .ok()
+                    .filter(|&n| n >= 1)
+                    .map(Some)
+                    .ok_or(FormError::Reconnect),
             }
         };
         let (reconnect_delay, reconnect_tries) =
@@ -304,6 +313,8 @@ mod tests {
             FormError::Jump
         );
         for (l, h, p) in [
+            ("[::1", "db", "1"),
+            ("::1:80", "db", "1"),
             ("0", "db", "1"),
             ("x", "db", "1"),
             ("8080", "", "1"),
@@ -328,6 +339,25 @@ mod tests {
             }),
             FormError::Reconnect
         );
+        assert_eq!(
+            bad(Form {
+                reconnect_delay: "0".into(),
+                ..form("h")
+            }),
+            FormError::Reconnect
+        );
+        // a remote forward may ask the server for any port (0); IPv6 listens in brackets
+        let ok = |kind, l: &str| {
+            let fw = vec![row(kind, l, "h", "1")];
+            Form {
+                forwards: fw,
+                ..form("h")
+            }
+            .apply(&Session::default(), true)
+            .is_ok()
+        };
+        assert!(ok(ForwardKind::Remote, "0") && !ok(ForwardKind::Local, "0"));
+        assert!(ok(ForwardKind::Local, "[::1]:8080"));
     }
 
     #[test]

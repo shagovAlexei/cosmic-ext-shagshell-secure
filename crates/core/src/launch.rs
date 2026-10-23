@@ -35,8 +35,8 @@ pub fn ssh_argv(s: &Session, control_dir: &Path, home: &Path) -> Result<Vec<Stri
     }
     for f in &s.forwards {
         match f.kind {
-            ForwardKind::Local => opt("-L", format!("{}:{}:{}", f.listen, f.host, f.port)),
-            ForwardKind::Remote => opt("-R", format!("{}:{}:{}", f.listen, f.host, f.port)),
+            ForwardKind::Local => opt("-L", forward_spec(f)),
+            ForwardKind::Remote => opt("-R", forward_spec(f)),
             ForwardKind::Dynamic => opt("-D", f.listen.clone()),
         }
     }
@@ -47,6 +47,15 @@ pub fn ssh_argv(s: &Session, control_dir: &Path, home: &Path) -> Result<Vec<Stri
     // `--`: a host like `-oProxyCommand=…` is a host, never an option.
     a.extend(["--".to_string(), s.host.clone()]);
     Ok(a)
+}
+
+/// `listen:host:port`; an IPv6 host goes in brackets.
+fn forward_spec(f: &crate::session::Forward) -> String {
+    let host = match f.host.contains(':') && !f.host.starts_with('[') {
+        true => format!("[{}]", f.host),
+        false => f.host.clone(),
+    };
+    format!("{}:{host}:{}", f.listen, f.port)
 }
 
 /// A terminal tab's ssh arguments (after `ssh`) for its SFTP tab: the same options and
@@ -247,6 +256,11 @@ mod tests {
         assert!(a.contains("-L 8080:db:5432"), "{a}");
         assert!(a.contains("-R 127.0.0.1:9000:localhost:3000"), "{a}");
         assert!(a.contains("-D 1080"), "{a}");
+        let v6 = Session {
+            forwards: vec![fw(ForwardKind::Local, "8080", "::1", 80)],
+            ..x.clone()
+        };
+        assert!(argv(&v6).join(" ").contains("-L 8080:[::1]:80"));
         // the SFTP channel of that tab keeps the jump but not the forwards
         let args = argv(&x)[1..].to_vec();
         let s = sftp_args(&args).unwrap().join(" ");
