@@ -5,9 +5,14 @@ use crate::config::{AppTheme, Config, ExistsRule, LANGUAGES};
 use crate::fl;
 use cosmic::app::context_drawer::{self, ContextDrawer};
 use cosmic::widget::{self, settings};
+use shagshell_core::highlight::{Colour, Rule, Rules};
 
 /// `separate`: passwords in a keyring of their own (`None`: not known yet / being changed).
-pub fn view(config: &Config, separate: Option<bool>) -> ContextDrawer<'_, Message> {
+pub fn view<'a>(
+    config: &'a Config,
+    separate: Option<bool>,
+    hl: &'a Rules,
+) -> ContextDrawer<'a, Message> {
     let set = |f: fn(&mut Config, bool)| {
         let c = config.clone();
         move |on| {
@@ -91,6 +96,116 @@ pub fn view(config: &Config, separate: Option<bool>) -> ContextDrawer<'_, Messag
             .width(cosmic::iced::Length::Fixed(260.0))
             .into()
     };
+    // Colour scheme of the terminal and the keyword rules.
+    let mut names = vec![fl!("options-system")];
+    names.extend(
+        crate::term::terminal_theme::schemes()
+            .iter()
+            .map(|(_, n)| (*n).to_string()),
+    );
+    let keys: Vec<&'static str> = crate::term::terminal_theme::schemes()
+        .iter()
+        .map(|(k, _)| *k)
+        .collect();
+    let scheme = keys
+        .iter()
+        .position(|k| *k == config.color_scheme)
+        .map_or(0, |i| i + 1);
+    let mut colours = settings::section()
+        .title(fl!("options-colours"))
+        .add(settings::item(
+            fl!("options-scheme"),
+            widget::dropdown(names, Some(scheme), {
+                let c = config.clone();
+                move |i| {
+                    let mut c = c.clone();
+                    c.color_scheme = i
+                        .checked_sub(1)
+                        .map_or(String::new(), |i| keys[i].to_string());
+                    Message::SetConfig(c)
+                }
+            }),
+        ))
+        .add(settings::item(
+            fl!("options-highlight"),
+            widget::toggler(config.highlight_enabled)
+                .on_toggle(set(|c, on| c.highlight_enabled = on)),
+        ));
+    let colour_names: Vec<String> = [
+        "hl-red",
+        "hl-green",
+        "hl-yellow",
+        "hl-blue",
+        "hl-magenta",
+        "hl-cyan",
+        "hl-orange",
+        "hl-white",
+    ]
+    .iter()
+    .map(|k| match *k {
+        "hl-red" => fl!("hl-red"),
+        "hl-green" => fl!("hl-green"),
+        "hl-yellow" => fl!("hl-yellow"),
+        "hl-blue" => fl!("hl-blue"),
+        "hl-magenta" => fl!("hl-magenta"),
+        "hl-cyan" => fl!("hl-cyan"),
+        "hl-orange" => fl!("hl-orange"),
+        _ => fl!("hl-white"),
+    })
+    .collect();
+    for (i, r) in hl.rules.iter().enumerate() {
+        let edit = |f: fn(&mut Rule, String), r0: &Rules| {
+            let r0 = r0.clone();
+            move |v: String| {
+                let mut x = r0.clone();
+                f(&mut x.rules[i], v);
+                Message::SetRules(x)
+            }
+        };
+        let at = Colour::ALL.iter().position(|c| *c == r.colour);
+        colours = colours.add(
+            widget::row::with_children(vec![
+                widget::text_input(fl!("options-hl-word"), r.text.clone())
+                    .on_input(edit(|r, v| r.text = v, hl))
+                    .width(cosmic::iced::Length::Fill)
+                    .into(),
+                widget::dropdown(colour_names.clone(), at, {
+                    let r0 = hl.clone();
+                    move |c| {
+                        let mut x = r0.clone();
+                        x.rules[i].colour = Colour::ALL[c];
+                        Message::SetRules(x)
+                    }
+                })
+                .into(),
+                widget::checkbox(r.background)
+                    .label(fl!("options-hl-fill"))
+                    .on_toggle({
+                        let r0 = hl.clone();
+                        move |on| {
+                            let mut x = r0.clone();
+                            x.rules[i].background = on;
+                            Message::SetRules(x)
+                        }
+                    })
+                    .into(),
+                widget::button::icon(widget::icon::from_name("edit-delete-symbolic"))
+                    .on_press({
+                        let mut x = hl.clone();
+                        x.rules.remove(i);
+                        Message::SetRules(x)
+                    })
+                    .into(),
+            ])
+            .spacing(6)
+            .align_y(cosmic::iced::Alignment::Center),
+        );
+    }
+    colours = colours.add(widget::button::standard(fl!("options-hl-add")).on_press({
+        let mut x = hl.clone();
+        x.rules.push(Rule::default());
+        Message::SetRules(x)
+    }));
     let logging = settings::section()
         .title(fl!("options-logging"))
         .add(settings::item(
@@ -136,6 +251,7 @@ pub fn view(config: &Config, separate: Option<bool>) -> ContextDrawer<'_, Messag
     let content = widget::column::with_children(vec![
         interface.into(),
         terminal.into(),
+        colours.into(),
         logging.into(),
         sftp.into(),
         passwords.into(),

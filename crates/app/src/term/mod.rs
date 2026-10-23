@@ -35,9 +35,10 @@ pub fn start(
     bg: u32,
     style: &style::Style,
     log: log::Tap,
+    scheme: &str,
 ) -> std::io::Result<Terminal> {
     terminal::WINDOW_BG_COLOR.store(bg, Ordering::SeqCst);
-    let colors = colors(dark);
+    let colors = colors(dark, scheme);
     let options = tty::Options {
         shell: Some(tty::Shell::new(program.to_string(), args.to_vec())),
         working_directory: std::env::home_dir(),
@@ -55,7 +56,11 @@ pub fn start(
     Ok(t)
 }
 
-fn colors(dark: bool) -> term::color::Colors {
+/// The scheme's colours, else the theme's own (dark / light).
+fn colors(dark: bool, scheme: &str) -> term::color::Colors {
+    if let Some(c) = terminal_theme::scheme(scheme) {
+        return c;
+    }
     match dark {
         true => terminal_theme::cosmic_dark(),
         false => terminal_theme::cosmic_light(),
@@ -63,10 +68,10 @@ fn colors(dark: bool) -> term::color::Colors {
 }
 
 /// A new text size or theme for a running terminal.
-pub fn restyle(t: &Mutex<Terminal>, style: &style::Style, dark: bool, bg: u32) {
+pub fn restyle(t: &Mutex<Terminal>, style: &style::Style, dark: bool, bg: u32, scheme: &str) {
     terminal::WINDOW_BG_COLOR.store(bg, Ordering::SeqCst);
     let mut t = t.lock().unwrap_or_else(|e| e.into_inner());
-    t.set_config(style, &colors(dark));
+    t.set_config(style, &colors(dark, scheme));
 }
 
 /// Show `text` on the screen as if the program had printed it (no PTY write: it may be dead).

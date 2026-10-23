@@ -123,6 +123,8 @@ pub struct Launch {
     pub auto_reconnect: Option<AutoReconnect>,
     /// Answers to what the session says after connecting.
     pub logon: Option<LogonSpec>,
+    /// The terminal colour scheme of the session ("": the global one).
+    pub scheme: String,
 }
 
 impl Launch {
@@ -138,6 +140,7 @@ impl Launch {
             log: None,
             auto_reconnect: None,
             logon: None,
+            scheme: String::new(),
         }
     }
 
@@ -278,6 +281,9 @@ pub struct Tabs {
     sftp_prefs: (Option<shagshell_core::sftp::queue::Choice>, bool),
     /// Global Options → Logging: the folder, and the name used when a log is started by hand.
     log_prefs: (std::path::PathBuf, String),
+    /// Global Options: the terminal colour scheme ("": the theme's) and keyword highlighting.
+    scheme: String,
+    highlights: Vec<shagshell_core::highlight::Rule>,
     /// What the last log action had to say (a log that could not start / stopped).
     notice: Mutex<Option<String>>,
     /// A live tab asked to close: waits for the dialog.
@@ -545,7 +551,7 @@ impl Tabs {
             env.push(("SHAGSHELL_TAB".into(), id.to_string()));
         }
         let tap = term::log::Tap::default();
-        let t = term::start(
+        let mut t = term::start(
             id,
             tx,
             &launch.program,
@@ -555,9 +561,11 @@ impl Tabs {
             *bg,
             style,
             tap.clone(),
+            self.scheme_of(launch),
         )
         .inspect_err(|e| log::error!("start {}: {e}", launch.program))
         .ok()?;
+        t.set_highlights(self.highlights.clone());
         if let Some(spec) = launch.log.as_ref().filter(|s| !s.file.is_empty())
             && let Err(e) = self.begin_log(&tap, launch, spec)
         {
@@ -961,9 +969,41 @@ impl Tabs {
 
     pub fn restyle(&self, look: &Look) {
         let (style, dark, bg) = look;
-        for t in self.tabs.values().filter_map(Tab::terminal) {
-            term::restyle(t, style, *dark, *bg);
+        for tab in self.tabs.values() {
+            if let Some(t) = tab.terminal() {
+                term::restyle(t, style, *dark, *bg, self.scheme_of(&tab.launch));
+            }
         }
+    }
+
+    /// The scheme of a tab: its session's, else the global one.
+    fn scheme_of<'a>(&'a self, launch: &'a Launch) -> &'a str {
+        match launch.scheme.is_empty() {
+            true => &self.scheme,
+            false => &launch.scheme,
+        }
+    }
+
+    /// Global Options: the colour scheme and the keyword rules (empty: none, as when off).
+    pub fn set_looks(
+        &mut self,
+        config: &Config,
+        rules: &shagshell_core::highlight::Rules,
+        look: &Look,
+    ) {
+        self.scheme = config.color_scheme.clone();
+        self.highlights = match config.highlight_enabled {
+            true => rules.rules.clone(),
+            false => Vec::new(),
+        };
+        for tab in self.tabs.values() {
+            if let Some(t) = tab.terminal() {
+                t.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .set_highlights(self.highlights.clone());
+            }
+        }
+        self.restyle(look);
     }
 
     pub fn update(&mut self, msg: TabsMsg, look: &Look) -> Task<Message> {

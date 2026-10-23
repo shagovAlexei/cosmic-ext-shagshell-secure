@@ -32,6 +32,7 @@ enum Category {
     Ssh2,
     Forward,
     Logon,
+    Appearance,
     Log,
 }
 
@@ -87,6 +88,8 @@ pub enum SoMsg {
     LogonAdd,
     LogonDel(usize),
     Password(Hidden),
+    /// The colour scheme: 0 = the global one, else the n-th built-in.
+    Scheme(usize),
     /// «Забыть»: the session's saved secrets removed.
     Forget,
     Ok,
@@ -140,6 +143,7 @@ impl SessionOptions {
             .insert(|b| b.text(fl!("so-ssh2")).data(Category::Ssh2))
             .insert(|b| b.text(fl!("so-forward")).data(Category::Forward))
             .insert(|b| b.text(fl!("so-logon")).data(Category::Logon))
+            .insert(|b| b.text(fl!("so-appearance")).data(Category::Appearance))
             .insert(|b| b.text(fl!("so-log")).data(Category::Log))
             .build();
         let name = match &target {
@@ -251,6 +255,15 @@ impl SessionOptions {
             SoMsg::SerialStops(i) => f.stop_bits = 1 + i as u8,
             SoMsg::SerialFlow(i) => f.flow = Flow::ALL.get(i).copied().unwrap_or_default(),
             SoMsg::Password(p) => self.password = p,
+            SoMsg::Scheme(i) => {
+                f.color_scheme = match i {
+                    0 => String::new(),
+                    i => crate::term::terminal_theme::schemes()
+                        .get(i - 1)
+                        .map(|(k, _)| (*k).to_string())
+                        .unwrap_or_default(),
+                }
+            }
             SoMsg::LogonAdd => f.logon.push(Default::default()),
             SoMsg::LogonDel(i) => {
                 if i < f.logon.len() {
@@ -404,6 +417,19 @@ impl SessionOptions {
                         .into(),
                 ));
                 rows
+            }
+            Some(Category::Appearance) => {
+                let schemes = crate::term::terminal_theme::schemes();
+                let at = schemes.iter().position(|(k, _)| *k == f.color_scheme);
+                let mut names = vec![fl!("so-scheme-global")];
+                names.extend(schemes.iter().map(|(_, n)| (*n).to_string()));
+                vec![labelled(
+                    fl!("so-scheme"),
+                    widget::dropdown(names, Some(at.map_or(0, |i| i + 1)), move |i| {
+                        m(SoMsg::Scheme(i))
+                    })
+                    .into(),
+                )]
             }
             Some(Category::Log) => vec![
                 field(fl!("so-log-file"), Field::LogFile, &f.log_file, false),

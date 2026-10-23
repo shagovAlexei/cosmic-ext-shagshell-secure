@@ -150,6 +150,9 @@ pub struct Session {
     pub button_bar: Option<String>,
     #[serde(skip_serializing_if = "Serial::is_default")]
     pub serial: Serial,
+    /// Terminal colour scheme (a key of the built-in ones); empty: the global one.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub color_scheme: String,
     /// Hosts to go through (`ssh -J`): `[user@]host[:port]`, comma between several.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub jump: String,

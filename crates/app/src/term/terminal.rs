@@ -185,6 +185,8 @@ pub struct Terminal {
     dim_font_weight: Weight,
     mouse_reporter: MouseReporter,
     notifier: Notifier,
+    /// Keyword highlighting: words painted in a colour (empty: none).
+    highlights: Vec<shagshell_core::highlight::Rule>,
     /// The session log: what the PTY gives is copied to it while it is on.
     pub log: super::log::Tap,
     search_regex_opt: Option<RegexSearch>,
@@ -192,6 +194,41 @@ pub struct Terminal {
     size: Size,
     use_bright_bold: bool,
     zoom_adj: i8,
+}
+
+/// The words of the keyword rules in `text` painted over what the cells already say.
+fn paint_keywords(
+    text: &str,
+    attrs_list: &mut AttrsList,
+    rules: &[shagshell_core::highlight::Rule],
+    colors: &Colors,
+    default_attrs: &Attrs<'static>,
+    metadata_set: &mut IndexSet<Metadata>,
+) {
+    if rules.is_empty() {
+        return;
+    }
+    let default_bg = convert_color(colors, Color::Named(NamedColor::Background));
+    for (range, i) in shagshell_core::highlight::find(rules, text) {
+        let rule = &rules[i];
+        let rgb = rule.colour.rgb();
+        let c = cosmic_text::Color::rgb((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8);
+        let (fg, bg) = match rule.background {
+            // Dark letters on a light fill, light on a dark one.
+            true => {
+                let lum =
+                    0.299 * f32::from(c.r()) + 0.587 * f32::from(c.g()) + 0.114 * f32::from(c.b());
+                let ink = match lum > 140.0 {
+                    true => cosmic_text::Color::rgb(0, 0, 0),
+                    false => cosmic_text::Color::rgb(255, 255, 255),
+                };
+                (ink, c)
+            }
+            false => (c, default_bg),
+        };
+        let (idx, _) = metadata_set.insert_full(Metadata::new(bg, fg));
+        attrs_list.add_span(range, &default_attrs.clone().color(fg).metadata(idx));
+    }
 }
 
 impl Terminal {
@@ -280,6 +317,7 @@ impl Terminal {
             mouse_reporter: Default::default(),
             needs_update: true,
             notifier,
+            highlights: Vec::new(),
             log,
             search_regex_opt: None,
             search_value: String::new(),
@@ -289,6 +327,14 @@ impl Terminal {
             zoom_adj: Default::default(),
             is_focused: true,
         })
+    }
+
+    /// New keyword rules: the screen is painted again.
+    pub fn set_highlights(&mut self, rules: Vec<shagshell_core::highlight::Rule>) {
+        if self.highlights != rules {
+            self.highlights = rules;
+            self.needs_update = true;
+        }
     }
 
     pub fn buffer_weak(&self) -> Weak<Buffer> {
@@ -720,6 +766,14 @@ impl Terminal {
                             buffer.set_redraw(true);
                         }
 
+                        paint_keywords(
+                            &text,
+                            &mut attrs_list,
+                            &self.highlights,
+                            &self.colors,
+                            &self.default_attrs,
+                            &mut self.metadata_set,
+                        );
                         if buffer.lines[line_i].set_text(
                             text.clone(),
                             LineEnding::default(),
@@ -897,6 +951,14 @@ impl Terminal {
                 buffer.set_redraw(true);
             }
 
+            paint_keywords(
+                &text,
+                &mut attrs_list,
+                &self.highlights,
+                &self.colors,
+                &self.default_attrs,
+                &mut self.metadata_set,
+            );
             if buffer.lines[line_i].set_text(text, LineEnding::default(), attrs_list) {
                 buffer.set_redraw(true);
             }
