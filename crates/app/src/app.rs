@@ -253,6 +253,15 @@ impl Application for App {
                 if notice.is_some() {
                     self.sessions.notice = notice;
                 }
+                // A bar renamed or deleted: the sessions that named it follow.
+                if let Some((old, new)) = self.buttons.relink.take() {
+                    match self.sessions.store.relink_bar(&old, new.as_deref()) {
+                        Ok(_) => self.sessions.reload(),
+                        Err(e) => {
+                            self.sessions.notice = Some(crate::session_manager::io_text(&e));
+                        }
+                    }
+                }
                 if let Some(b) = run {
                     return self.run_button(b);
                 }
@@ -608,20 +617,26 @@ impl App {
     fn launch_app(&mut self, cmd: &str) {
         let id = self.tabs.active_session();
         let s = id.as_ref().and_then(|id| self.sessions.store.get(id).ok());
-        let text = shagshell_core::buttonbar::substitute(
-            cmd,
-            s.as_ref().map_or("", |s| s.host.as_str()),
-            &s.as_ref()
-                .and_then(|s| s.port)
-                .map_or_else(String::new, |p| p.to_string()),
-            s.as_ref().and_then(|s| s.user.as_deref()).unwrap_or(""),
-            id.as_deref()
-                .map_or("", shagshell_core::session::store::name_of),
-        );
-        let Some(words) = shlex::split(&text).filter(|w| !w.is_empty()) else {
+        // Split first, then fill in: a host or user with a space or a leading dash stays one
+        // word of its own and is never taken for an option.
+        let port = (s.as_ref().and_then(|s| s.port)).map_or_else(String::new, |p| p.to_string());
+        let Some(words) = shlex::split(cmd).filter(|w| !w.is_empty()) else {
             self.sessions.notice = Some(fl!("bb-bad-command"));
             return;
         };
+        let words: Vec<String> = words
+            .iter()
+            .map(|w| {
+                shagshell_core::buttonbar::substitute(
+                    w,
+                    s.as_ref().map_or("", |s| s.host.as_str()),
+                    &port,
+                    s.as_ref().and_then(|s| s.user.as_deref()).unwrap_or(""),
+                    id.as_deref()
+                        .map_or("", shagshell_core::session::store::name_of),
+                )
+            })
+            .collect();
         match std::process::Command::new(&words[0])
             .args(&words[1..])
             .spawn()
@@ -1103,14 +1118,7 @@ impl App {
             .into_iter()
             .map(|(n, s)| (n, s.user))
             .collect();
-        let bars =
-            shagshell_core::buttonbar::Bars::load(&shagshell_core::buttonbar::default_path())
-                .unwrap_or_default()
-                .bars
-                .into_iter()
-                .map(|b| b.name)
-                .collect();
-        let o = SessionOptions::new(window, target, &session, sets, bars);
+        let o = SessionOptions::new(window, target, &session, sets, self.buttons.names());
         // The first field focused once the window is there (before, the focus goes nowhere).
         let first = o.first_field();
         let mut tasks = vec![

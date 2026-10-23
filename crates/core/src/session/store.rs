@@ -203,6 +203,24 @@ impl Store {
         Ok(ids)
     }
 
+    /// Button bar `old` renamed to `new`, or deleted (`None`): the sessions that named it follow.
+    pub fn relink_bar(&self, old: &str, new: Option<&str>) -> io::Result<Vec<String>> {
+        let mut all = Vec::new();
+        every(&self.load(), "", &mut all);
+        if let Ok(d) = self.get(DEFAULT) {
+            all.push((DEFAULT.to_string(), d));
+        }
+        let mut changed = Vec::new();
+        for (id, mut s) in all {
+            if s.button_bar.as_deref() == Some(old) {
+                s.button_bar = new.map(str::to_string);
+                self.save(&id, &s)?;
+                changed.push(id);
+            }
+        }
+        Ok(changed)
+    }
+
     /// A session or folder by that id (a folder and a session never share one).
     fn exists(&self, id: &str) -> bool {
         self.file(id).exists() || self.is_folder(id)
@@ -514,6 +532,20 @@ mod tests {
         assert_eq!(s.get("lab/a").unwrap().credential.as_deref(), Some("root"));
         assert!(s.using("adm").is_empty());
         assert_eq!(s.get("b").unwrap().credential, None);
+    }
+
+    #[test]
+    fn relink_bar_follows_a_rename_or_delete() {
+        let (_d, s) = store();
+        let mut x = host("h");
+        x.button_bar = Some("cisco".into());
+        s.save("lab/a", &x).unwrap();
+        s.save("b", &host("h")).unwrap();
+        assert_eq!(s.relink_bar("cisco", Some("ios")).unwrap(), ["lab/a"]);
+        assert_eq!(s.get("lab/a").unwrap().button_bar.as_deref(), Some("ios"));
+        s.relink_bar("ios", None).unwrap();
+        assert_eq!(s.get("lab/a").unwrap().button_bar, None);
+        assert_eq!(s.get("b").unwrap().button_bar, None);
     }
 
     #[test]

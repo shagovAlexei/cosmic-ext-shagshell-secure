@@ -58,6 +58,9 @@ pub struct ButtonBar {
     broken: Option<String>,
     /// The bar picked on the bar itself.
     pub selected: usize,
+    /// A bar renamed (`Some(new)`) or deleted (`None`) — `(old name, …)`: the sessions follow
+    /// (the app takes it).
+    pub relink: Option<(String, Option<String>)>,
     dialog: Option<Dialog>,
     input_id: widget::Id,
     kinds: Vec<String>,
@@ -76,6 +79,7 @@ impl ButtonBar {
             bars,
             broken,
             selected: 0,
+            relink: None,
             dialog: None,
             input_id: widget::Id::unique(),
             kinds: Vec::new(),
@@ -145,15 +149,8 @@ impl ButtonBar {
             }
             BbMsg::Select(i) => self.selected = i,
             BbMsg::AddButton => {
-                // A bar first: a button needs one.
-                let bar = match shown {
-                    Some(s) => s,
-                    None => match self.bars.add(&fl!("bb-default-name")) {
-                        Ok(i) => i,
-                        Err(_) => return (None, None),
-                    },
-                };
-                self.selected = bar;
+                // No bar yet: «OK» makes the default one (a Cancel leaves nothing behind).
+                let bar = shown.unwrap_or(usize::MAX);
                 self.dialog = Some(Dialog::Map {
                     bar,
                     at: None,
@@ -215,6 +212,7 @@ impl ButtonBar {
             BbMsg::Arg(t) => self.map(|b| b.arg = t),
             BbMsg::KindSel(i) => self.map(|b| {
                 b.kind = Kind::ALL.get(i).copied().unwrap_or_default();
+                b.target = Target::Current;
                 // The old text means something else for another kind.
                 b.arg = match b.kind {
                     Kind::Menu => FUNCTIONS[0].0.to_string(),
@@ -260,7 +258,11 @@ impl ButtonBar {
             } => {
                 let err = if button.label.trim().is_empty() {
                     Some(fl!("name-empty"))
-                } else if button.arg.trim().is_empty() {
+                } else if match button.kind {
+                    // A lone space is a fine string (paging through «--More--»).
+                    Kind::Send => button.arg.is_empty(),
+                    _ => button.arg.trim().is_empty(),
+                } {
                     Some(fl!("bb-arg-empty"))
                 } else {
                     None
@@ -278,6 +280,14 @@ impl ButtonBar {
                     label: button.label.trim().to_string(),
                     ..button
                 };
+                let bar = match self.bars.bars.get(bar) {
+                    Some(_) => bar,
+                    None => match self.bars.add(&fl!("bb-default-name")) {
+                        Ok(i) => i,
+                        Err(_) => return None,
+                    },
+                };
+                self.selected = bar;
                 if let Some(b) = self.bars.bars.get_mut(bar) {
                     match at {
                         Some(i) if i < b.buttons.len() => b.buttons[i] = button,
@@ -287,12 +297,18 @@ impl ButtonBar {
                 self.save()
             }
             Dialog::BarName { rename, text, .. } => {
+                let was = rename
+                    .and_then(|i| self.bars.bars.get(i))
+                    .map(|b| b.name.clone());
                 let r = match rename {
                     Some(i) => self.bars.rename(i, &text).map(|()| i),
                     None => self.bars.add(&text),
                 };
                 match r {
                     Ok(i) => {
+                        if let Some(old) = was.filter(|o| *o != self.bars.bars[i].name) {
+                            self.relink = Some((old, Some(self.bars.bars[i].name.clone())));
+                        }
                         self.selected = i;
                         self.save()
                     }
@@ -307,8 +323,14 @@ impl ButtonBar {
                 }
             }
             Dialog::DeleteBar(i) => {
+                if let Some(b) = self.bars.bars.get(i) {
+                    self.relink = Some((b.name.clone(), None));
+                }
                 self.bars.remove(i);
-                self.selected = self.selected.saturating_sub(1);
+                // The picked bar keeps being the same one; if it was this one, its neighbour.
+                if self.selected >= i {
+                    self.selected = self.selected.saturating_sub(1);
+                }
                 self.save()
             }
         }
