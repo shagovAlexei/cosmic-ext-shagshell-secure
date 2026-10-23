@@ -88,3 +88,18 @@ Top features power users rely on (our MVP is 1–8 + host keys + SFTP queue):
 Also planned: Python scripting with the `crt` object model (phase 10).
 
 Rarely used (skip): SSH1, RLogin, TAPI, Wyse/SCO, TN3270/5250, printing, VBScript/JScript/PerlScript, Public Key Assistant, GSSAPI, Telnet/TLS.
+
+
+## Where the user's real SecureCRT config is (for the importer, phase 9c)
+
+SecureCRT for Windows runs under wine; its config root is
+`/home/shag/.wine/drive_c/users/shag/AppData/Local/VanDyke Software/SecureCRT/Config/`:
+
+| What | Path under `Config/` |
+|---|---|
+| Button Bar | `ButtonBarV5.ini` |
+| Sessions | `Sessions/` — one `.ini` per session, sub-directories are folders (`__FolderData__.ini` in each), `Default.ini` / `Default_LocalShell.ini` / `Default_Serial.ini` / `Default_RDP.ini` are templates |
+| Global options, SSH2 defaults | `Global.ini`, `SSH2.ini` |
+| Credentials, known hosts, menus, saved commands | `Credentials/`, `KnownHosts/`, `Menus/`, `Commands/` |
+
+These hold the user's real hosts, script paths and (encrypted) passwords: use them to learn the formats, never copy their content into the repository (fixtures are anonymised) and never print secrets.

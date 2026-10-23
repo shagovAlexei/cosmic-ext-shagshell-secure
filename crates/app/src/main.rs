@@ -9,6 +9,7 @@ mod i18n;
 mod menu;
 mod options;
 mod quick_connect;
+mod securecrt_import;
 mod session_manager;
 mod session_options;
 mod sftp_view;

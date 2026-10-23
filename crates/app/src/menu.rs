@@ -39,6 +39,8 @@ pub enum Action {
     Connect,
     QuickConnect,
     ImportSshConfig,
+    /// File → Import from SecureCRT….
+    ImportSecureCrt,
     SessionOptions,
     /// Options → Edit Default Session…: the template new sessions copy.
     EditDefault,
@@ -142,6 +144,7 @@ pub fn bar(
                 tab(fl!("menu-close-tab"), Action::CloseTab),
                 Divider,
                 Button(fl!("menu-import-ssh-config"), None, Action::ImportSshConfig),
+                Button(fl!("menu-import-securecrt"), None, Action::ImportSecureCrt),
                 Divider,
                 Button(fl!("menu-exit"), None, Action::Exit),
             ],

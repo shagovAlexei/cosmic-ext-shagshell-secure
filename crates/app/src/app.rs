@@ -51,6 +51,8 @@ pub struct App {
     /// View → Command Window.
     command: crate::command_window::CommandWindow,
     buttons: crate::button_bar::ButtonBar,
+    /// File → Import from SecureCRT…, while its dialog is open.
+    sc_import: Option<crate::securecrt_import::ScImport>,
     /// Keyword highlighting rules (`highlights.toml`); a file that could not be read is never
     /// written over.
     hl: shagshell_core::highlight::Rules,
@@ -82,6 +84,7 @@ pub enum Message {
     ButtonBar(crate::button_bar::BbMsg),
     /// Global Options: the keyword highlighting rules changed.
     SetRules(shagshell_core::highlight::Rules),
+    SecureCrt(crate::securecrt_import::ScMsg),
     QuickConnect(QcMsg),
     SessionOptions(SoMsg),
     /// Keys and the pointer: acted on only when from the main window (not Session Options).
@@ -158,6 +161,7 @@ impl Application for App {
             asks,
             command: crate::command_window::CommandWindow::new(),
             buttons: crate::button_bar::ButtonBar::new(),
+            sc_import: None,
             hl,
             hl_broken,
         };
@@ -288,6 +292,11 @@ impl Application for App {
 
     fn dialog(&self) -> Option<Element<'_, Message>> {
         (self.asks.dialog(|t| self.tabs.title(t)))
+            .or_else(|| {
+                self.sc_import
+                    .as_ref()
+                    .map(crate::securecrt_import::ScImport::view)
+            })
             .or_else(|| self.buttons.dialog())
             .or_else(|| self.tabs.dialog())
             .or_else(|| self.quick.as_ref().map(QuickConnect::view))
@@ -466,6 +475,49 @@ impl App {
                 }
                 if opens && self.buttons.has_dialog() {
                     return widget::text_input::focus(self.buttons.first_field());
+                }
+            }
+            Message::SecureCrt(m) => {
+                use crate::securecrt_import::{ReportView, ScMsg};
+                match &m {
+                    ScMsg::Close => {
+                        self.sc_import = None;
+                        return self.tabs.focus_active();
+                    }
+                    ScMsg::Browse => {
+                        let title = fl!("sc-folder");
+                        return Task::perform(crate::securecrt_import::browse(title), |p| {
+                            cosmic::Action::App(Message::SecureCrt(ScMsg::Browsed(p)))
+                        });
+                    }
+                    ScMsg::Done(Ok(v)) => {
+                        // The new bars into the Button Bar (and its file); the tree reloaded.
+                        let v: &ReportView = v;
+                        let notice = self.buttons.merge(v.bars.clone());
+                        if notice.is_some() {
+                            self.sessions.notice = notice;
+                        }
+                        self.sessions.reload();
+                    }
+                    ScMsg::Done(Err(_)) => self.sessions.reload(),
+                    _ => {}
+                }
+                let Some(d) = &mut self.sc_import else {
+                    return Task::none();
+                };
+                if d.update(m) {
+                    let (root, (sessions, bars)) = (d.path(), d.wants());
+                    let store_root = shagshell_core::session::store::default_root();
+                    let have = self.buttons.names();
+                    return off_ui(
+                        move || {
+                            let store = shagshell_core::session::Store::new(store_root);
+                            shagshell_core::securecrt::import(&root, &store, &have, sessions, bars)
+                                .map(ReportView::of)
+                                .map_err(|e| e.to_string())
+                        },
+                        |r| Message::SecureCrt(ScMsg::Done(r)),
+                    );
                 }
             }
             Message::SetRules(r) => {
@@ -737,6 +789,12 @@ impl App {
             Action::QuickConnect if self.quick.is_some() => {} // open: keep what is typed
             Action::QuickConnect => return self.quick_connect(),
             Action::ImportSshConfig => self.import_ssh_config(),
+            Action::ImportSecureCrt => {
+                let d = crate::securecrt_import::ScImport::new();
+                let focus = widget::text_input::focus(d.input_id.clone());
+                self.sc_import = Some(d);
+                return focus;
+            }
             // The active tab's session, else the tree's one selected.
             Action::SessionOptions => {
                 match self
