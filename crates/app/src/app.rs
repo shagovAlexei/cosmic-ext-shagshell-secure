@@ -64,6 +64,8 @@ pub enum Message {
     /// Enter while the active tab's program has ended.
     EnterKey,
     Surface(cosmic::surface::Action),
+    /// The theme was switched in Global Options: terminals take its colors.
+    Restyle,
     /// Anything else a widget speaking `cosmic::Action` says (the tab bar): to the runtime.
     Cosmic(Box<cosmic::Action<Message>>),
     Sessions(SmMsg),
@@ -99,9 +101,15 @@ impl Application for App {
     }
 
     fn init(mut core: Core, _: ()) -> (Self, Task<Message>) {
-        core.window.header_title = fl!("app-title");
         let config_handler = config::handler();
         let config: Config = config::read(config_handler.as_ref());
+        // The language is chosen in main() from the system; a configured one replaces it.
+        if !config.language.is_empty() {
+            crate::i18n::init(&config::languages(&config.language, Vec::new()));
+        }
+        core.window.header_title = fl!("app-title");
+        let theme = (config.app_theme != config::AppTheme::System)
+            .then(|| cosmic::command::set_theme(config.app_theme.theme()));
         let control_dir = shagshell_core::launch::ensure_control_dir()
             .inspect_err(|e| log::warn!("ssh control dir: {e}"))
             .unwrap_or_else(|_| shagshell_core::launch::control_dir());
@@ -124,7 +132,7 @@ impl Application for App {
             control_dir,
             asks,
         };
-        (app, Task::none())
+        (app, theme.unwrap_or_else(Task::none))
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
@@ -132,8 +140,28 @@ impl Application for App {
             Message::Action(a) => return self.act(a),
             Message::Config(c) => self.config = c,
             Message::SetConfig(c) => {
+                let (lang, theme) = (
+                    c.language != self.config.language,
+                    c.app_theme != self.config.app_theme,
+                );
                 self.config = c;
                 self.save_config();
+                let mut tasks = Vec::new();
+                if lang {
+                    crate::i18n::init(&config::languages(
+                        &self.config.language,
+                        i18n_embed::DesktopLanguageRequester::requested_languages(),
+                    ));
+                    self.core.window.header_title = fl!("app-title");
+                    self.about = about::about();
+                }
+                if theme {
+                    tasks.push(
+                        cosmic::command::set_theme(self.config.app_theme.theme())
+                            .chain(cosmic::task::message(Message::Restyle)),
+                    );
+                }
+                return Task::batch(tasks);
             }
             Message::OpenUrl(url) => {
                 match std::process::Command::new("xdg-open").arg(url).spawn() {
@@ -187,6 +215,7 @@ impl Application for App {
                     cosmic::app::Action::Surface(a),
                 ));
             }
+            Message::Restyle => self.tabs.restyle(&look()),
             Message::Cosmic(a) => return cosmic::task::message(*a),
             Message::Sessions(m) => {
                 let out = self.sessions.update(m);
