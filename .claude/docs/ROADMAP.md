@@ -12,7 +12,7 @@
 - [x] 5. SFTP: ~~5a — вкладка-коммандер (две панели, F5–F8, очередь, конфликты, перетаскивание между панелями)~~; ~~5b-1 — правила перезаписи, докачка, скрытые файлы, chmod, сортировка~~; ~~5b-2 — перетаскивание из файлового менеджера, правка удалённого файла, закладки~~
 - [x] 6. ~~6a — Command Window (send to all)~~; ~~6b — Button Bar: именованные панели, Send String / Menu Function / Launch App, панель на сессию
 - [x] 7. Логирование сессий по шаблонам имён
-- [ ] 8. Jump host / port forwarding в UI, Telnet и Serial, keepalive + auto-reconnect
+- [ ] 8. ~~8a — jump host / port forwarding в UI, auto-reconnect~~; 8b — Telnet и Serial
 - [ ] 9. Logon Actions (expect/send), keyword highlighting, color schemes, импорт из `~/.ssh/config` и SecureCRT `.ini`
 - [ ] 10. Скрипты на Python: модуль `crt` (API как в SecureCRT), меню Script, запуск с Button Bar / клавиши / logon script / `--script`
 

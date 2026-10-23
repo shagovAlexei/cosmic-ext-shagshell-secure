@@ -1419,6 +1419,10 @@ fn ssh_launch(
             session: session.map(str::to_string),
         },
         sftp: false,
+        auto_reconnect: s.reconnect.then(|| tabs::AutoReconnect {
+            delay: s.reconnect_delay.unwrap_or(5),
+            tries: s.reconnect_tries.unwrap_or(10),
+        }),
         // An empty file name: no log on connect, the port and user still serve a log by hand.
         log: Some(tabs::LogSpec {
             file: s.log_file.clone(),
