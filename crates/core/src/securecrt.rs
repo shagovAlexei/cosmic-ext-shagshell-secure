@@ -202,7 +202,7 @@ pub fn read_sessions(root: &Path) -> SessionsFound {
                 walk(&path, &sub, out);
             } else if let Some(stem) = name.strip_suffix(".ini")
                 && !name.starts_with("__")
-                && !(rel.is_empty() && stem.starts_with("Default"))
+                && !(rel.is_empty() && (stem == "Default" || stem.starts_with("Default_")))
                 && let Ok(bytes) = std::fs::read(&path)
             {
                 out.push((
@@ -247,7 +247,7 @@ pub fn read_sessions(root: &Path) -> SessionsFound {
             22 => String::new(),
             p => format!(":{p}"),
         };
-        Some(format!("{at}{host}{p}")).filter(|_| !host.is_empty())
+        (!host.is_empty()).then(|| format!("{at}{host}{p}"))
     };
     let mut found = SessionsFound::default();
     for (folder, name, ini) in &all {
@@ -328,7 +328,10 @@ pub fn read_button_bars(text: &str) -> BarsFound {
             match kind {
                 "SEND" => {
                     let label = match get(2).trim() {
-                        "" => get(1).trim().chars().take(24).collect::<String>(),
+                        "" => (get(1).trim().chars())
+                            .take_while(|c| !c.is_control())
+                            .take(24)
+                            .collect::<String>(),
                         l => l.to_string(),
                     };
                     found.bars[i].buttons.push(Button {
@@ -416,7 +419,12 @@ pub fn import(
     let mut r = Report::default();
     let mut known: Vec<String> = have_bars.to_vec();
     if bars {
-        let text = std::fs::read_to_string(root.join("ButtonBarV5.ini"))?;
+        // No Button Bar file: no bars (the sessions are still imported).
+        let text = match std::fs::read_to_string(root.join("ButtonBarV5.ini")) {
+            Ok(t) => t,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+            Err(e) => return Err(e),
+        };
         let f = read_button_bars(&text);
         r.buttons_skipped = f.skipped.len();
         for b in f.bars {
@@ -439,6 +447,13 @@ pub fn import(
             match store.add(&folder, &name, &s) {
                 Ok(_) => r.sessions_added += 1,
                 Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => r.sessions_existing += 1,
+                // A name we can't use as a file name: that session only is left out.
+                Err(e)
+                    if e.kind() == std::io::ErrorKind::InvalidFilename
+                        || e.kind() == std::io::ErrorKind::InvalidInput =>
+                {
+                    r.sessions_skipped += 1
+                }
                 Err(e) => return Err(e),
             }
         }
@@ -567,14 +582,7 @@ mod tests {
             ("conn", "conn\\n")
         ); // `\\n` in the ini is the escape `\n`
         assert_eq!(main[1].arg, "ls\\n\r\npwd\\n\r\n"); // the line ends are real ones
-        assert_eq!(
-            main[1].label,
-            "ls\\n\r\npwd\\n\r\n"
-                .trim()
-                .chars()
-                .take(24)
-                .collect::<String>()
-        );
+        assert_eq!(main[1].label, "ls\\n"); // no line end in a label
         assert_eq!(f.bars[1].buttons[0].arg, "a,b");
         assert_eq!(
             f.skipped,

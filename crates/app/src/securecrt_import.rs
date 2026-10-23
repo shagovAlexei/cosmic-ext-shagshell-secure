@@ -96,6 +96,8 @@ impl ScImport {
                 let ok = !self.busy && (self.sessions || self.bars) && self.path().is_dir();
                 if !self.path().is_dir() {
                     self.result = Some((false, fl!("sc-no-folder")));
+                } else if !self.sessions && !self.bars {
+                    self.result = Some((false, fl!("sc-nothing")));
                 } else if ok {
                     self.busy = true;
                     self.result = None;

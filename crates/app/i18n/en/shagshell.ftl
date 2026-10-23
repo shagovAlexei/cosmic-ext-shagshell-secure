@@ -137,6 +137,7 @@ sc-folder = Config folder
 sc-sessions = Sessions (the folder tree too)
 sc-bars = Button Bar (Send String buttons)
 sc-import = Import
+sc-nothing = Tick Sessions or Button Bar
 sc-working = Importing…
 sc-no-folder = That folder does not exist
 sc-report = Sessions added: { $sessions } (already there: { $existing }, not imported: { $skipped }, e.g. RDP). Button bars added: { $bars } with { $buttons } buttons; Run Script buttons not imported: { $run }.

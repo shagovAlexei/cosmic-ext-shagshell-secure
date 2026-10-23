@@ -137,6 +137,7 @@ sc-folder = Папка Config
 sc-sessions = Сессии (и дерево папок)
 sc-bars = Button Bar (кнопки Send String)
 sc-import = Импортировать
+sc-nothing = Отметь «Сессии» или «Button Bar»
 sc-working = Импортирую…
 sc-no-folder = Такой папки нет
 sc-report = Добавлено сессий: { $sessions } (уже были: { $existing }, не импортировано: { $skipped }, например RDP). Добавлено панелей кнопок: { $bars } с { $buttons } кнопками; кнопок Run Script не импортировано: { $run }.
