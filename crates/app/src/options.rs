@@ -6,7 +6,8 @@ use crate::fl;
 use cosmic::app::context_drawer::{self, ContextDrawer};
 use cosmic::widget::{self, settings};
 
-pub fn view(config: &Config) -> ContextDrawer<'_, Message> {
+/// `separate`: passwords in a keyring of their own (`None`: not known yet / being changed).
+pub fn view(config: &Config, separate: Option<bool>) -> ContextDrawer<'_, Message> {
     let set = |f: fn(&mut Config, bool)| {
         let c = config.clone();
         move |on| {
@@ -26,5 +27,27 @@ pub fn view(config: &Config) -> ContextDrawer<'_, Message> {
             widget::toggler(config.paste_on_middle_click)
                 .on_toggle(set(|c, on| c.paste_on_middle_click = on)),
         ));
-    context_drawer::context_drawer(terminal, Message::CloseDrawer).title(fl!("menu-global-options"))
+    let mut master = widget::toggler(separate.unwrap_or(false));
+    if separate.is_some() {
+        master = master.on_toggle(Message::SetSeparate);
+    }
+    let passwords = settings::section()
+        .title(fl!("options-passwords"))
+        .add(settings::item_row(vec![
+            widget::column::with_children(vec![
+                widget::text::body(fl!("options-master")).into(),
+                widget::text::caption(fl!("options-master-hint")).into(),
+            ])
+            .width(cosmic::iced::Length::Fill)
+            .into(),
+            master.into(),
+        ]))
+        .add(settings::item(
+            fl!("options-credentials"),
+            widget::button::standard(fl!("options-open"))
+                .on_press(Message::Action(crate::menu::Action::Credentials)),
+        ));
+    let content =
+        widget::column::with_children(vec![terminal.into(), passwords.into()]).spacing(16);
+    context_drawer::context_drawer(content, Message::CloseDrawer).title(fl!("menu-global-options"))
 }

@@ -57,7 +57,8 @@ We do **not** implement SSH. The system OpenSSH does it; we drive it.
 - Sessions: `~/.config/shagshell/sessions/<folder>/…/<name>.toml`, one file per session; the folder tree is the Session Manager tree.
 - `sessions/Default.toml` is the template: a new session copies it at creation (SecureCRT behaviour, no live inheritance).
 - Credentials: `~/.config/shagshell/credentials.toml` holds named sets (username only); sessions reference a set by name.
-- **Secrets only in Secret Service** (gnome-keyring), never in files: attributes `app=io.github.shagovalexei.ShagShellSecure`, `kind=session|credential`, `id=<session path or credential name>`, `secret=password|passphrase`; they follow a session renamed / moved / deleted (`keyring::retarget` / `forget_under`). No master password (deferred).
+- **Secrets only in Secret Service** (gnome-keyring), never in files: attributes `app=io.github.shagovalexei.ShagShellSecure`, `kind=session|credential`, `id=<session path or credential name>`, `secret=password|passphrase`; they follow a session renamed / moved / deleted (`keyring::retarget` / `forget_under`). A session with a credential set: its password is the set's (`askpass::owner`), its user the set's (`Credentials::resolve` at launch).
+- **Master password** = a keyring of our own labelled «ShagShell Secure» (gnome-keyring asks its password when made and on first use after login); its existence is the setting (no config flag); `keyring::set_separate` moves our items in / out. New secrets go there when it exists.
 - Keys: `~/.ssh` + ssh-agent (gnome-keyring); generation through `ssh-keygen`.
 - Global options: cosmic-config (`~/.config/cosmic/<APP_ID>/v1/`). Window state / open tabs: `~/.local/state/…`.
 
@@ -69,7 +70,7 @@ We do **not** implement SSH. The system OpenSSH does it; we drive it.
   - `launch.rs` — `Session` → argv + env (pure, tested against expected argv);
   - `askpass.rs` — prompt classification, the socket protocol, the helper, `Tries` (first / retry / cancelled per ssh), `abort`;
   - `keyring.rs` — Secret Service over zbus (from shagoff-commander, + `lookup` / `delete`);
-  - `credentials.rs`;
+  - `credentials.rs` — `credentials.toml` (name → user, unknown fields kept), `put` (checked add / rename), `resolve`; `Store::using` / `relink` follow a renamed / deleted set;
   - `sftp/{client,queue}.rs` — the transfer queue is a pure state machine;
   - `logfile.rs` — log name templates `%H %S %Y %M %D %h %m %s %P %U`;
   - `macros.rs` — Button Bar / Command Window escapes (`\r \n \t \e \\ \p`);
@@ -87,6 +88,8 @@ We do **not** implement SSH. The system OpenSSH does it; we drive it.
   - App keys (`key_action`) are handled whatever the event status: a text field would take Alt+Q as a letter. Enter and the tree's keys only when no widget took them.
   - Popups (menus) are windows: `App::view_window` returns an empty `Space` for them, or libcosmic panics ("no view for window"). A `segmented_button` context menu is one root whose children are one menu per tab.
   - `askpass.rs`: the socket (listener thread → subscription), the prompt queue and its dialog; keyring calls go through `App::ask_outcome` off the UI thread (`off_ui`). Prompts of a closed / ended tab are cancelled (`prune`). Secrets in messages are `Hidden` (redacted `Debug`).
+  - `credentials_window.rs`: Tools → Credentials Manager, a window like Session Options; the app saves (file, sessions relinked, keyring rename then store — in that order).
+  - Blocking work (keyring, D-Bus) goes through `app::off_ui`: started when the task runs, so `Task::chain` orders it (a `spawn_blocking` made eagerly would race).
   - `main.rs` also dispatches the askpass helper and `--check`.
 - Modularity = Rust modules. No plugin system.
 

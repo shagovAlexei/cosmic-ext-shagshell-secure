@@ -11,6 +11,8 @@ pub struct Form {
     pub identity: String,
     pub keepalive: String,
     pub extra: String,
+    /// Credential set name, "" = none.
+    pub credential: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -37,6 +39,7 @@ impl Form {
             identity: text(&s.identity),
             keepalive: s.keepalive.map(|k| k.to_string()).unwrap_or_default(),
             extra: s.extra.clone(),
+            credential: text(&s.credential),
         }
     }
 
@@ -65,6 +68,7 @@ impl Form {
             identity: opt(&self.identity),
             keepalive,
             extra,
+            credential: opt(&self.credential),
             ..base.clone()
         })
     }

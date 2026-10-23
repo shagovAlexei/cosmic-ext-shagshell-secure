@@ -51,6 +51,8 @@ pub enum SoMsg {
     Drag,
     /// The keyring looked up for this window's session: a password or passphrase is saved.
     Saved(window::Id, bool),
+    /// «Учётные данные»: 0 = none, else the n-th set.
+    Credential(usize),
     /// «Забыть»: the session's saved secrets removed.
     Forget,
     Ok,
@@ -65,11 +67,22 @@ pub struct SessionOptions {
     pub error: Option<String>,
     /// The session has a secret in the keyring (Edit only).
     saved: bool,
+    /// The credential sets (name, user), for the dropdown; `labels[0]` is «(none)».
+    sets: Vec<(String, String)>,
+    labels: Vec<String>,
     first_id: widget::Id,
 }
 
 impl SessionOptions {
-    pub fn new(window: window::Id, target: Target, s: &Session) -> Self {
+    pub fn new(
+        window: window::Id,
+        target: Target,
+        s: &Session,
+        sets: Vec<(String, String)>,
+    ) -> Self {
+        let labels = std::iter::once(fl!("so-credential-none"))
+            .chain(sets.iter().map(|(n, _)| n.clone()))
+            .collect();
         let categories = segmented_button::Model::builder()
             .insert(|b| {
                 b.text(fl!("so-connection"))
@@ -85,6 +98,8 @@ impl SessionOptions {
             categories,
             error: None,
             first_id: widget::Id::unique(),
+            sets,
+            labels,
             saved: false,
         }
     }
@@ -132,6 +147,16 @@ impl SessionOptions {
             },
             SoMsg::Category(e) => self.categories.activate(e),
             SoMsg::Saved(w, saved) if w == self.window => self.saved = saved,
+            SoMsg::Credential(i) => {
+                f.credential = match i {
+                    0 => String::new(),
+                    i => self
+                        .sets
+                        .get(i - 1)
+                        .map(|(n, _)| n.clone())
+                        .unwrap_or_default(),
+                }
+            }
             SoMsg::Browsed(w, Some(path)) if w == self.window => f.identity = path,
             _ => {}
         }
@@ -182,8 +207,32 @@ impl SessionOptions {
                 v.extend([
                     field(fl!("qc-host"), Field::Host, &f.host, !new),
                     field(fl!("qc-port"), Field::Port, &f.port, false),
-                    field(fl!("qc-user"), Field::User, &f.user, false),
                 ]);
+                // With a set: its user, not editable here (Credentials Manager).
+                let set = self.sets.iter().position(|(n, _)| *n == f.credential);
+                match set {
+                    Some(i) => v.push(
+                        widget::column::with_children(vec![
+                            widget::text::caption(fl!("qc-user")).into(),
+                            widget::text_input("", self.sets[i].1.clone()).into(),
+                        ])
+                        .spacing(2)
+                        .into(),
+                    ),
+                    None => v.push(field(fl!("qc-user"), Field::User, &f.user, false)),
+                }
+                let selected = set.map_or(0, |i| i + 1);
+                v.push(
+                    widget::column::with_children(vec![
+                        widget::text::caption(fl!("so-credential")).into(),
+                        widget::dropdown(&self.labels, Some(selected), move |i| {
+                            m(SoMsg::Credential(i))
+                        })
+                        .into(),
+                    ])
+                    .spacing(2)
+                    .into(),
+                );
                 if self.saved {
                     v.push(
                         widget::row::with_children(vec![

@@ -131,3 +131,27 @@ ask-keyring-failed = Keyring: { $error }
 ask-accept = Accept & Save
 so-saved = A password is saved in the keyring
 so-forget = Forget
+ask-save-to = Save password to “{ $set }”
+
+# Credentials Manager
+menu-credentials = Credentials Manager…
+cw-title = Credentials
+cw-new-title = New credential
+cw-name = Name
+cw-password = Password
+cw-password-saved = (saved — type to change)
+cw-password-none = (not set)
+cw-save = Save
+cw-add = New
+cw-delete-confirm = { $count ->
+    [0] Not used by any session
+    [one] Used in one session: it keeps the username and will ask for the password
+   *[other] Used in { $count } sessions: they keep the username and will ask for the password
+}
+so-credential = Credential
+so-credential-none = (none)
+options-passwords = Passwords
+options-master = Keep passwords in a keyring with a master password
+options-master-hint = A separate keyring “ShagShell Secure”: its password is asked the first time after login. Saved passwords move in or out.
+options-credentials = Credentials: username + password sets
+options-open = Open…

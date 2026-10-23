@@ -46,3 +46,29 @@
 - Tab closed while its dialog is up → the dialog goes, the helper gets Cancel (no hanging ssh).
 - Keyring missing / locked and dismissed → dialog still works, Save disabled or its failure shown, never a crash.
 - A second app instance → its own socket; the first one's tabs unaffected.
+
+---
+
+# 4b — Credentials Manager, master password: Implementation Plan
+
+**Spec:** `.claude/docs/specs/04-auth.md` § 4b. Branch `feat/credentials` (on `feat/auth`), version 0.6.0.
+
+## Task 1: core (TDD)
+
+- `session::Session.credential: Option<String>`; `Form.credential` ("" = none).
+- `credentials.rs`: `Credentials(BTreeMap<String, Set { user }>)` (unknown fields kept), `load(path) / save(path)` (atomic), `default_path()`; `resolve(&Session, &Credentials) -> Session` (user from the set; a missing set: unchanged).
+- `Store::using(name) -> Vec<String>` (sessions referencing a set), `Store::relink(old, new: Option<&str>, user)` — renamed: point to `new`; deleted (`None`): drop the reference, copy `user`.
+- Tests: `round_trip_keeps_unknown`, `resolve_user_from_set`, `resolve_missing_set`, `relink_rename`, `relink_delete_copies_user`.
+
+## Task 2: core keyring
+
+- `enum Owner { Session(String), Credential(String) }` → `attrs(&Owner, Secret)` (`kind=session|credential`); `lookup / store / delete / exists` take `&Owner`; `rename(&Owner, &Owner)`.
+- Master password: `separate() -> bool` (a collection labelled «ShagShell Secure»), `set_separate(bool)` (create — gnome-keyring asks the password — and move our items in; or move them back and delete it). `store` writes into it when there.
+- Live test (`--ignored`): credential round trip + rename. `set_separate` checked by hand (its prompt is on the user's desktop).
+
+## Task 3: app
+
+- `launch::askpass_env(.., credential)` → `SHAGSHELL_CREDENTIAL`; `Request.credential`; password prompts of a session with a set use `Owner::Credential` (lookup and «Save password to «set»»).
+- `credentials_window.rs`: a window like Session Options: list + New, fields name / user / password, Save / Delete (confirm with the count), Close.
+- Session Options: «Учётные данные» dropdown; user field disabled with the set's user.
+- Global Options: «separate keyring» checkbox (state read when the drawer opens, applied off the UI thread, failure shown), «Credentials Manager…» button; Tools → Credentials Manager….

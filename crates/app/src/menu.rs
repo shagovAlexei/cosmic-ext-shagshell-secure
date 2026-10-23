@@ -36,6 +36,8 @@ pub enum Action {
     SessionOptions,
     /// Options → Edit Default Session…: the template new sessions copy.
     EditDefault,
+    /// Tools → Credentials Manager….
+    Credentials,
     // Shown, not working yet (later phases).
     Disconnect,
     ConnectSftp,
@@ -139,7 +141,11 @@ pub fn bar(
         ),
         (
             fl!("menu-tools"),
-            vec![off(fl!("menu-create-key")), off(fl!("menu-keymap"))],
+            vec![
+                Button(fl!("menu-credentials"), None, Action::Credentials),
+                off(fl!("menu-create-key")),
+                off(fl!("menu-keymap")),
+            ],
         ),
         (
             fl!("menu-window"),

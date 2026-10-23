@@ -1,6 +1,7 @@
 //! The application: state and routing only; each screen area lives in its own module.
 
 use crate::config::{self, Config};
+use crate::credentials_window::{CredWindow, CwMsg};
 use crate::menu::Action;
 use crate::quick_connect::{QcMsg, QuickConnect};
 use crate::session_manager::{SessionManager, SmMsg, TreeKey};
@@ -13,6 +14,8 @@ use cosmic::iced::keyboard::{self, Modifiers, key::Code, key::Physical};
 use cosmic::iced::{Length, Subscription, event};
 use cosmic::widget::{self, about::About};
 use cosmic::{Application, Element};
+use shagshell_core::credentials::{self, Credentials};
+use shagshell_core::keyring::{Owner, Secret};
 use shagshell_core::session::store::DEFAULT;
 
 pub const APP_ID: &str = "io.github.shagovalexei.ShagShellSecure";
@@ -35,6 +38,11 @@ pub struct App {
     quick: Option<QuickConnect>,
     /// The Session Options window, when open (one at a time).
     options: Option<SessionOptions>,
+    /// The Credentials Manager window, when open.
+    creds_win: Option<crate::credentials_window::CredWindow>,
+    /// Passwords in a keyring of our own (the master password); `None`: not known yet, or being
+    /// changed (the checkbox waits).
+    separate: Option<bool>,
     /// ssh's ControlMaster sockets (`launch::ensure_control_dir`).
     control_dir: std::path::PathBuf,
     /// ssh's prompts waiting for an answer (`askpass`).
@@ -62,6 +70,11 @@ pub enum Message {
     Input(cosmic::iced::window::Id, Box<Message>),
     CloseRequested(cosmic::iced::window::Id),
     Ask(crate::askpass::AskMsg),
+    Credentials(crate::credentials_window::CwMsg),
+    /// Global Options: the master-password keyring wanted on / off.
+    SetSeparate(bool),
+    /// …and how it is now (or why it could not be changed).
+    Separate(Result<bool, String>),
 }
 
 impl Application for App {
@@ -99,6 +112,8 @@ impl Application for App {
             sessions,
             quick: None,
             options: None,
+            creds_win: None,
+            separate: None,
             control_dir,
             asks,
         };
@@ -211,11 +226,37 @@ impl Application for App {
                     return self.session_options(SoMsg::Cancel);
                 }
             }
+            // Esc in the Credentials Manager: Close.
+            Message::Input(w, m) if self.creds_win.as_ref().is_some_and(|c| c.window == w) => {
+                if let Message::Sessions(SmMsg::Key(TreeKey::Clear)) = *m {
+                    return self.credentials(CwMsg::Close);
+                }
+            }
             Message::Input(..) => {}
             Message::CloseRequested(w) if self.options.as_ref().is_some_and(|o| o.window == w) => {
                 return self.session_options(SoMsg::Cancel);
             }
+            Message::CloseRequested(w)
+                if self.creds_win.as_ref().is_some_and(|c| c.window == w) =>
+            {
+                return self.credentials(CwMsg::Close);
+            }
             Message::CloseRequested(_) => {}
+            Message::Credentials(m) => return self.credentials(m),
+            Message::SetSeparate(on) => {
+                self.separate = None;
+                return separate_task(move || {
+                    shagshell_core::keyring::set_separate(on)?;
+                    shagshell_core::keyring::separate()
+                });
+            }
+            Message::Separate(r) => match r {
+                Ok(on) => self.separate = Some(on),
+                Err(e) => {
+                    self.sessions.notice = Some(fl!("ask-keyring-failed", error = e));
+                    return separate_task(shagshell_core::keyring::separate);
+                }
+            },
         }
         Task::none()
     }
@@ -307,15 +348,19 @@ impl Application for App {
     fn context_drawer(&self) -> Option<cosmic::app::context_drawer::ContextDrawer<'_, Message>> {
         match self.drawer? {
             Drawer::About => Some(about::view(&self.about)),
-            Drawer::Options => Some(options::view(&self.config)),
+            Drawer::Options => Some(options::view(&self.config, self.separate)),
         }
     }
 
     /// Session Options; popups (menus) are windows too, libcosmic draws them itself, only
     /// asking here.
     fn view_window(&self, id: cosmic::iced::window::Id) -> Element<'_, Message> {
-        match self.options.as_ref().filter(|o| o.window == id) {
-            Some(o) => o.view(self.core.focused_window() == Some(id)),
+        let focused = self.core.focused_window() == Some(id);
+        if let Some(o) = self.options.as_ref().filter(|o| o.window == id) {
+            return o.view(focused);
+        }
+        match self.creds_win.as_ref().filter(|c| c.window == id) {
+            Some(c) => c.view(focused),
             None => widget::Space::new().into(),
         }
     }
@@ -402,8 +447,14 @@ impl App {
                 }
             }
             Action::EditDefault => return self.open_options(Target::Default),
+            Action::Credentials => return self.open_credentials(),
             Action::About => self.toggle_drawer(Drawer::About),
-            Action::GlobalOptions => self.toggle_drawer(Drawer::Options),
+            Action::GlobalOptions => {
+                self.toggle_drawer(Drawer::Options);
+                if self.drawer == Some(Drawer::Options) {
+                    return separate_task(shagshell_core::keyring::separate);
+                }
+            }
             _ => {}
         }
         Task::none()
@@ -425,6 +476,147 @@ impl App {
             }
         }
         Task::batch(tasks)
+    }
+
+    /// Tools → Credentials Manager…; open already: raised.
+    fn open_credentials(&mut self) -> Task<Message> {
+        if let Some(c) = &self.creds_win {
+            return cosmic::iced::window::gain_focus(c.window);
+        }
+        let creds = match Credentials::load(&credentials::default_path()) {
+            Ok(c) => c,
+            Err(e) => {
+                self.sessions.notice = Some(format!("credentials.toml: {e}"));
+                return Task::none();
+            }
+        };
+        let (window, open) = cosmic::iced::window::open(crate::credentials_window::settings());
+        let c = CredWindow::new(window, creds);
+        let first = c.name_field();
+        let mut tasks = vec![
+            open.then(move |_| widget::text_input::focus(first.clone())),
+            cosmic::ApplicationExt::set_window_title(self, fl!("cw-title"), window),
+        ];
+        if let Some(name) = c.selected.clone() {
+            tasks.push(has_password_task(window, name));
+        }
+        self.creds_win = Some(c);
+        Task::batch(tasks)
+    }
+
+    fn credentials(&mut self, msg: CwMsg) -> Task<Message> {
+        let Some(c) = &mut self.creds_win else {
+            return Task::none();
+        };
+        match msg {
+            CwMsg::Close => {
+                let w = c.window;
+                self.creds_win = None;
+                return cosmic::iced::window::close(w);
+            }
+            CwMsg::Drag => return cosmic::iced::window::drag(c.window),
+            CwMsg::Save => return self.save_credential(),
+            CwMsg::Delete => {
+                if let Some(name) = &c.selected {
+                    c.confirm = Some(self.sessions.store.using(name).len());
+                }
+            }
+            CwMsg::DeleteConfirmed => return self.delete_credential(),
+            m => {
+                if let Some(name) = c.update(m) {
+                    return has_password_task(c.window, name);
+                }
+            }
+        }
+        Task::none()
+    }
+
+    /// «Сохранить»: the set checked and written; a rename moves its sessions and its password.
+    fn save_credential(&mut self) -> Task<Message> {
+        let Some(c) = &mut self.creds_win else {
+            return Task::none();
+        };
+        let name = c.name.trim().to_string();
+        let old = c.selected.clone();
+        let mut creds = c.creds.clone();
+        let put = crate::session_manager::check(&name, false).and_then(|()| {
+            creds
+                .put(old.as_deref(), &name, c.user.trim())
+                .map_err(|_| fl!("name-taken"))
+        });
+        if let Err(e) = put.and_then(|()| {
+            creds
+                .save(&credentials::default_path())
+                .map_err(|e| crate::session_manager::io_text(&e))
+        }) {
+            c.error = Some(e);
+            return Task::none();
+        }
+        let password = std::mem::take(&mut c.password);
+        c.creds = creds;
+        c.reload(Some(&name));
+        let window = c.window;
+        let renamed = old.filter(|o| *o != name);
+        let mut relinked = Vec::new();
+        if let Some(o) = &renamed {
+            match self.sessions.store.relink(o, Some(&name), "") {
+                Ok(ids) => relinked = ids,
+                Err(e) => self.sessions.notice = Some(crate::session_manager::io_text(&e)),
+            }
+        }
+        // The tabs of its sessions: the new name in their environment.
+        for id in relinked {
+            self.sessions_changed(&id, &id);
+        }
+        // In this order: the rename moves the old password, then a typed one replaces it.
+        let set = name.clone();
+        let save = keyring_task(move || {
+            let to = Owner::Credential(set);
+            if let Some(o) = renamed {
+                shagshell_core::keyring::rename(&Owner::Credential(o), &to)?;
+            }
+            match password.is_empty() {
+                true => Ok(()),
+                false => shagshell_core::keyring::store(&to, Secret::Password, &password),
+            }
+        });
+        // Looked up once written (in a batch the lookup could come first).
+        save.chain(has_password_task(window, name))
+    }
+
+    /// Delete confirmed: its sessions keep its user, its password goes.
+    fn delete_credential(&mut self) -> Task<Message> {
+        let Some(c) = &mut self.creds_win else {
+            return Task::none();
+        };
+        let Some(name) = c.selected.clone() else {
+            return Task::none();
+        };
+        let mut creds = c.creds.clone();
+        let user = creds.0.remove(&name).map(|s| s.user).unwrap_or_default();
+        if let Err(e) = creds.save(&credentials::default_path()) {
+            c.error = Some(crate::session_manager::io_text(&e));
+            return Task::none();
+        }
+        c.creds = creds;
+        let first = c.creds.0.keys().next().cloned();
+        let shown = c.reload(first.as_deref());
+        let window = c.window;
+        match self.sessions.store.relink(&name, None, &user) {
+            Ok(ids) => {
+                for id in ids {
+                    self.sessions_changed(&id, &id);
+                }
+            }
+            Err(e) => self.sessions.notice = Some(crate::session_manager::io_text(&e)),
+        }
+        let delete = keyring_task(move || {
+            shagshell_core::keyring::delete(&Owner::Credential(name), Secret::Password)
+        });
+        match shown {
+            Some(n) => delete.chain(has_password_task(window, n)),
+            None => delete,
+        }
     }
 
     /// After a tab closed or its program ended: its prompts go.
@@ -576,7 +768,13 @@ impl App {
             }
         };
         let (window, open) = cosmic::iced::window::open(crate::session_options::settings());
-        let o = SessionOptions::new(window, target, &session);
+        let sets = Credentials::load(&credentials::default_path())
+            .unwrap_or_default()
+            .0
+            .into_iter()
+            .map(|(n, s)| (n, s.user))
+            .collect();
+        let o = SessionOptions::new(window, target, &session, sets);
         // The first field focused once the window is there (before, the focus goes nowhere).
         let first = o.first_field();
         let mut tasks = vec![
@@ -606,7 +804,7 @@ impl App {
                     return Task::none();
                 };
                 let (w, id) = (o.window, id.clone());
-                let forget = id.clone();
+                let forget = shagshell_core::keyring::Owner::Session(id.clone());
                 return Task::batch([
                     keyring_task(move || {
                         use shagshell_core::keyring::{Secret, delete};
@@ -731,7 +929,9 @@ fn off_ui<T: Send + 'static>(
     f: impl FnOnce() -> T + Send + 'static,
     then: impl Fn(T) -> Message + Send + 'static,
 ) -> Task<Message> {
-    Task::perform(tokio::task::spawn_blocking(f), move |r| match r {
+    // Started when the task runs, not when it is made: `chain` must order the work itself.
+    let work = async move { tokio::task::spawn_blocking(f).await };
+    Task::perform(work, move |r| match r {
         Ok(v) => cosmic::Action::App(then(v)),
         Err(_) => cosmic::Action::None,
     })
@@ -740,8 +940,29 @@ fn off_ui<T: Send + 'static>(
 /// Session Options: whether the session has a secret saved (its «Забыть» line).
 fn saved_task(window: cosmic::iced::window::Id, id: String) -> Task<Message> {
     off_ui(
-        move || shagshell_core::keyring::exists(&id).unwrap_or(false),
+        move || {
+            let owner = shagshell_core::keyring::Owner::Session(id);
+            shagshell_core::keyring::exists(&owner).unwrap_or(false)
+        },
         move |saved| Message::SessionOptions(SoMsg::Saved(window, saved)),
+    )
+}
+
+/// The master-password keyring: read (or changed, then read) off the UI thread.
+fn separate_task<E: std::fmt::Display + Send + 'static>(
+    f: impl FnOnce() -> Result<bool, E> + Send + 'static,
+) -> Task<Message> {
+    off_ui(f, |r| Message::Separate(r.map_err(|e| e.to_string())))
+}
+
+/// Credentials Manager: whether the set has a password saved (no unlock asked).
+fn has_password_task(window: cosmic::iced::window::Id, name: String) -> Task<Message> {
+    off_ui(
+        {
+            let name = name.clone();
+            move || shagshell_core::keyring::exists(&Owner::Credential(name)).unwrap_or(false)
+        },
+        move |has| Message::Credentials(CwMsg::HasPassword(window, name.clone(), has)),
     )
 }
 
@@ -760,12 +981,19 @@ fn ssh_launch(
     title: String,
     session: Option<&str>,
 ) -> Result<tabs::Launch, String> {
+    use shagshell_core::credentials::{self, Credentials};
     let home = std::env::home_dir().unwrap_or_default();
+    // A credential set: its user here, its password through askpass (a set that is gone: none).
+    let creds = Credentials::load(&credentials::default_path()).unwrap_or_default();
+    let credential = (s.credential.as_ref()).filter(|c| creds.0.contains_key(*c));
+    let s = &creds.resolve(s);
     let mut argv =
         shagshell_core::launch::ssh_argv(s, control_dir, &home).map_err(|_| fl!("bad-extra"))?;
     let program = argv.remove(0);
     let exe = std::env::current_exe().unwrap_or_else(|_| "shagshell".into());
-    let env = shagshell_core::launch::askpass_env(&exe, &askpass_sock(control_dir), session);
+    let sock = askpass_sock(control_dir);
+    let env =
+        shagshell_core::launch::askpass_env(&exe, &sock, session, credential.map(String::as_str));
     Ok(tabs::Launch {
         program,
         args: argv,
