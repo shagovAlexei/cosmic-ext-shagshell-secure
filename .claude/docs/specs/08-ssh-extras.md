@@ -14,3 +14,11 @@
 - Проброс — только в окне настроек, без «включить на ходу» (`~C`).
 - Известные ограничения: ssh выходит с кодом 255 и при неудачном входе после долгого ожидания диалога (неверный пароль через >10 с) — тогда серия повторов может начаться и использовать сохранённый пароль до «попыток подряд» раз (по умолчанию 10; для аккаунтов с блокировкой поставь 1–2). Клон и Reconnect при живом ControlMaster повторно просят тот же проброс — ssh сообщит «Address already in use» (мастер уже слушает порт).
 - Логика решения о повторе — `core::reconnect::next_attempt` (тесты).
+
+## 8b: Telnet и Serial
+- Session Options → «Протокол»: SSH2 / Локальный shell / **Telnet** / **Serial**.
+- **Telnet** (`protocol = "telnet"`, `host`, `port`): `telnet host [port]` в PTY вкладки; нужен хост. Метка «Telnet · host».
+- **Serial** (`protocol = "serial"`, `[serial]`: `device`, `baud` (9600), `data_bits` (8), `parity` none / even / odd, `stop_bits` (1), `flow` none / hardware / software): `picocom -b … -d … -y … -p … -f … device`; нужно устройство (без пробелов и дефиса в начале), скорость от 50. Метка «Serial · /dev/ttyUSB0». Выход из picocom — Ctrl+A, Ctrl+X.
+- Нет программы (`telnet` / `picocom` не установлены) — сообщение с подсказкой `apt install`; вкладка не открывается.
+- Лог, Button Bar, Command Window, Reconnect по Enter, «Клонировать» работают как у остальных вкладок; пароли / keyring / SFTP / проброс / jump — только ssh (страницы SSH2 и «Проброс портов» показывают «относится к ssh»). Автопереподключение — только ssh.
+- Доступ к `/dev/ttyUSB*` — вопрос группы `dialout` пользователя, не программы.

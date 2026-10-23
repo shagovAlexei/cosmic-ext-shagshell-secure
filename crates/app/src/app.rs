@@ -737,13 +737,25 @@ impl App {
             match self.sessions.store.get(id) {
                 Ok(s) => {
                     let name = shagshell_core::session::store::name_of(id).to_string();
-                    if s.protocol == shagshell_core::session::Protocol::Local {
-                        let l = tabs::Launch {
-                            title: name,
-                            ..tabs::Launch::local_shell()
-                        };
-                        tasks.push(self.tabs.open(l, &look()));
-                        continue;
+                    use shagshell_core::session::Protocol as P;
+                    match s.protocol {
+                        P::Local => {
+                            let l = tabs::Launch {
+                                title: name,
+                                log: Some(log_spec(&s)),
+                                ..tabs::Launch::local_shell()
+                            };
+                            tasks.push(self.tabs.open(l, &look()));
+                            continue;
+                        }
+                        P::Telnet | P::Serial => {
+                            match program_launch(&s, name) {
+                                Ok(l) => tasks.push(self.tabs.open(l, &look())),
+                                Err(e) => self.sessions.notice = Some(e),
+                            }
+                            continue;
+                        }
+                        P::Ssh2 => {}
                     }
                     match ssh_launch(&self.control_dir, creds.as_ref(), &s, name, Some(id)) {
                         Ok(l) => tasks.push(self.tabs.open(l, &look())),
@@ -766,7 +778,7 @@ impl App {
                 return Task::none();
             }
         };
-        if s.protocol == shagshell_core::session::Protocol::Local {
+        if s.protocol != shagshell_core::session::Protocol::Ssh2 {
             self.sessions.notice = Some(fl!("sftp-needs-ssh"));
             return Task::none();
         }
@@ -1431,6 +1443,55 @@ fn ssh_launch(
             port: s.port,
             user: s.user.clone().unwrap_or_default(),
         }),
+    })
+}
+
+/// The session's log wishes (the file name template, how to write it).
+fn log_spec(s: &shagshell_core::session::Session) -> tabs::LogSpec {
+    tabs::LogSpec {
+        file: s.log_file.clone(),
+        append: s.log_append,
+        raw: s.log_raw,
+        port: s.port,
+        user: s.user.clone().unwrap_or_default(),
+    }
+}
+
+/// A Telnet or Serial session: its program (`telnet`, `picocom`) in the tab; why not if the
+/// program is not installed.
+fn program_launch(
+    s: &shagshell_core::session::Session,
+    title: String,
+) -> Result<tabs::Launch, String> {
+    use shagshell_core::session::Protocol as P;
+    let (mut argv, protocol) = match s.protocol {
+        P::Telnet => (
+            shagshell_core::launch::telnet_argv(s),
+            tabs::Protocol::Telnet {
+                host: s.host.clone(),
+            },
+        ),
+        _ => (
+            shagshell_core::launch::serial_argv(s),
+            tabs::Protocol::Serial {
+                device: s.serial.device.clone(),
+            },
+        ),
+    };
+    let program = argv.remove(0);
+    let found = shagshell_core::check::probe(&[&program], std::env::var_os("PATH").as_deref());
+    if !found.iter().any(|(_, ok)| *ok) {
+        return Err(fl!("proto-missing", program = program));
+    }
+    Ok(tabs::Launch {
+        program,
+        args: argv,
+        env: Vec::new(),
+        title,
+        protocol,
+        sftp: false,
+        log: Some(log_spec(s)),
+        auto_reconnect: None,
     })
 }
 

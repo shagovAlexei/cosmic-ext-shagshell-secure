@@ -9,7 +9,7 @@ use cosmic::{Element, theme};
 use shagshell_core::session::ForwardKind;
 use shagshell_core::session::form::{Form, FormError, FwdRow};
 use shagshell_core::session::store::name_of;
-use shagshell_core::session::{Protocol, Session};
+use shagshell_core::session::{Flow, Parity, Protocol, Session};
 
 /// What OK writes.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -46,6 +46,8 @@ pub enum Field {
     Jump,
     ReconnectDelay,
     ReconnectTries,
+    Device,
+    Baud,
 }
 
 #[derive(Clone, Debug)]
@@ -73,6 +75,11 @@ pub enum SoMsg {
     FwdText(usize, u8, String),
     FwdAdd,
     FwdDel(usize),
+    /// Serial line: data bits (n-th of 5…8), parity, stop bits (n-th of 1, 2), flow control.
+    SerialBits(usize),
+    SerialParity(usize),
+    SerialStops(usize),
+    SerialFlow(usize),
     /// «Забыть»: the session's saved secrets removed.
     Forget,
     Ok,
@@ -95,6 +102,8 @@ pub struct SessionOptions {
     bar_labels: Vec<String>,
     protocols: Vec<String>,
     fwd_kinds: Vec<String>,
+    parities: Vec<String>,
+    flows: Vec<String>,
     first_id: widget::Id,
 }
 
@@ -137,7 +146,22 @@ impl SessionOptions {
             labels,
             bars,
             bar_labels,
-            protocols: vec![fl!("so-protocol-ssh2"), fl!("so-protocol-local")],
+            protocols: vec![
+                fl!("so-protocol-ssh2"),
+                fl!("so-protocol-local"),
+                fl!("so-protocol-telnet"),
+                fl!("so-protocol-serial"),
+            ],
+            parities: vec![
+                fl!("so-parity-none"),
+                fl!("so-parity-even"),
+                fl!("so-parity-odd"),
+            ],
+            flows: vec![
+                fl!("so-flow-none"),
+                fl!("so-flow-hardware"),
+                fl!("so-flow-software"),
+            ],
             fwd_kinds: vec![
                 fl!("so-fwd-local"),
                 fl!("so-fwd-remote"),
@@ -173,6 +197,8 @@ impl SessionOptions {
             FormError::Keepalive => fl!("so-bad-keepalive"),
             FormError::Extra => fl!("bad-extra"),
             FormError::Jump => fl!("so-bad-jump"),
+            FormError::Device => fl!("so-bad-device"),
+            FormError::Baud => fl!("so-bad-baud"),
             FormError::Forward(n) => {
                 let n = (*n + 1) as i64;
                 fl!("so-bad-forward", n = n)
@@ -195,12 +221,18 @@ impl SessionOptions {
                 Field::Extra => f.extra = v,
                 Field::LogFile => f.log_file = v,
                 Field::Jump => f.jump = v,
+                Field::Device => f.device = v,
+                Field::Baud => f.baud = v,
                 Field::ReconnectDelay => f.reconnect_delay = v,
                 Field::ReconnectTries => f.reconnect_tries = v,
             },
             SoMsg::Category(e) => self.categories.activate(e),
             SoMsg::Protocol(i) => f.protocol = Protocol::ALL.get(i).copied().unwrap_or_default(),
             SoMsg::Saved(w, saved) if w == self.window => self.saved = saved,
+            SoMsg::SerialBits(i) => f.data_bits = 5 + i as u8,
+            SoMsg::SerialParity(i) => f.parity = Parity::ALL.get(i).copied().unwrap_or_default(),
+            SoMsg::SerialStops(i) => f.stop_bits = 1 + i as u8,
+            SoMsg::SerialFlow(i) => f.flow = Flow::ALL.get(i).copied().unwrap_or_default(),
             SoMsg::Reconnect(on) => f.reconnect = on,
             SoMsg::FwdAdd => f.forwards.push(FwdRow::default()),
             SoMsg::FwdDel(i) => {
@@ -260,8 +292,11 @@ impl SessionOptions {
                 .into()
         };
         let f = &self.form;
-        let local = f.protocol == Protocol::Local;
+        let ssh = f.protocol == Protocol::Ssh2;
         let fields: Vec<Element<'_, Message>> = match category {
+            Some(Category::Ssh2 | Category::Forward) if !ssh => {
+                vec![widget::text::body(fl!("so-ssh-only")).into()]
+            }
             Some(Category::Forward) => {
                 let kinds = &self.fwd_kinds;
                 let mut rows: Vec<Element<'_, Message>> =
@@ -314,7 +349,6 @@ impl SessionOptions {
                     .on_toggle(move |v| m(SoMsg::LogRaw(v)))
                     .into(),
             ],
-            Some(Category::Ssh2) if local => vec![widget::text::body(fl!("so-ssh-only")).into()],
             Some(Category::Ssh2) => vec![
                 widget::column::with_children(vec![
                     widget::text::caption(fl!("so-identity")).into(),
@@ -369,8 +403,58 @@ impl SessionOptions {
                     .spacing(2)
                     .into(),
                 );
-                if local {
-                    return self.frame(v, focused);
+                match f.protocol {
+                    Protocol::Local => return self.frame(v, focused),
+                    Protocol::Serial => {
+                        let bits = [5, 6, 7, 8].map(|b| b.to_string()).to_vec();
+                        v.push(field(fl!("so-device"), Field::Device, &f.device, !new));
+                        v.push(field(fl!("so-baud"), Field::Baud, &f.baud, false));
+                        v.push(labelled(
+                            fl!("so-databits"),
+                            widget::dropdown(
+                                bits,
+                                Some(usize::from(f.data_bits.clamp(5, 8) - 5)),
+                                move |i| m(SoMsg::SerialBits(i)),
+                            )
+                            .into(),
+                        ));
+                        v.push(labelled(
+                            fl!("so-parity"),
+                            widget::dropdown(
+                                &self.parities,
+                                Parity::ALL.iter().position(|p| *p == f.parity),
+                                move |i| m(SoMsg::SerialParity(i)),
+                            )
+                            .into(),
+                        ));
+                        v.push(labelled(
+                            fl!("so-stopbits"),
+                            widget::dropdown(
+                                vec!["1".to_string(), "2".to_string()],
+                                Some(usize::from(f.stop_bits.clamp(1, 2) - 1)),
+                                move |i| m(SoMsg::SerialStops(i)),
+                            )
+                            .into(),
+                        ));
+                        v.push(labelled(
+                            fl!("so-flow"),
+                            widget::dropdown(
+                                &self.flows,
+                                Flow::ALL.iter().position(|x| *x == f.flow),
+                                move |i| m(SoMsg::SerialFlow(i)),
+                            )
+                            .into(),
+                        ));
+                        return self.frame(v, focused);
+                    }
+                    Protocol::Telnet => {
+                        v.extend([
+                            field(fl!("qc-host"), Field::Host, &f.host, !new),
+                            field(fl!("qc-port"), Field::Port, &f.port, false),
+                        ]);
+                        return self.frame(v, focused);
+                    }
+                    Protocol::Ssh2 => {}
                 }
                 v.extend([
                     field(fl!("qc-host"), Field::Host, &f.host, !new),
@@ -502,4 +586,11 @@ pub async fn browse(title: String) -> Option<String> {
         Ok(rest) => format!("~/{}", rest.display()),
         Err(_) => path.display().to_string(),
     })
+}
+
+/// A label over a control.
+fn labelled<'a>(label: String, body: Element<'a, Message>) -> Element<'a, Message> {
+    widget::column::with_children(vec![widget::text::caption(label).into(), body])
+        .spacing(2)
+        .into()
 }

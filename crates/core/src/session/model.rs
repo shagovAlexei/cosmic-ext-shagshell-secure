@@ -51,10 +51,76 @@ pub enum Protocol {
     Ssh2,
     /// The user's `$SHELL` in a tab: no host.
     Local,
+    /// `telnet host [port]`.
+    Telnet,
+    /// `picocom` on a device: no host.
+    Serial,
 }
 
 impl Protocol {
-    pub const ALL: [Protocol; 2] = [Protocol::Ssh2, Protocol::Local];
+    pub const ALL: [Protocol; 4] = [
+        Protocol::Ssh2,
+        Protocol::Local,
+        Protocol::Telnet,
+        Protocol::Serial,
+    ];
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Parity {
+    #[default]
+    None,
+    Even,
+    Odd,
+}
+
+impl Parity {
+    pub const ALL: [Parity; 3] = [Parity::None, Parity::Even, Parity::Odd];
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Flow {
+    #[default]
+    None,
+    Hardware,
+    Software,
+}
+
+impl Flow {
+    pub const ALL: [Flow; 3] = [Flow::None, Flow::Hardware, Flow::Software];
+}
+
+/// A serial line (`[serial]` in the session file). Absent numbers: 9600 8N1.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Serial {
+    pub device: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub baud: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_bits: Option<u8>,
+    #[serde(skip_serializing_if = "is_default_parity")]
+    pub parity: Parity,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stop_bits: Option<u8>,
+    #[serde(skip_serializing_if = "is_default_flow")]
+    pub flow: Flow,
+}
+
+fn is_default_parity(p: &Parity) -> bool {
+    *p == Parity::None
+}
+
+fn is_default_flow(f: &Flow) -> bool {
+    *f == Flow::None
+}
+
+impl Serial {
+    fn is_default(&self) -> bool {
+        *self == Serial::default()
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -82,6 +148,8 @@ pub struct Session {
     /// The Button Bar shown while this session's tab is in front (`buttonbars.toml`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub button_bar: Option<String>,
+    #[serde(skip_serializing_if = "Serial::is_default")]
+    pub serial: Serial,
     /// Hosts to go through (`ssh -J`): `[user@]host[:port]`, comma between several.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub jump: String,
