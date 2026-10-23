@@ -40,6 +40,7 @@ pub struct Form {
     pub parity: Parity,
     pub stop_bits: u8,
     pub flow: Flow,
+    pub logon: Vec<crate::logon::Step>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -139,6 +140,7 @@ impl Form {
             parity: s.serial.parity,
             stop_bits: s.serial.stop_bits.unwrap_or(1),
             flow: s.serial.flow,
+            logon: s.logon.clone(),
         }
     }
 
@@ -229,6 +231,11 @@ impl Form {
                 stop_bits: Some(self.stop_bits).filter(|&b| b == 2),
                 flow: self.flow,
             },
+            // Rows with neither a text to wait for nor an answer are left out.
+            logon: (self.logon.iter())
+                .filter(|s| !(s.expect.trim().is_empty() && s.send.is_empty()))
+                .cloned()
+                .collect(),
             jump,
             forwards,
             reconnect: self.reconnect,

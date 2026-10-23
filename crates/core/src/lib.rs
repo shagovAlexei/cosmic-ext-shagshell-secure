@@ -6,6 +6,7 @@ pub mod credentials;
 pub mod keyring;
 pub mod launch;
 pub mod logfile;
+pub mod logon;
 pub mod macros;
 pub mod panel;
 pub mod reconnect;

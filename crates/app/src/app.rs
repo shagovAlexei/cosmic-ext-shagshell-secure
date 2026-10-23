@@ -743,6 +743,7 @@ impl App {
                             let l = tabs::Launch {
                                 title: name,
                                 log: Some(log_spec(&s)),
+                                logon: logon_spec(&s, Some(id)),
                                 ..tabs::Launch::local_shell()
                             };
                             tasks.push(self.tabs.open(l, &look()));
@@ -1271,9 +1272,12 @@ impl App {
         let Some(o) = &self.options else {
             return Ok(Task::none());
         };
+        let password = o.password();
         let store = &self.sessions.store;
         let io = |e: std::io::Error| crate::session_manager::io_text(&e);
-        match &o.target {
+        let mut tasks = Vec::new();
+        // The saved session this ends up as: where a typed Logon password is stored.
+        let id: Option<String> = match &o.target {
             Target::New { folder } => {
                 let name = o.name();
                 crate::session_manager::check(&name, folder.is_empty())?;
@@ -1281,6 +1285,7 @@ impl App {
                 self.sessions.select(&id); // reloads the tree
                 self.config.expanded = self.sessions.expanded.iter().cloned().collect();
                 self.save_config();
+                Some(id)
             }
             Target::Edit { id } => {
                 let (id, name) = (id.clone(), o.name());
@@ -1300,14 +1305,26 @@ impl App {
                 self.sessions_changed(&id, &new);
                 if renamed {
                     self.sessions.select(&new);
-                    return Ok(keyring_task(move || {
-                        shagshell_core::keyring::retarget(&id, &new)
+                    let (from, to) = (id, new.clone());
+                    tasks.push(keyring_task(move || {
+                        shagshell_core::keyring::retarget(&from, &to)
                     }));
                 }
+                Some(new)
             }
-            Target::Default => store.save(DEFAULT, s).map_err(io)?,
+            Target::Default => {
+                store.save(DEFAULT, s).map_err(io)?;
+                None
+            }
+        };
+        // A password typed in Logon Actions: into the keyring (after a rename moved the old one).
+        if let (Some(id), Some(pw)) = (id, password) {
+            tasks.push(keyring_task(move || {
+                use shagshell_core::keyring::{Owner, Secret, store};
+                store(&Owner::Session(id), Secret::Password, &pw)
+            }));
         }
-        Ok(Task::none())
+        Ok(Task::batch(tasks))
     }
 
     fn import_ssh_config(&mut self) {
@@ -1451,6 +1468,7 @@ fn ssh_launch(
         }),
         // An empty file name: no log on connect, the port and user still serve a log by hand.
         log: Some(log_spec(s)),
+        logon: logon_spec(s, session),
     })
 }
 
@@ -1466,6 +1484,15 @@ fn log_spec(s: &shagshell_core::session::Session) -> tabs::LogSpec {
         port: s.port.filter(|_| net),
         user: (s.user.clone().filter(|_| s.protocol == P::Ssh2)).unwrap_or_default(),
     }
+}
+
+/// The session's Logon Actions, if it has any.
+fn logon_spec(s: &shagshell_core::session::Session, id: Option<&str>) -> Option<tabs::LogonSpec> {
+    (!s.logon.is_empty()).then(|| tabs::LogonSpec {
+        steps: s.logon.clone(),
+        user: s.user.clone().unwrap_or_default(),
+        session: id.map(str::to_string),
+    })
 }
 
 /// A Telnet or Serial session: its program (`telnet`, `picocom`) in the tab; why not if the
@@ -1506,6 +1533,7 @@ fn program_launch(
         sftp: false,
         log: Some(log_spec(s)),
         auto_reconnect: None,
+        logon: logon_spec(s, id),
     })
 }
 

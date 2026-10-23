@@ -50,6 +50,44 @@ pub struct LogSpec {
     pub user: String,
 }
 
+/// Logon Actions of a session: the table, and what `%user%` / `%password%` stand for.
+#[derive(Clone, Debug, Default)]
+pub struct LogonSpec {
+    pub steps: Vec<shagshell_core::logon::Step>,
+    pub user: String,
+    /// The saved session whose keyring password is `%password%`.
+    pub session: Option<String>,
+}
+
+/// An answer due: filled in and typed into the tab, off the reader thread (the keyring may take
+/// a while, and `\p` pauses). A password that is not saved is said, not typed.
+fn answer(tap: &term::log::Tap, spec: &LogonSpec) -> term::log::Sender {
+    let (tap, spec) = (tap.clone(), spec.clone());
+    std::sync::Arc::new(move |send: String| {
+        let (tap, spec) = (tap.clone(), spec.clone());
+        std::thread::spawn(move || {
+            use shagshell_core::keyring::{Owner, Secret, lookup};
+            use shagshell_core::macros::{Piece, parse};
+            let password = match send.contains("%password%") {
+                true => (spec.session.clone())
+                    .and_then(|id| lookup(&Owner::Session(id), Secret::Password).ok().flatten()),
+                false => None,
+            };
+            let Some(text) = shagshell_core::logon::fill(&send, &spec.user, password.as_deref())
+            else {
+                tap.fail(fl!("logon-no-password"));
+                return;
+            };
+            for piece in parse(&text) {
+                match piece {
+                    Piece::Bytes(b) => tap.input(b),
+                    Piece::Pause(d) => std::thread::sleep(d),
+                }
+            }
+        });
+    })
+}
+
 /// A session that connects again by itself: after `delay` s, `tries` times in a row.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AutoReconnect {
@@ -73,6 +111,8 @@ pub struct Launch {
     pub log: Option<LogSpec>,
     /// Connects again by itself when the connection drops.
     pub auto_reconnect: Option<AutoReconnect>,
+    /// Answers to what the session says after connecting.
+    pub logon: Option<LogonSpec>,
 }
 
 impl Launch {
@@ -87,6 +127,7 @@ impl Launch {
             sftp: false,
             log: None,
             auto_reconnect: None,
+            logon: None,
         }
     }
 
@@ -511,6 +552,9 @@ impl Tabs {
             && let Err(e) = self.begin_log(&tap, launch, spec)
         {
             *self.notice.lock().unwrap_or_else(|e| e.into_inner()) = Some(e);
+        }
+        if let Some(l) = launch.logon.as_ref().filter(|l| !l.steps.is_empty()) {
+            tap.set_logon(l.steps.clone(), answer(&tap, l));
         }
         Some(Body::Terminal(Box::new(Mutex::new(t))))
     }

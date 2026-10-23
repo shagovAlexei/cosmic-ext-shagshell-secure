@@ -2,9 +2,11 @@
 //! terminal. The terminal's reader thread writes, the UI starts and stops it, so it is shared.
 
 use alacritty_terminal::event::{OnResize, WindowSize};
+use alacritty_terminal::event_loop::{EventLoopSender, Msg};
 use alacritty_terminal::tty::{self, ChildEvent, EventedPty, EventedReadWrite};
 use polling::{Event, PollMode, Poller};
 use shagshell_core::logfile::Logger;
+use shagshell_core::logon::{Automaton, Step};
 use std::fs::File;
 use std::io::{self, Read};
 use std::path::Path;
@@ -19,7 +21,14 @@ pub struct Tap {
     on: Arc<AtomicBool>,
     /// Why the log stopped by itself (disk full…), until it is asked for.
     failed: Arc<Mutex<Option<String>>>,
+    /// Logon Actions: watches the output, and what to do with an answer that is due.
+    logon: Arc<Mutex<Option<(Automaton, Sender)>>>,
+    /// The PTY's input (set when the terminal is made).
+    pty: Arc<Mutex<Option<EventLoopSender>>>,
 }
+
+/// What the automaton's sends are handed to (the app expands and writes them).
+pub type Sender = Arc<dyn Fn(String) + Send + Sync>;
 
 impl Tap {
     fn lock(&self) -> std::sync::MutexGuard<'_, Option<Logger>> {
@@ -50,6 +59,60 @@ impl Tap {
         self.failed.try_lock().ok()?.take()
     }
 
+    /// The terminal's PTY input, for what Logon Actions answer.
+    pub fn set_pty(&self, sender: EventLoopSender) {
+        *self.pty.lock().unwrap_or_else(|e| e.into_inner()) = Some(sender);
+    }
+
+    /// Bytes to the program as if typed.
+    pub fn input(&self, bytes: Vec<u8>) {
+        if let Some(s) = self.pty.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+            let _ = s.send(Msg::Input(bytes.into()));
+        }
+    }
+
+    /// Something went wrong that the user should see (shown once, like a log failure).
+    pub fn fail(&self, why: String) {
+        *self.failed.lock().unwrap_or_else(|e| e.into_inner()) = Some(why);
+    }
+
+    /// Logon Actions on: the steps, and what receives each due answer (the first ones, those
+    /// that wait for nothing, go now).
+    pub fn set_logon(&self, steps: Vec<Step>, on_send: Sender) {
+        let mut a = Automaton::new(steps);
+        let first = a.start();
+        *self.logon.lock().unwrap_or_else(|e| e.into_inner()) = Some((a, on_send.clone()));
+        for s in first {
+            on_send(s);
+        }
+    }
+
+    /// The PTY gave `bytes`: to the log, and to Logon Actions.
+    fn output(&self, bytes: &[u8]) {
+        self.write(bytes);
+        let due = {
+            let mut g = self.logon.lock().unwrap_or_else(|e| e.into_inner());
+            match g.as_mut() {
+                Some((a, send)) => {
+                    let due = a.feed(bytes);
+                    if a.done() {
+                        let send = send.clone();
+                        *g = None;
+                        (due, Some(send))
+                    } else {
+                        (due, Some(send.clone()))
+                    }
+                }
+                None => (Vec::new(), None),
+            }
+        };
+        if let (due, Some(send)) = due {
+            for s in due {
+                send(s);
+            }
+        }
+    }
+
     fn write(&self, bytes: &[u8]) {
         if !self.active() {
             return;
@@ -77,7 +140,7 @@ impl Read for TapReader {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let n = self.file.read(buf)?;
         if n > 0 {
-            self.tap.write(&buf[..n]);
+            self.tap.output(&buf[..n]);
         }
         Ok(n)
     }

@@ -2,6 +2,7 @@
 //! right, [Cancel] [OK]. The app saves (it owns the store); this module only edits the fields.
 
 use crate::app::Message;
+use crate::askpass::Hidden;
 use crate::fl;
 use cosmic::iced::{Alignment, Length, window};
 use cosmic::widget::{self, segmented_button};
@@ -30,6 +31,7 @@ enum Category {
     Connection,
     Ssh2,
     Forward,
+    Logon,
     Log,
 }
 
@@ -80,6 +82,11 @@ pub enum SoMsg {
     SerialParity(usize),
     SerialStops(usize),
     SerialFlow(usize),
+    /// Logon Actions: a row's text (0 expect, 1 send), a row added / removed, the password typed.
+    LogonText(usize, u8, String),
+    LogonAdd,
+    LogonDel(usize),
+    Password(Hidden),
     /// «Забыть»: the session's saved secrets removed.
     Forget,
     Ok,
@@ -92,6 +99,9 @@ pub struct SessionOptions {
     form: Form,
     categories: segmented_button::SingleSelectModel,
     pub error: Option<String>,
+    /// A password typed for Logon Actions (empty: the saved one is left as it is); it goes to
+    /// the keyring on OK and is never in the form or a file.
+    password: Hidden,
     /// The session has a secret in the keyring (Edit only).
     saved: bool,
     /// The credential sets (name, user), for the dropdown; `labels[0]` is «(none)».
@@ -129,6 +139,7 @@ impl SessionOptions {
             })
             .insert(|b| b.text(fl!("so-ssh2")).data(Category::Ssh2))
             .insert(|b| b.text(fl!("so-forward")).data(Category::Forward))
+            .insert(|b| b.text(fl!("so-logon")).data(Category::Logon))
             .insert(|b| b.text(fl!("so-log")).data(Category::Log))
             .build();
         let name = match &target {
@@ -141,6 +152,7 @@ impl SessionOptions {
             target,
             categories,
             error: None,
+            password: Hidden(String::new()),
             first_id: widget::Id::unique(),
             sets,
             labels,
@@ -182,6 +194,11 @@ impl SessionOptions {
     /// Name for a new session, else Hostname.
     pub fn first_field(&self) -> widget::Id {
         self.first_id.clone()
+    }
+
+    /// The password typed, if any.
+    pub fn password(&self) -> Option<String> {
+        Some(self.password.0.clone()).filter(|p| !p.is_empty())
     }
 
     pub fn name(&self) -> String {
@@ -233,6 +250,21 @@ impl SessionOptions {
             SoMsg::SerialParity(i) => f.parity = Parity::ALL.get(i).copied().unwrap_or_default(),
             SoMsg::SerialStops(i) => f.stop_bits = 1 + i as u8,
             SoMsg::SerialFlow(i) => f.flow = Flow::ALL.get(i).copied().unwrap_or_default(),
+            SoMsg::Password(p) => self.password = p,
+            SoMsg::LogonAdd => f.logon.push(Default::default()),
+            SoMsg::LogonDel(i) => {
+                if i < f.logon.len() {
+                    f.logon.remove(i);
+                }
+            }
+            SoMsg::LogonText(i, col, v) => {
+                if let Some(r) = f.logon.get_mut(i) {
+                    match col {
+                        0 => r.expect = v,
+                        _ => r.send = v,
+                    }
+                }
+            }
             SoMsg::Reconnect(on) => f.reconnect = on,
             SoMsg::FwdAdd => f.forwards.push(FwdRow::default()),
             SoMsg::FwdDel(i) => {
@@ -335,6 +367,42 @@ impl SessionOptions {
                         .on_press(m(SoMsg::FwdAdd))
                         .into(),
                 );
+                rows
+            }
+            Some(Category::Logon) => {
+                let mut rows: Vec<Element<'_, Message>> =
+                    vec![widget::text::caption(fl!("so-logon-hint")).into()];
+                for (i, r) in f.logon.iter().enumerate() {
+                    let text = |v: &str, col: u8, ph: String| {
+                        widget::text_input(ph, v.to_string())
+                            .on_input(move |t| m(SoMsg::LogonText(i, col, t)))
+                            .width(Length::Fill)
+                    };
+                    rows.push(
+                        widget::row::with_children(vec![
+                            text(&r.expect, 0, fl!("so-logon-expect")).into(),
+                            widget::text::body("→").into(),
+                            text(&r.send, 1, fl!("so-logon-send")).into(),
+                            widget::button::icon(widget::icon::from_name("edit-delete-symbolic"))
+                                .on_press(m(SoMsg::LogonDel(i)))
+                                .into(),
+                        ])
+                        .spacing(6)
+                        .align_y(Alignment::Center)
+                        .into(),
+                    );
+                }
+                rows.push(
+                    widget::button::standard(fl!("so-logon-add"))
+                        .on_press(m(SoMsg::LogonAdd))
+                        .into(),
+                );
+                rows.push(labelled(
+                    fl!("so-logon-password"),
+                    widget::secure_input("", self.password.0.clone(), None, true)
+                        .on_input(move |t| m(SoMsg::Password(Hidden(t))))
+                        .into(),
+                ));
                 rows
             }
             Some(Category::Log) => vec![

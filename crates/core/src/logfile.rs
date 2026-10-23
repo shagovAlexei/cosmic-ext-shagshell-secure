@@ -117,6 +117,11 @@ impl Cleaner {
         }
     }
 
+    /// The line being written, as text so far.
+    pub fn partial(&self) -> String {
+        self.line.iter().collect()
+    }
+
     /// The unfinished line, when the log ends.
     pub fn finish(&mut self, out: &mut Vec<u8>) {
         if !self.line.is_empty() {
