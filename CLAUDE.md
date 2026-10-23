@@ -79,6 +79,7 @@ We do **not** implement SSH. The system OpenSSH does it; we drive it.
   - `logon.rs` — Logon Actions (expect → send automaton over the session's output; `%user%` / `%password%`); the app feeds it from the PTY reader (`term::log::Tap`) and types the answers in;
   - `macros.rs` — Button Bar / Command Window escapes (`\r \n \t \e \\ \p`);
   - `buttonbar.rs` — named bars, buttons (Send String / Run Script / Menu Function / Launch App), `buttonbars.toml`;
+  - `keygen.rs` — Tools → Create Public Key (`ssh-keygen` arguments, the passphrase through `SSH_ASKPASS` = our own binary printing `SHAGSHELL_ASKPASS_FIXED`, never an argument) and the `ssh-copy-id` arguments.
   - `script.rs` — the `crt` JSON-lines socket protocol for Python scripts: `Buffer` (a tab's output as text for `WaitForString` / `ReadString`, collected only while a script runs), `serve` (requests → `Host`), `command` (argv + env of the `python3` process). Spec: `specs/10-scripting.md`.
 - **`crates/app` (`shagshell`)** is the libcosmic UI, **split by feature**: each module (`session_manager`, `tabs`, `term/`, `sftp_view`, `command_window`, `button_bar`, `dialogs`, `menu`, `keymap`, `config`, `i18n`) owns its own `Message`, `update` and `view`. `app.rs` only routes. No growing a single 15k-line `app.rs` like shagoff-commander did.
   - `term/` is cosmic-term's terminal (via shagoff-commander `crates/app/src/term/`), driven by a local PTY. Events come through one channel tagged with `TabId`; `term::print` writes text on screen without the PTY (the exit line).

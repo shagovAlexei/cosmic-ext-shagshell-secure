@@ -6,6 +6,7 @@ mod command_window;
 mod config;
 mod credentials_window;
 mod i18n;
+mod keygen;
 mod menu;
 mod options;
 mod quick_connect;
@@ -29,6 +30,12 @@ fn main() -> cosmic::iced::Result {
         && !prompt.starts_with("--")
     {
         std::process::exit(shagshell_core::askpass::run_helper(sock.as_ref(), prompt));
+    }
+    // ssh-keygen's passphrase prompt (Create Public Key): the phrase is in our environment only.
+    if let (Some(p), [_]) = (std::env::var_os("SHAGSHELL_ASKPASS_FIXED"), &args[..]) {
+        use std::io::Write;
+        let _ = writeln!(std::io::stdout(), "{}", p.to_string_lossy());
+        std::process::exit(0);
     }
     match args.first().map(String::as_str) {
         Some("--version") => {

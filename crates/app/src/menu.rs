@@ -46,6 +46,10 @@ pub enum Action {
     EditDefault,
     /// Tools → Credentials Manager….
     Credentials,
+    /// Tools → Create Public Key….
+    CreateKey,
+    /// Tools → Upload Public Key….
+    UploadKey,
     /// Script → Run….
     RunScript,
     /// Script → Cancel.
@@ -213,7 +217,8 @@ pub fn bar(
             fl!("menu-tools"),
             vec![
                 Button(fl!("menu-credentials"), None, Action::Credentials),
-                off(fl!("menu-create-key")),
+                Button(fl!("menu-create-key"), None, Action::CreateKey),
+                Button(fl!("menu-upload-key"), None, Action::UploadKey),
                 off(fl!("menu-keymap")),
             ],
         ),
