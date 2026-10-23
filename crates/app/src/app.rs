@@ -973,9 +973,27 @@ impl App {
                 };
                 let (w, id) = (o.window, id.clone());
                 let forget = shagshell_core::keyring::Owner::Session(id.clone());
+                // ssh keeps a login open for a minute (ControlPersist): the next one would
+                // not ask. «stop»: no new logins through it, open tabs go on.
+                let stop = (self.sessions.store.get(&id).ok())
+                    .map(|s| load_credentials().unwrap_or_default().resolve(&s))
+                    .and_then(|s| {
+                        let home = std::env::home_dir().unwrap_or_default();
+                        shagshell_core::launch::ssh_argv(&s, &self.control_dir, &home).ok()
+                    });
                 return Task::batch([
                     keyring_task(move || {
                         use shagshell_core::keyring::{Secret, delete};
+                        if let Some(mut argv) = stop {
+                            let at = argv.len() - 2; // before `-- host`
+                            argv.splice(at..at, ["-O".into(), "stop".into()]);
+                            let _ = std::process::Command::new(argv.remove(0))
+                                .args(argv)
+                                .stdin(std::process::Stdio::null())
+                                .stdout(std::process::Stdio::null())
+                                .stderr(std::process::Stdio::null())
+                                .status();
+                        }
                         delete(&forget, Secret::Password)?;
                         delete(&forget, Secret::Passphrase)
                     }),
