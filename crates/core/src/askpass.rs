@@ -131,11 +131,12 @@ pub fn abort(ppid: u32, sock: &Path) -> bool {
 /// password was wrong (ask the user, or ssh gets the same wrong one three times).
 /// Also the ssh processes the user cancelled: ssh takes a failed askpass for an empty answer and
 /// asks again (three times), Cancel must end the connection as SecureCRT's does.
-// ponytail: never forgotten; a reused pid of a later ssh would be refused — prune when it bites.
+/// And the answers the user saved: if ssh asks again, the saved one was wrong.
 #[derive(Default)]
 pub struct Tries {
     seen: HashSet<(u32, Kind)>,
     cancelled: HashSet<u32>,
+    saved: HashSet<(u32, Kind)>,
 }
 
 impl Tries {
@@ -151,6 +152,64 @@ impl Tries {
     /// Its prompts are answered Cancel at once.
     pub fn cancelled(&self, ppid: u32) -> bool {
         self.cancelled.contains(&ppid)
+    }
+
+    /// The answer to this prompt was saved to the keyring.
+    pub fn saved(&mut self, ppid: u32, kind: Kind) {
+        self.saved.insert((ppid, kind));
+    }
+
+    /// ssh asks again after a saved answer: it was wrong (the retry starts with «Save» on, and
+    /// unticking it removes the wrong one).
+    pub fn was_saved(&self, ppid: u32, kind: Kind) -> bool {
+        self.saved.contains(&(ppid, kind))
+    }
+
+    /// Ended ssh processes forgotten: a later one with the same pid starts afresh.
+    pub fn forget_dead(&mut self, alive: impl Fn(u32) -> bool) {
+        self.seen.retain(|(p, _)| alive(*p));
+        self.saved.retain(|(p, _)| alive(*p));
+        self.cancelled.retain(|p| alive(*p));
+    }
+}
+
+/// A process runs (`/proc/<pid>`).
+pub fn alive(pid: u32) -> bool {
+    Path::new(&format!("/proc/{pid}")).exists()
+}
+
+/// Its parent process (`/proc/<pid>/stat`, field 4).
+pub fn parent_of(pid: u32) -> Option<u32> {
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    // `pid (comm) state ppid …`: comm may hold spaces and parens, so after the last ')'.
+    let rest = &stat[stat.rfind(')')? + 1..];
+    rest.split_whitespace().nth(1)?.parse().ok()
+}
+
+/// The ssh a tab started (a child of the app), not one it runs itself (`-J` / ProxyJump: another
+/// host, whose prompts must never get this session's saved password).
+pub fn direct(ppid: u32) -> bool {
+    parent_of(ppid) == Some(std::process::id())
+}
+
+/// Sockets left by instances that are gone (closed by the window's ×, or crashed).
+pub fn clean_stale(control_dir: &Path) {
+    let Ok(dir) = std::fs::read_dir(control_dir) else {
+        return;
+    };
+    for e in dir.flatten() {
+        let name = e.file_name();
+        let pid = (name.to_str()).and_then(|n| {
+            n.strip_prefix("askpass-")?
+                .strip_suffix(".sock")?
+                .parse()
+                .ok()
+        });
+        if let Some(pid) = pid
+            && !alive(pid)
+        {
+            let _ = std::fs::remove_file(e.path());
+        }
     }
 }
 
@@ -251,6 +310,67 @@ mod tests {
         assert!(!ours.wait().unwrap().success());
         other.kill().unwrap();
         let _ = other.wait();
+    }
+
+    #[test]
+    fn saved_then_asked_again() {
+        let mut t = Tries::default();
+        assert!(!t.was_saved(1, Kind::Password));
+        t.saved(1, Kind::Password);
+        assert!(t.was_saved(1, Kind::Password));
+        assert!(!t.was_saved(1, Kind::Passphrase));
+        assert!(!t.was_saved(2, Kind::Password));
+    }
+
+    #[test]
+    fn regression_reused_pid_starts_afresh() {
+        let mut t = Tries::default();
+        t.first(1, Kind::Password);
+        t.cancel(1);
+        t.saved(1, Kind::Password);
+        t.forget_dead(|p| p != 1);
+        assert!(!t.cancelled(1));
+        assert!(!t.was_saved(1, Kind::Password));
+        assert!(t.first(1, Kind::Password));
+    }
+
+    #[test]
+    fn regression_jump_ssh_is_not_direct() {
+        let mut child = std::process::Command::new("sh")
+            .args(["-c", "sleep 30 & wait"])
+            .spawn()
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        assert_eq!(parent_of(child.id()), Some(std::process::id()));
+        assert!(direct(child.id()));
+        // Its own child (as ssh's ProxyJump ssh): not ours directly.
+        let grandchild: u32 =
+            std::fs::read_to_string(format!("/proc/{0}/task/{0}/children", child.id()))
+                .unwrap()
+                .split_whitespace()
+                .next()
+                .unwrap()
+                .parse()
+                .unwrap();
+        assert!(!direct(grandchild));
+        child.kill().unwrap();
+        let _ = child.wait();
+        let _ = std::process::Command::new("kill")
+            .arg(grandchild.to_string())
+            .status();
+    }
+
+    #[test]
+    fn clean_stale_keeps_live_ones() {
+        let d = tempfile::tempdir().unwrap();
+        let mine = socket_path(d.path(), std::process::id());
+        let dead = socket_path(d.path(), 99_999_999);
+        let other = d.path().join("ctl-socket");
+        for f in [&mine, &dead, &other] {
+            std::fs::write(f, "").unwrap();
+        }
+        clean_stale(d.path());
+        assert!(mine.exists() && other.exists() && !dead.exists());
     }
 
     #[test]

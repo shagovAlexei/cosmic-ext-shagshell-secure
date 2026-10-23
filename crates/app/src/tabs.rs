@@ -343,7 +343,7 @@ impl Tabs {
         self.focus_active()
     }
 
-    fn focus_active(&self) -> Task<Message> {
+    pub fn focus_active(&self) -> Task<Message> {
         match self.active().and_then(|(_, _, id)| self.tabs.get(&id)) {
             Some(t) => focus(t.widget_id.clone()),
             None => Task::none(),
@@ -585,7 +585,13 @@ impl Tabs {
         )
     }
 
-    pub fn view(&self, config: &Config, window: iced::window::Id) -> Option<Element<'_, Message>> {
+    /// `keys`: false while a dialog is up — its Enter / Esc must not go to the program.
+    pub fn view(
+        &self,
+        config: &Config,
+        window: iced::window::Id,
+        keys: bool,
+    ) -> Option<Element<'_, Message>> {
         let grid = self.grid.as_ref()?;
         let focus = self.focus;
         let many = grid.len() > 1;
@@ -611,7 +617,8 @@ impl Tabs {
                         .copy_on_select(copy)
                         .paste_on_middle(middle)
                         // An ended program takes no keys (its PTY is gone): Enter reaches the app.
-                        .ended(!tab.alive)
+                        // Nor does any while a dialog is up.
+                        .ended(!tab.alive || !keys)
                         .padding(4)
                         .into(),
                     None => widget::Space::new()

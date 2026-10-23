@@ -128,8 +128,14 @@ impl Application for App {
             }
             Message::TermTx(tx) => self.tabs.set_sender(tx),
             Message::Term(id, e) => {
+                use alacritty_terminal::event::Event;
+                // Only an ended program can leave a prompt without its ssh (not every output).
+                let ended = matches!(e, Event::ChildExit(_) | Event::Exit);
                 let task = self.tabs.on_term(id, e);
-                return Task::batch([task, self.prune_asks()]);
+                return match ended {
+                    true => Task::batch([task, self.prune_asks()]),
+                    false => task,
+                };
             }
             Message::Ask(crate::askpass::AskMsg::Stored(r)) => {
                 if let Err(e) = r {
@@ -138,7 +144,15 @@ impl Application for App {
             }
             Message::Ask(m) => {
                 let out = self.asks.update(m);
-                return self.ask_outcome(out);
+                // A keyring answer may come back after its ssh ended.
+                return Task::batch([self.ask_outcome(out), self.prune_asks()]);
+            }
+            // A prompt's dialog is up: Enter (no field took it: the host key) and Esc are its.
+            Message::EnterKey if self.asks.active() => {
+                return self.update(Message::Ask(crate::askpass::AskMsg::Ok));
+            }
+            Message::Sessions(SmMsg::Key(TreeKey::Clear)) if self.asks.active() => {
+                return self.update(Message::Ask(crate::askpass::AskMsg::Cancel));
             }
             Message::EnterKey if self.sessions.focused => {
                 let ids = self.sessions.connect();
@@ -322,7 +336,10 @@ impl Application for App {
 
     fn view(&self) -> Element<'_, Message> {
         let window = (self.core.main_window_id()).unwrap_or(cosmic::iced::window::Id::RESERVED);
-        let center = match self.tabs.view(&self.config, window) {
+        let center = match self
+            .tabs
+            .view(&self.config, window, self.dialog().is_none())
+        {
             Some(tabs) => tabs,
             None => widget::container(
                 widget::column::with_children(vec![
@@ -433,6 +450,14 @@ impl App {
             tasks.push(keyring_task(move || {
                 shagshell_core::keyring::store(&session, s, &value)
             }));
+        }
+        if let Some((session, s)) = out.forget {
+            tasks.push(keyring_task(move || {
+                shagshell_core::keyring::delete(&session, s)
+            }));
+        }
+        if out.refocus {
+            tasks.push(self.tabs.focus_active());
         }
         if let Some((tab, field)) = out.shown {
             if let Some(t) = tab {
@@ -715,12 +740,7 @@ fn off_ui<T: Send + 'static>(
 /// Session Options: whether the session has a secret saved (its «Забыть» line).
 fn saved_task(window: cosmic::iced::window::Id, id: String) -> Task<Message> {
     off_ui(
-        move || {
-            use shagshell_core::keyring::{Secret, lookup};
-            [Secret::Password, Secret::Passphrase]
-                .iter()
-                .any(|&s| lookup(&id, s).is_ok_and(|v| v.is_some()))
-        },
+        move || shagshell_core::keyring::exists(&id).unwrap_or(false),
         move |saved| Message::SessionOptions(SoMsg::Saved(window, saved)),
     )
 }

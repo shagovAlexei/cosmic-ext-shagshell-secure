@@ -68,22 +68,48 @@ impl Service {
         self.proxy("/org/freedesktop/secrets", "org.freedesktop.Secret.Service")
     }
 
-    /// Our items matching `attrs`, unlocked (the keyring may ask for its password).
-    fn search(&self, attrs: &[(&'static str, String)]) -> zbus::Result<Vec<OwnedObjectPath>> {
+    /// Our items matching `attrs`, locked or not (their attributes read either way): no unlock
+    /// prompt for what only needs to know they are there.
+    fn find(&self, attrs: &[(&'static str, String)]) -> zbus::Result<Vec<OwnedObjectPath>> {
         let (mut items, locked): (Vec<OwnedObjectPath>, Vec<OwnedObjectPath>) =
             self.service()?.call("SearchItems", &(map(attrs),))?;
-        if !locked.is_empty() {
-            let (done, prompt): (Vec<OwnedObjectPath>, OwnedObjectPath) =
-                self.service()?.call("Unlock", &(&locked,))?;
-            items.extend(done);
-            if prompt.as_str() != "/" {
-                answer(&self.conn, &prompt)?;
-                items.extend(locked); // unlocked by the prompt
+        items.extend(locked);
+        Ok(items)
+    }
+
+    /// Before reading or deleting them: the keyring may ask for its password (once).
+    fn unlock(&self, items: &[OwnedObjectPath]) -> zbus::Result<()> {
+        if items.is_empty() {
+            return Ok(());
+        }
+        let (_, prompt): (Vec<OwnedObjectPath>, OwnedObjectPath) =
+            self.service()?.call("Unlock", &(items,))?;
+        answer(&self.conn, &prompt)
+    }
+
+    /// `find`, unlocked.
+    fn search(&self, attrs: &[(&'static str, String)]) -> zbus::Result<Vec<OwnedObjectPath>> {
+        let items = self.find(attrs)?;
+        self.unlock(&items)?;
+        Ok(items)
+    }
+
+    /// Our items whose session id `f` picks (with what to do with it), unlocked.
+    fn ours<T>(
+        &self,
+        f: impl Fn(&str, Secret) -> Option<T>,
+    ) -> zbus::Result<Vec<(OwnedObjectPath, Secret, T)>> {
+        let mut picked = Vec::new();
+        for item in self.find(&[("app", APP.to_string()), ("kind", "session".to_string())])? {
+            if let Some((id, s)) = self.id_of(&item)?
+                && let Some(t) = f(&id, s)
+            {
+                picked.push((item, s, t));
             }
         }
-        items.sort_by(|a, b| a.as_str().cmp(b.as_str()));
-        items.dedup();
-        Ok(items)
+        let items: Vec<_> = picked.iter().map(|(i, ..)| i.clone()).collect();
+        self.unlock(&items)?;
+        Ok(picked)
     }
 
     fn secret(&self, item: &OwnedObjectPath) -> zbus::Result<String> {
@@ -167,6 +193,17 @@ pub fn lookup(session: &str, s: Secret) -> zbus::Result<Option<String>> {
     }
 }
 
+/// The session has a password or passphrase saved (no unlock asked).
+pub fn exists(session: &str) -> zbus::Result<bool> {
+    let svc = Service::open()?;
+    for s in [Secret::Password, Secret::Passphrase] {
+        if !svc.find(&attrs(session, s))?.is_empty() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 /// Save it, replacing the one saved before.
 pub fn store(session: &str, s: Secret, value: &str) -> zbus::Result<()> {
     let label = format!("ShagShell Secure: {session} ({})", s.name());
@@ -184,17 +221,13 @@ pub fn delete(session: &str, s: Secret) -> zbus::Result<()> {
 /// A session or folder renamed / moved: its secrets (and those under it) filed under the new id.
 pub fn retarget(old: &str, new: &str) -> zbus::Result<()> {
     let svc = Service::open()?;
-    let ours = [("app", APP.to_string()), ("kind", "session".to_string())];
-    for item in svc.search(&ours)? {
-        let Some((id, s)) = svc.id_of(&item)? else {
-            continue;
-        };
-        if let Some(to) = crate::session::store::retarget(&id, old, new).filter(|to| *to != id) {
-            let value = svc.secret(&item)?;
-            let label = format!("ShagShell Secure: {to} ({})", s.name());
-            svc.store(&label, &attrs(&to, s), &value)?;
-            svc.delete(&item)?;
-        }
+    let moving =
+        svc.ours(|id, _| crate::session::store::retarget(id, old, new).filter(|to| to != id))?;
+    for (item, s, to) in moving {
+        let value = svc.secret(&item)?;
+        let label = format!("ShagShell Secure: {to} ({})", s.name());
+        svc.store(&label, &attrs(&to, s), &value)?;
+        svc.delete(&item)?;
     }
     Ok(())
 }
@@ -202,13 +235,8 @@ pub fn retarget(old: &str, new: &str) -> zbus::Result<()> {
 /// A session deleted (a folder: everything under it): its secrets go too.
 pub fn forget_under(id: &str) -> zbus::Result<()> {
     let svc = Service::open()?;
-    let ours = [("app", APP.to_string()), ("kind", "session".to_string())];
-    for item in svc.search(&ours)? {
-        if let Some((sid, _)) = svc.id_of(&item)?
-            && crate::session::store::retarget(&sid, id, "").is_some()
-        {
-            svc.delete(&item)?;
-        }
+    for (item, ..) in svc.ours(|sid, _| crate::session::store::retarget(sid, id, ""))? {
+        svc.delete(&item)?;
     }
     Ok(())
 }
@@ -252,6 +280,7 @@ mod tests {
             lookup(moved, Secret::Password).unwrap().as_deref(),
             Some("p2")
         );
+        assert!(exists(moved).unwrap() && !exists(id).unwrap());
         forget_under("zz-shagshell-test2").unwrap();
         assert_eq!(lookup(moved, Secret::Password).unwrap(), None);
     }

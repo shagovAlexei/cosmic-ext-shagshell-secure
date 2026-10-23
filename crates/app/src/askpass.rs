@@ -89,8 +89,12 @@ pub struct Outcome {
     pub lookup: Option<(Incoming, String, Secret)>,
     /// Save it off the UI thread (session, kind, secret), then `AskMsg::Stored`.
     pub store: Option<(String, Secret, Hidden)>,
+    /// Remove a saved one that turned out wrong (the user unticked «Save» on the retry).
+    pub forget: Option<(String, Secret)>,
     /// A dialog came to the front: show its tab, focus its field.
     pub shown: Option<(Option<u64>, widget::Id)>,
+    /// The last dialog went: the keys back to the active terminal.
+    pub refocus: bool,
 }
 
 pub fn secret(kind: Kind) -> Option<Secret> {
@@ -114,7 +118,12 @@ impl Asks {
             AskMsg::Incoming(inc) if self.tries.cancelled(inc.req.ppid) => {
                 inc.reply.send(Reply::Cancel);
             }
-            AskMsg::Incoming(inc) => {
+            AskMsg::Incoming(mut inc) => {
+                // A ProxyJump / -J ssh (ssh's child, another host) inherits the session's env: it
+                // must never get, or save over, this session's password.
+                if inc.req.session.is_some() && !askpass::direct(inc.req.ppid) {
+                    inc.req.session = None;
+                }
                 let kind = askpass::classify(&inc.req.prompt);
                 let first = self.tries.first(inc.req.ppid, kind);
                 if let (Some(s), Some(session)) = (secret(kind), inc.req.session.clone())
@@ -152,12 +161,24 @@ impl Asks {
                     Kind::HostKey => "yes".to_string(),
                     _ => p.value,
                 };
-                let store = (p.save && p.no_save.is_none())
+                let target = (p.no_save.is_none())
                     .then(|| Some((p.inc.req.session.clone()?, secret(p.kind)?)))
                     .flatten();
+                let ppid = p.inc.req.ppid;
+                let was_saved = self.tries.was_saved(ppid, p.kind);
+                if p.save {
+                    self.tries.saved(ppid, p.kind);
+                }
                 p.inc.reply.send(Reply::Answer(answer.clone()));
+                let (store, forget) = match target {
+                    Some((session, s)) if p.save => (Some((session, s, Hidden(answer))), None),
+                    // Saved a moment ago, refused by the server, not wanted any more.
+                    Some(t) if was_saved => (None, Some(t)),
+                    _ => (None, None),
+                };
                 return Outcome {
-                    store: store.map(|(session, s)| (session, s, Hidden(answer))),
+                    store,
+                    forget,
                     ..self.front()
                 };
             }
@@ -188,12 +209,14 @@ impl Asks {
             (Some(_), Some(_)) => failed.map(|e| fl!("ask-keyring-failed", error = e)),
             _ => Some(String::new()),
         };
+        // A retry after a saved answer: still meant to be saved (the correct one replaces it).
+        let save = retry && self.tries.was_saved(inc.req.ppid, kind);
         self.queue.push_back(Pending {
             inc,
             kind,
             retry,
             value: String::new(),
-            save: false,
+            save,
             no_save,
         });
         match self.queue.len() {
@@ -212,12 +235,21 @@ impl Asks {
                     ..Default::default()
                 }
             }
-            None => Outcome::default(),
+            None => Outcome {
+                refocus: true,
+                ..Default::default()
+            },
         }
+    }
+
+    /// A dialog is up (Enter / Esc are its).
+    pub fn active(&self) -> bool {
+        !self.queue.is_empty()
     }
 
     /// Prompts whose tab is gone or whose program ended: cancelled (the helper must not hang).
     pub fn prune(&mut self, alive: impl Fn(u64) -> bool) -> Outcome {
+        self.tries.forget_dead(askpass::alive);
         let front = self.queue.front().map(|p| p.inc.req.ppid);
         self.queue.retain(|p| {
             let keep = p.inc.req.tab.is_none_or(&alive);
@@ -305,7 +337,10 @@ pub fn subscription(sock: PathBuf) -> Subscription<Message> {
         let sock = sock.clone();
         cosmic::iced::stream::channel(16, async move |mut out| {
             let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-            let _ = std::fs::remove_file(&sock); // a crashed run's
+            if let Some(dir) = sock.parent() {
+                askpass::clean_stale(dir); // left by runs closed by × or crashed
+            }
+            let _ = std::fs::remove_file(&sock); // ours by name: a dead run's with our pid
             match std::os::unix::net::UnixListener::bind(&sock) {
                 Ok(l) => drop(std::thread::spawn(move || listen(l, tx))),
                 Err(e) => log::error!("askpass socket {}: {e}", sock.display()),
