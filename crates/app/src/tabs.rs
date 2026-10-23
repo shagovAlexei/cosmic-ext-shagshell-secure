@@ -984,14 +984,8 @@ impl Tabs {
         }
     }
 
-    /// Global Options: the colour scheme and the keyword rules (empty: none, as when off).
-    pub fn set_looks(
-        &mut self,
-        config: &Config,
-        rules: &shagshell_core::highlight::Rules,
-        look: &Look,
-    ) {
-        self.scheme = config.color_scheme.clone();
+    /// Global Options: the keyword rules (none when highlighting is off).
+    pub fn set_highlights(&mut self, config: &Config, rules: &shagshell_core::highlight::Rules) {
         self.highlights = match config.highlight_enabled {
             true => rules.rules.clone(),
             false => Vec::new(),
@@ -1003,6 +997,17 @@ impl Tabs {
                     .set_highlights(self.highlights.clone());
             }
         }
+    }
+
+    /// Global Options: the colour scheme and the keyword rules.
+    pub fn set_looks(
+        &mut self,
+        config: &Config,
+        rules: &shagshell_core::highlight::Rules,
+        look: &Look,
+    ) {
+        self.scheme = config.color_scheme.clone();
+        self.set_highlights(config, rules);
         self.restyle(look);
     }
 

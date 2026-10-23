@@ -111,6 +111,7 @@ options-highlight = Подсветка ключевых слов
 options-hl-word = слово
 options-hl-fill = заливка
 options-hl-add = Добавить слово
+hl-broken = highlights.toml не прочитался: исправь или удали его; изменения не сохраняются
 hl-red = Красный
 hl-green = Зелёный
 hl-yellow = Жёлтый

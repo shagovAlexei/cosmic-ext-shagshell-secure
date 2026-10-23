@@ -111,6 +111,7 @@ options-highlight = Keyword highlighting
 options-hl-word = word
 options-hl-fill = fill
 options-hl-add = Add word
+hl-broken = highlights.toml could not be read: fix or remove it; changes are not saved
 hl-red = Red
 hl-green = Green
 hl-yellow = Yellow

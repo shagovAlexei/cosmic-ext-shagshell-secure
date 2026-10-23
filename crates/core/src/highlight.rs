@@ -51,7 +51,7 @@ impl Colour {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Rule {
-    /// A text to find (case does not matter).
+    /// A text to find (case of ASCII letters does not matter).
     pub text: String,
     pub colour: Colour,
     /// Fill behind the text instead of colouring the letters.
@@ -99,13 +99,11 @@ impl Rules {
 /// of the rule. Where two overlap, the earlier rule (then the earlier place) wins.
 pub fn find(rules: &[Rule], text: &str) -> Vec<(Range<usize>, usize)> {
     let mut taken: Vec<(Range<usize>, usize)> = Vec::new();
-    // Lowercasing may change lengths for a few letters: then the position is not trusted and the
-    // line is searched as it is (those letters do not match, which is harmless).
-    let lower = text.to_lowercase();
-    let same = lower.len() == text.len();
-    let hay = if same { lower.as_str() } else { text };
+    // Case is folded for ASCII letters only: that never changes a length, so the positions found
+    // are positions in `text`. Other letters match as they are written.
+    let hay = text.to_ascii_lowercase();
     for (i, r) in rules.iter().enumerate() {
-        let needle = r.text.to_lowercase();
+        let needle = r.text.to_ascii_lowercase();
         if needle.is_empty() {
             continue;
         }
@@ -116,7 +114,7 @@ pub fn find(rules: &[Rule], text: &str) -> Vec<(Range<usize>, usize)> {
             let free = taken
                 .iter()
                 .all(|(t, _)| t.end <= range.start || range.end <= t.start);
-            if free && text.is_char_boundary(range.start) && text.is_char_boundary(range.end) {
+            if free {
                 taken.push((range, i));
             }
         }
@@ -155,10 +153,10 @@ mod tests {
     #[test]
     fn utf8_and_empty_rules() {
         let rules = [rule("", Colour::Red), rule("żółć", Colour::Cyan)];
-        let text = "a ŻÓŁĆ b";
+        let text = "a żółć b ŻÓŁĆ";
         let hits = find(&rules, text);
-        assert_eq!(hits.len(), 1);
-        assert_eq!(&text[hits[0].0.clone()], "ŻÓŁĆ");
+        assert_eq!(hits.len(), 1); // other letters match as written
+        assert_eq!(&text[hits[0].0.clone()], "żółć");
         assert!(find(&rules, "").is_empty());
     }
 

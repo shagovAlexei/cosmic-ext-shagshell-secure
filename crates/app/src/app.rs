@@ -470,12 +470,17 @@ impl App {
             }
             Message::SetRules(r) => {
                 self.hl = r;
-                if !self.hl_broken
-                    && let Err(e) = self.hl.save(&shagshell_core::highlight::default_path())
-                {
-                    self.sessions.notice = Some(e.to_string());
+                match self.hl_broken {
+                    // Not written over a file that could not be read: said, every time.
+                    true => self.sessions.notice = Some(fl!("hl-broken")),
+                    false => {
+                        if let Err(e) = self.hl.save(&shagshell_core::highlight::default_path()) {
+                            self.sessions.notice = Some(e.to_string());
+                        }
+                    }
                 }
-                self.tabs.set_looks(&self.config, &self.hl, &look());
+                // Only the words changed: no need to restyle every terminal.
+                self.tabs.set_highlights(&self.config, &self.hl);
             }
             Message::Restyle => self.tabs.restyle(&look()),
             Message::Cosmic(a) => return cosmic::task::message(*a),
@@ -1333,6 +1338,8 @@ impl App {
                 };
                 self.sessions.reload();
                 self.sessions_changed(&id, &new);
+                // A scheme chosen for the session shows in its open tabs at once.
+                self.tabs.restyle(&look());
                 if renamed {
                     self.sessions.select(&new);
                     let (from, to) = (id, new.clone());

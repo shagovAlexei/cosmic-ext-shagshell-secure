@@ -131,28 +131,16 @@ pub fn view<'a>(
             widget::toggler(config.highlight_enabled)
                 .on_toggle(set(|c, on| c.highlight_enabled = on)),
         ));
-    let colour_names: Vec<String> = [
-        "hl-red",
-        "hl-green",
-        "hl-yellow",
-        "hl-blue",
-        "hl-magenta",
-        "hl-cyan",
-        "hl-orange",
-        "hl-white",
-    ]
-    .iter()
-    .map(|k| match *k {
-        "hl-red" => fl!("hl-red"),
-        "hl-green" => fl!("hl-green"),
-        "hl-yellow" => fl!("hl-yellow"),
-        "hl-blue" => fl!("hl-blue"),
-        "hl-magenta" => fl!("hl-magenta"),
-        "hl-cyan" => fl!("hl-cyan"),
-        "hl-orange" => fl!("hl-orange"),
-        _ => fl!("hl-white"),
-    })
-    .collect();
+    let colour_names: Vec<String> = vec![
+        fl!("hl-red"),
+        fl!("hl-green"),
+        fl!("hl-yellow"),
+        fl!("hl-blue"),
+        fl!("hl-magenta"),
+        fl!("hl-cyan"),
+        fl!("hl-orange"),
+        fl!("hl-white"),
+    ];
     for (i, r) in hl.rules.iter().enumerate() {
         let edit = |f: fn(&mut Rule, String), r0: &Rules| {
             let r0 = r0.clone();
