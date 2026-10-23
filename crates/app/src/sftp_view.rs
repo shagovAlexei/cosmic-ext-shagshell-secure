@@ -1029,6 +1029,8 @@ fn row(
         (true, _) => format!("[{name}]"),
         (false, _) => name,
     };
+    // Marked: also a bullet, so it shows under the cursor too.
+    let name = if marked { format!("● {name}") } else { name };
     let size = match e.dir {
         true => String::new(),
         false => size_text(e.size),
@@ -1036,7 +1038,8 @@ fn row(
     let date = e.mtime.map(time_text).unwrap_or_default();
     let text = |s: String| {
         let t = widget::text::body(s);
-        match marked {
+        // Accent text on the accent cursor would vanish: there the cursor's own colour.
+        match marked && !focused {
             true => t.class(theme::Text::Accent),
             false => t,
         }
