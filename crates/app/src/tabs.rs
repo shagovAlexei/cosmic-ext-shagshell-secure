@@ -290,6 +290,8 @@ pub struct Tabs {
     confirm: Option<(pane_grid::Pane, Entity)>,
     /// The tab right-clicked last: `TabCmd`s are about it.
     context: Option<(pane_grid::Pane, Entity)>,
+    /// Every terminal's tap, for the scripts running on other threads.
+    pub taps: crate::script::Taps,
 }
 
 impl Tabs {
@@ -455,12 +457,7 @@ impl Tabs {
 
     /// The saved session the active tab was opened from.
     pub fn active_session(&self) -> Option<String> {
-        match &self.tabs.get(&self.active()?.2)?.launch.protocol {
-            Protocol::Ssh { session, .. }
-            | Protocol::Telnet { session, .. }
-            | Protocol::Serial { session, .. } => session.clone(),
-            Protocol::Local => None,
-        }
+        self.session_of(self.active()?.2)
     }
 
     /// Focused group, its active entity and that tab's id.
@@ -565,6 +562,10 @@ impl Tabs {
         )
         .inspect_err(|e| log::error!("start {}: {e}", launch.program))
         .ok()?;
+        self.taps
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(id, tap.clone());
         t.set_highlights(self.highlights.clone());
         if let Some(spec) = launch.log.as_ref().filter(|s| !s.file.is_empty())
             && let Err(e) = self.begin_log(&tap, launch, spec)
@@ -707,6 +708,7 @@ impl Tabs {
         let Some(mut tab) = self.tabs.remove(&id) else {
             return Task::none();
         };
+        self.forget_tap(id);
         (tab.body, tab.alive) = (terminal, true);
         (tab.started, tab.stopped) = (std::time::Instant::now(), false);
         tab.program_title.clear();
@@ -719,6 +721,55 @@ impl Tabs {
         }
         self.retitle(new_id);
         focus(widget_id)
+    }
+
+    fn forget_tap(&self, id: TabId) {
+        self.taps
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&id);
+    }
+
+    /// The terminal tabs in the order they are shown (groups as laid out, tabs left to right).
+    pub fn order(&self) -> Vec<TabId> {
+        let Some(grid) = self.grid.as_ref() else {
+            return Vec::new();
+        };
+        let ids = grid.iter().flat_map(|(_, g)| {
+            g.model
+                .iter()
+                .filter_map(|e| g.model.data::<TabId>(e).copied())
+        });
+        ids.filter(|id| self.terminal(*id).is_some()).collect()
+    }
+
+    /// The active tab's id, if it is a terminal.
+    pub fn active_terminal(&self) -> Option<TabId> {
+        let id = self.active()?.2;
+        self.terminal(id).map(|_| id)
+    }
+
+    /// The saved session a tab was opened from.
+    pub fn session_of(&self, id: TabId) -> Option<String> {
+        match &self.tabs.get(&id)?.launch.protocol {
+            Protocol::Ssh { session, .. }
+            | Protocol::Telnet { session, .. }
+            | Protocol::Serial { session, .. } => session.clone(),
+            Protocol::Local => None,
+        }
+    }
+
+    /// A tab's title without the ✓ / ✗.
+    pub fn caption(&self, id: TabId) -> Option<String> {
+        let t = self.tabs.get(&id)?;
+        Some(match t.program_title.is_empty() {
+            true => t.base.clone(),
+            false => t.program_title.clone(),
+        })
+    }
+
+    pub fn disconnect_tab(&mut self, id: TabId) {
+        self.disconnect(id);
     }
 
     fn retitle(&mut self, id: TabId) {
@@ -742,6 +793,10 @@ impl Tabs {
         };
         if let Some(id) = group.model.data::<TabId>(e).copied() {
             self.tabs.remove(&id); // its Drop ends the program
+            self.taps
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .remove(&id);
         }
         match detach(&mut group.model, e) {
             false => return self.focus_active(),

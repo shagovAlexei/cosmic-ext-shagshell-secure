@@ -1,0 +1,39 @@
+# 10. Скрипты на Python
+
+Два PR:
+- **10a** — движок: `core::script` (протокол и ожидания), `crt.py`, меню Script (Run… / Cancel), строка состояния, `shagshell --script файл.py [аргументы]` (открывает Local Shell и запускает скрипт на нём; через него же проверяется в headless).
+- **10b** — запуск из Button Bar (Run Script), из сессии (скрипт при входе), импорт кнопок RUN из SecureCRT.
+
+## Устройство
+- Скрипт — отдельный процесс `python3 файл.py` (падение скрипта не роняет программу, pip-пакеты пользователя работают). Env: `PYTHONPATH=<папка с crt.py>`, `SHAGSHELL_SCRIPT_SOCK=<сокет>`, `PYTHONUNBUFFERED=1`. `crt.py` лежит в `/usr/share/shagshell/python/` (при запуске из репозитория — `res/python/`).
+- Сокет `$XDG_RUNTIME_DIR/shagshell/script-<pid>-<n>.sock` (папка 0700), один на запуск, удаляется по завершении. Скрипт открывает его при первом вызове `crt.*`. Протокол: строки JSON, запрос `{"id":n,"call":"Screen.Send","args":[...]}` → ответ `{"id":n,"ok":value}` или `{"id":n,"err":"текст"}`. Скрипт синхронный: один запрос — один ответ.
+- Ожидания (`WaitForString`, `ReadString`) выполняются на стороне приложения по потоку вывода вкладки (`core::script::Waiter`: накопленный чистый текст, поиск подстроки, тайм-аут); скрипт просто блокируется на ответе.
+- Скрипт привязан к вкладке, из которой запущен (активная терминальная на момент запуска; нет терминала — сообщение). `crt.GetTab(n)` даёт другие. Reconnect вкладки даёт ей новый номер: скрипт, державший старую вкладку, получит «no such tab».
+
+## Модель `crt` (как в SecureCRT, чтобы его Python-скрипты переносились с минимальными правками)
+- `crt.Screen`: `Send(s)` (escapes `\r \n \t \e`, как `core::macros`, без `\p`), `SendKeys` — нет; `WaitForString(s, timeout=0, bCaseInsensitive=False)` → True/False; `WaitForStrings(list, timeout)` → индекс с 1 или 0; `ReadString(s, timeout)` → текст до `s`; `Get(r1,c1,r2,c2)` / `Rows` / `Columns` — позже; `Synchronous` — игнорируется (всегда как True).
+- `crt.Session`: `Connected`, `Path`, `Connect("/SSH2 host" | "/S имя")` — по имени сохранённой сессии (`/S`), `Disconnect()`, `Log(bool)`, `LogFileName`.
+- `crt.Dialog`: `MessageBox(text, title="")`, `Prompt(message, title="", default="", bPassword=False)` → строка или `""` при отмене. Диалоги модальные в главном окне.
+- `crt.GetTab(n)` (с 1, только терминалы, в порядке на экране) / `crt.GetScriptTab()` / `crt.GetActiveTab()` / `crt.GetTabCount()`; у вкладки те же `Screen` и `Session`, плюс `Index`, `Caption`, `Activate()`.
+- `crt.Sleep(ms)`, `crt.Arguments` (`.Count`, `.GetArg(i)`, итерация; из `--script` и позже из кнопки), `crt.ScriptFullName`, `crt.Version`, `crt.Quit()`. `Clipboard`, `Window` — не сделаны.
+- Ошибка вызова в приложении → исключение `crt.ScriptError` в скрипте. Отмена пользователем → сокет закрывается, скрипт получает `crt.Cancelled` (`SystemExit`).
+
+## Приложение
+- Script → «Запустить…» (выбор `.py`; запоминается последняя папка), «Отменить» (kill процесса). Одновременно может идти несколько скриптов, по одному на вкладку.
+- В строке состояния: «Скрипт выполняется: имя.py», по завершении — «завершён» / «остановлен» / «Скрипт имя.py: последняя строка stderr». stdout и stderr скрипта пишутся в `~/.local/state/shagshell/script.log` (0600, дописывается). Программа сама в него ничего не пишет; не печатайте в скрипте пароли.
+- Закрытие программы убивает скрипт (процесс — наш ребёнок). Закрытие вкладки скрипта: его вызовы получают «no such tab».
+
+## Мои решения (проверь)
+- Только Python 3; VBScript/JScript нет. Не PyO3 (см. `CLAUDE.md`).
+- Нет отладчика и рекордера (бэклог).
+- Скрипт доверенный (как любой, который пользователь запускает сам): песочницы нет.
+- `Screen.Get` и чтение экрана по координатам — не в 10a.
+
+## Известные ограничения
+- Ожидание видит только то, что пришло после старта скрипта (или после последнего `ReadString`); прошлый вывод не перечитывается.
+- Совпадение по подстроке в тексте без escape-кодов; перенос строки терминала — `\r\n`, как пришло от сервера.
+
+## Как устроено в коде
+- `core::script`: `Buffer` (вывод вкладки как текст, ждёт `Condvar`; включается только пока идёт скрипт; ASCII-регистр), `serve` (запросы → `Host`), `command` (argv + env для `python3 -c "import crt; crt.main()" файл…`), `python_dir`. Тесты: настоящий `python3` + `crt.py` против `serve`.
+- `app::script`: `Scripts` (запуски, сокет и процесс каждого в потоке-надзирателе, диалоги, подписка), `RunHost` (`Host` для приложения: тап вкладки из `Tabs::taps`), звонки про вкладки отвечает `answer`.
+- Проверено: headless `--script` на Local Shell (Send, WaitForString, GetTabCount, Arguments, Dialog.Prompt / MessageBox с Enter, ошибка скрипта → строка состояния). Не проверено вживую: Script → Run… (системный выбор файла), Cancel, `Session.Connect`, `GetTab(n)` на нескольких вкладках.

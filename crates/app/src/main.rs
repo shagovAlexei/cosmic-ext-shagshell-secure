@@ -9,6 +9,7 @@ mod i18n;
 mod menu;
 mod options;
 mod quick_connect;
+mod script;
 mod securecrt_import;
 mod session_manager;
 mod session_options;
@@ -51,6 +52,11 @@ fn main() -> cosmic::iced::Result {
         }
         _ => {}
     }
+    // `--script file.py args…`: a local shell opens and the script runs on it.
+    let startup = match args.as_slice() {
+        [flag, file, rest @ ..] if flag == "--script" => Some((file.into(), rest.to_vec())),
+        _ => None,
+    };
     simple_logger::SimpleLogger::new()
         .with_level(log::LevelFilter::Warn)
         .env()
@@ -62,7 +68,7 @@ fn main() -> cosmic::iced::Result {
         .size(cosmic::iced::Size::new(1200.0, 800.0))
         // softbuffer (tiny-skia) takes only 24-bit X11 visuals; a transparent window gets a 32-bit one.
         .transparent(!software);
-    cosmic::app::run::<app::App>(settings, ())
+    cosmic::app::run::<app::App>(settings, startup)
 }
 
 // Adapted from shagoff-commander (crates/app/src/main.rs).

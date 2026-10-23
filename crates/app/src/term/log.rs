@@ -7,6 +7,7 @@ use alacritty_terminal::tty::{self, ChildEvent, EventedPty, EventedReadWrite};
 use polling::{Event, PollMode, Poller};
 use shagshell_core::logfile::Logger;
 use shagshell_core::logon::{Automaton, Step};
+use shagshell_core::script::Buffer;
 use std::fs::File;
 use std::io::{self, Read};
 use std::path::Path;
@@ -25,6 +26,8 @@ pub struct Tap {
     logon: Arc<Mutex<Option<(Automaton, Sender)>>>,
     /// The PTY's input (set when the terminal is made).
     pty: Arc<Mutex<Option<EventLoopSender>>>,
+    /// Scripts (`crt.Screen.WaitForString`): the output as text, while one runs.
+    script: Arc<Buffer>,
 }
 
 /// What the automaton's sends are handed to (the app expands and writes them).
@@ -74,6 +77,11 @@ impl Tap {
         }
     }
 
+    /// The output as text for scripts.
+    pub fn script_buffer(&self) -> Arc<Buffer> {
+        self.script.clone()
+    }
+
     /// Something went wrong that the user should see (shown once, like a log failure).
     pub fn fail(&self, why: String) {
         self.failed
@@ -99,6 +107,7 @@ impl Tap {
     /// The PTY gave `bytes`: to the log, and to Logon Actions.
     fn output(&self, bytes: &[u8]) {
         self.write(bytes);
+        self.script.feed(bytes);
         let due = {
             let mut g = self.logon.lock().unwrap_or_else(|e| e.into_inner());
             match g.as_mut() {

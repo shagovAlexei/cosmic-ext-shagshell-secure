@@ -350,3 +350,13 @@ sftp-goto-title = Go to folder
 sftp-go = Go
 sftp-goto-title = Go to folder
 sftp-go = Go
+
+## Scripts
+script-title = Script
+script-pick = Run script
+script-running = Script running: { $name }
+script-done = Script finished: { $name }
+script-stopped = Script stopped: { $name }
+script-failed = Script { $name }: { $error }
+script-no-tab = Open a terminal tab first: a script works on it
+script-no-python = Cannot start python3: { $error }
