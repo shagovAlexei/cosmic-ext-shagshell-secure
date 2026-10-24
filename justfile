@@ -32,6 +32,7 @@ install:
     install -Dm0644 res/{{appid}}.metainfo.xml {{dest}}/share/metainfo/{{appid}}.metainfo.xml
     install -Dm0644 res/icons/{{appid}}.svg {{dest}}/share/icons/hicolor/scalable/apps/{{appid}}.svg
     install -Dm0644 res/python/crt.py {{dest}}/share/shagshell/python/crt.py
+    install -Dm0644 -t {{dest}}/share/shagshell/examples Example/*
 
 uninstall:
     rm -rf {{dest}}/share/shagshell; rm -f {{dest}}/bin/{{name}} {{dest}}/share/applications/{{appid}}.desktop {{dest}}/share/metainfo/{{appid}}.metainfo.xml {{dest}}/share/icons/hicolor/scalable/apps/{{appid}}.svg

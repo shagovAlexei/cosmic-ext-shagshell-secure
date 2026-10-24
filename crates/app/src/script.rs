@@ -69,6 +69,10 @@ pub enum ScMsg {
     /// A session's script: on the tab it opened.
     StartOn(u64, PathBuf, Vec<String>),
     Input(String),
+    /// A button of a MessageBox (its SecureCRT result code).
+    Button(i64),
+    /// The clipboard's text, for a script that asked.
+    Clip(Reply, String),
     Ok,
     Cancel,
 }
@@ -105,6 +109,8 @@ pub struct Outcome {
     pub refocus: bool,
     /// `Session.Connect` of a script: the saved session to open.
     pub connect: Option<(String, Reply)>,
+    /// `Clipboard.Set` / `Clipboard.Get` of a script.
+    pub clip: Option<(Option<String>, Reply)>,
 }
 
 impl Scripts {
@@ -216,6 +222,11 @@ impl Scripts {
                         self.asks.push_back(Ask { call: c, value });
                         out.focus = true;
                     }
+                    "Clipboard.Set" => {
+                        let text = c.args.first().and_then(Value::as_str).unwrap_or_default();
+                        out.clip = Some((Some(text.to_string()), c.reply.clone()));
+                    }
+                    "Clipboard.Get" => out.clip = Some((None, c.reply.clone())),
                     "Session.Connect" => {
                         match connect_arg(c.args.first().and_then(Value::as_str).unwrap_or("")) {
                             // Answered once the tab exists (the app opens it).
@@ -257,12 +268,23 @@ impl Scripts {
                     a.value = v;
                 }
             }
-            ScMsg::Ok | ScMsg::Cancel => {
+            ScMsg::Clip(reply, text) => reply.send(Ok(json!(text))),
+            ScMsg::Ok | ScMsg::Cancel | ScMsg::Button(_) => {
                 if let Some(a) = self.asks.pop_front() {
-                    let typed = matches!(msg, ScMsg::Ok) && a.call.call == "Dialog.Prompt";
-                    a.call
-                        .reply
-                        .send(Ok(if typed { json!(a.value) } else { Value::Null }));
+                    let ok = !matches!(msg, ScMsg::Cancel);
+                    let reply = match (a.call.call.as_str(), &msg) {
+                        ("Dialog.Prompt", _) if ok => json!(a.value),
+                        ("Dialog.Prompt", _) => Value::Null,
+                        (_, ScMsg::Button(id)) => json!(id),
+                        // Enter: the first button; Esc: Cancel / No, else the only one.
+                        _ => json!(match (buttons(&a.call), ok) {
+                            (_, true) => ID_FIRST[buttons(&a.call).min(5)],
+                            (1 | 3, false) => ID_CANCEL,
+                            (4, false) => ID_NO,
+                            _ => ID_OK,
+                        }),
+                    };
+                    a.call.reply.send(Ok(reply));
                     out.refocus = self.asks.is_empty();
                 }
             }
@@ -299,15 +321,31 @@ impl Scripts {
             }
             body = body.push(input);
         }
-        let mut d = widget::dialog()
-            .title(title)
-            .control(body)
-            .primary_action(widget::button::suggested(fl!("ok")).on_press(m(ScMsg::Ok)));
-        if prompt {
-            d = d.secondary_action(
-                widget::button::standard(fl!("cancel")).on_press(m(ScMsg::Cancel)),
-            );
-        }
+        let btn =
+            |label: String, id: i64| widget::button::standard(label).on_press(m(ScMsg::Button(id)));
+        let mut d = widget::dialog().title(title).control(body);
+        d = if prompt {
+            d.primary_action(widget::button::suggested(fl!("ok")).on_press(m(ScMsg::Ok)))
+                .secondary_action(
+                    widget::button::standard(fl!("cancel")).on_press(m(ScMsg::Cancel)),
+                )
+        } else {
+            let ok = widget::button::suggested(fl!("ok")).on_press(m(ScMsg::Button(ID_OK)));
+            let yes = widget::button::suggested(fl!("yes")).on_press(m(ScMsg::Button(ID_YES)));
+            match buttons(&a.call) {
+                1 => d
+                    .primary_action(ok)
+                    .secondary_action(btn(fl!("cancel"), ID_CANCEL)),
+                3 => d
+                    .primary_action(yes)
+                    .secondary_action(btn(fl!("no"), ID_NO))
+                    .tertiary_action(btn(fl!("cancel"), ID_CANCEL)),
+                4 => d
+                    .primary_action(yes)
+                    .secondary_action(btn(fl!("no"), ID_NO)),
+                _ => d.primary_action(ok),
+            }
+        };
         Some(d.into())
     }
 
@@ -371,6 +409,27 @@ fn answer(c: &Call, tabs: &mut Tabs) -> Option<Answer> {
             tabs.disconnect_tab(id);
             Value::Null
         }),
+        "Screen.Get" => known(c.tab).and_then(|id| screen(tabs, id)).map(|s| {
+            let n = |i: usize| c.args.get(i).and_then(Value::as_i64).unwrap_or(0);
+            json!(script::slice(&s.rows, n(0), n(1), n(2), n(3)))
+        }),
+        "Screen.Info" => known(c.tab).and_then(|id| screen(tabs, id)).map(|s| {
+            json!([
+                s.row + 1,
+                s.col + 1,
+                s.rows.len(),
+                s.rows.first().map_or(0, |r| r.chars().count())
+            ])
+        }),
+        "Screen.Selection" => known(c.tab)
+            .and_then(|id| screen(tabs, id))
+            .map(|s| json!(s.selection)),
+        "Session.Log" => known(c.tab).and_then(|id| {
+            let flag = |i: usize| c.args.get(i).and_then(Value::as_bool);
+            tabs.script_log(id, flag(0).unwrap_or(true), flag(1))
+                .map(|()| Value::Null)
+        }),
+        "Session.LogFileName" => known(c.tab).map(|id| json!(tabs.log_file(id))),
         "Tab.Index" => {
             known(c.tab).map(|id| json!(order.iter().position(|&t| t == id).map_or(0, |i| i + 1)))
         }
@@ -381,6 +440,26 @@ fn answer(c: &Call, tabs: &mut Tabs) -> Option<Answer> {
         }),
         _ => return None,
     })
+}
+
+/// SecureCRT's results of a MessageBox.
+const ID_OK: i64 = 1;
+const ID_CANCEL: i64 = 2;
+const ID_YES: i64 = 6;
+const ID_NO: i64 = 7;
+/// The result of Enter for each `BUTTON_*` code (0 OK, 1 OK/Cancel, 2 –, 3 Yes/No/Cancel, 4 Yes/No, 5 –).
+const ID_FIRST: [i64; 6] = [ID_OK, ID_OK, ID_OK, ID_YES, ID_YES, ID_OK];
+
+/// The `BUTTON_*` code of a MessageBox call.
+fn buttons(c: &Call) -> usize {
+    c.args
+        .get(2)
+        .and_then(Value::as_u64)
+        .map_or(0, |n| n as usize)
+}
+
+fn screen(tabs: &Tabs, id: u64) -> Result<crate::term::Screen, String> {
+    tabs.screen(id).ok_or_else(|| "not a terminal tab".into())
 }
 
 /// Looks after one run: accepts the script's connection, serves it, ends the process on cancel.

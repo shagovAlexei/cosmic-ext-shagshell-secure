@@ -67,6 +67,11 @@ impl Tap {
         drop(old);
     }
 
+    /// The file of the log that is on.
+    pub fn path(&self) -> Option<PathBuf> {
+        self.lock().as_ref().map(|l| l.path.clone())
+    }
+
     pub fn active(&self) -> bool {
         self.on.load(Ordering::SeqCst)
     }

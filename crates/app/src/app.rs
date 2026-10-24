@@ -1080,6 +1080,20 @@ impl App {
         if out.refocus {
             tasks.push(self.tabs.focus_active());
         }
+        if let Some((set, reply)) = out.clip {
+            match set {
+                Some(text) => {
+                    tasks.push(cosmic::iced::clipboard::write(text));
+                    reply.send(Ok(serde_json::Value::Null));
+                }
+                None => tasks.push(cosmic::iced::clipboard::read().map(move |t| {
+                    cosmic::Action::App(Message::Script(crate::script::ScMsg::Clip(
+                        reply.clone(),
+                        t.unwrap_or_default(),
+                    )))
+                })),
+            }
+        }
         if let Some((name, reply)) = out.connect {
             // Their scripts do not run: a script that connects its own session would loop.
             tasks.push(self.open_sessions(&[name], false));
