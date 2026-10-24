@@ -298,6 +298,7 @@ impl Scripts {
             console: self.console.clone(),
             dirty: self.dirty.clone(),
             tx: self.tx.clone(),
+            last_err: Arc::default(),
         };
         let time = shagshell_core::logfile::now().strftime("%H:%M:%S");
         sink.push(
@@ -343,6 +344,7 @@ impl Scripts {
             console: self.console.clone(),
             dirty: self.dirty.clone(),
             tx: self.tx.clone(),
+            last_err: Arc::default(),
         }
     }
 
@@ -440,8 +442,13 @@ impl Scripts {
                 self.sink(n).push(kind, format!("── {notice} ──"));
                 out.notice = Some(notice);
             }
-            ScMsg::Output(run) => {
+            ScMsg::Output(first) => {
                 self.dirty.store(false, Ordering::SeqCst);
+                // Several runs can share one message: the newest one counts.
+                let run = (self.console.lock().unwrap_or_else(|e| e.into_inner()))
+                    .last(1)
+                    .first()
+                    .map_or(first, |l| l.run.max(first));
                 // Once per run: a console closed by hand stays closed for it.
                 if run > self.shown_run && self.console_win.is_none() {
                     self.shown_run = run;
@@ -882,8 +889,12 @@ fn supervise(
     // Waits of a script that is gone stop.
     let user = cancel.swap(true, Ordering::SeqCst);
     // What it wrote last is in the console before the end is told.
-    for p in pumps {
-        let _ = p.join();
+    // (A grandchild that kept the pipes open must not hold the end back: a moment, then go.)
+    for _ in 0..10 {
+        if pumps.iter().all(|p| p.is_finished()) {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
     }
     match status {
         Ok(st) if st.success() => End::Done,
@@ -906,27 +917,31 @@ struct Sink {
     console: Arc<Mutex<script::Console>>,
     dirty: Arc<AtomicBool>,
     tx: tokio::sync::mpsc::UnboundedSender<ScMsg>,
+    /// The last non-blank line this run wrote to stderr (a Python error ends with its message).
+    last_err: Arc<Mutex<Option<String>>>,
 }
 
 impl Sink {
     fn push(&self, kind: script::Kind, text: String) {
+        if kind == script::Kind::Err && !text.trim().is_empty() {
+            *self.last_err.lock().unwrap_or_else(|e| e.into_inner()) =
+                Some(text.trim().to_string());
+        }
         self.console
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .push(self.run, kind, text);
-        if !self.dirty.swap(true, Ordering::SeqCst) {
+        // The start and the end of a quiet run are not output: no window for them.
+        if kind != script::Kind::Mark && !self.dirty.swap(true, Ordering::SeqCst) {
             let _ = self.tx.send(ScMsg::Output(self.run));
         }
     }
 
-    /// The last line this run wrote to stderr (a Python error ends with its message).
     fn last_error(&self) -> Option<String> {
-        let c = self.console.lock().unwrap_or_else(|e| e.into_inner());
-        c.last(usize::MAX)
-            .into_iter()
-            .rev()
-            .find(|l| l.run == self.run && l.kind == script::Kind::Err && !l.text.trim().is_empty())
-            .map(|l| l.text.trim().to_string())
+        self.last_err
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 }
 
@@ -940,7 +955,8 @@ fn pump(
     use std::io::{BufRead, Write};
     let mut r = std::io::BufReader::new(r);
     let mut buf = Vec::new();
-    while matches!(r.read_until(b'\n', &mut buf), Ok(n) if n > 0) {
+    // A line without an end comes in pieces of 64 KiB, not in one allocation.
+    while matches!((&mut r).take(64 << 10).read_until(b'\n', &mut buf), Ok(n) if n > 0) {
         let text = String::from_utf8_lossy(&buf)
             .trim_end_matches(['\r', '\n'])
             .to_string();

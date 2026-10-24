@@ -390,7 +390,14 @@ pub fn trace_line(call: &str, args: &[Value], result: &Result<Value, String>) ->
         }
     }
     let secret = call == "Dialog.Prompt" && args.get(3).and_then(Value::as_bool) == Some(true);
-    let args = args.iter().map(show).collect::<Vec<_>>().join(", ");
+    // A password prompt's default text may be one too.
+    let args = (args.iter().enumerate())
+        .map(|(i, a)| match secret && i == 2 {
+            true => "\"***\"".to_string(),
+            false => show(a),
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
     let back = match result {
         _ if secret => "\"***\"".to_string(),
         Ok(v) => show(v),
@@ -580,10 +587,11 @@ mod tests {
         assert!(long.contains('…') && long.len() < 140);
         let secret = trace_line(
             "Dialog.Prompt",
-            &[json!("pw?"), json!(""), json!(""), json!(true)],
+            &[json!("pw?"), json!(""), json!("old-secret"), json!(true)],
             &Ok(json!("hunter2")),
         );
         assert!(secret.ends_with("← \"***\"") && !secret.contains("hunter2"));
+        assert!(!secret.contains("old-secret"));
         let err = trace_line("Screen.Send", &[json!("a")], &Err("no such tab".into()));
         assert!(err.ends_with("← error: no such tab"));
     }

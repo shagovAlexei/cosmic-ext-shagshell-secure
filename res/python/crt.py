@@ -301,7 +301,9 @@ def main():
         mine = os.path.abspath(path)
         while tb is not None and os.path.abspath(tb.tb_frame.f_code.co_filename) != mine:
             tb = tb.tb_next
-        traceback.print_exception(type(e), e, tb or e.__traceback__)
+        # (a syntax error has no script frame: just its own file / line)
+        keep = None if isinstance(e, SyntaxError) else tb or e.__traceback__
+        traceback.print_exception(type(e), e, keep)
         code = 1
     sys.stdout.flush()
     os._exit(code)
