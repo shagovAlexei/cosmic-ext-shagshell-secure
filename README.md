@@ -13,15 +13,18 @@ See [ROADMAP](.claude/docs/ROADMAP.md) and [architecture](.claude/docs/specs/00-
 
 ## Install
 
-Download the `.deb` and `SHA256SUMS` from the [latest release](https://github.com/shagovAlexei/cosmic-ext-shagshell-secure/releases/latest) — only from this repository — into one folder, check it there and install:
+Download the latest release into a fresh folder, check it and install — copy the whole block, it needs nothing else (the files are fetched from this repository only):
 
 ```sh
-cd ~/Downloads        # the folder with both files
-sha256sum -c SHA256SUMS
+cd "$(mktemp -d)"
+B=https://github.com/shagovAlexei/cosmic-ext-shagshell-secure/releases/latest/download
+curl -fLO $B/SHA256SUMS
+curl -fLO $B/$(awk '{print $2}' SHA256SUMS)
+sha256sum -c SHA256SUMS      # must print: shagshell_X.Y.Z_amd64.deb: OK
 sudo apt install ./shagshell_*.deb
 ```
 
-`sha256sum` must print `OK` for the `.deb`. If it says `No such file`, you are in the wrong folder or `SHA256SUMS` was not downloaded.
+Doing it by hand from the [releases page](https://github.com/shagovAlexei/cosmic-ext-shagshell-secure/releases/latest)? Save **both** files (the `.deb` and `SHA256SUMS`) in the same folder and run `sha256sum -c SHA256SUMS` there; `No such file` means `SHA256SUMS` is not in the current folder.
 
 The app checks for a newer release at startup (Options → Global Options → Updates to turn it off).
 

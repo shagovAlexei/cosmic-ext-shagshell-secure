@@ -5,6 +5,7 @@ Every release, newest first, rebuilt from the merged pull requests. GitHub keeps
 ## 0.45.1 — 2026-10-25
 
 - Notes: no second frame around the text; notes open in the right-hand tab group like the Script Console
+- README: the install block now downloads both files itself, so the checksum check always has its file
 
 ## 0.45.0 — 2026-10-24
 
