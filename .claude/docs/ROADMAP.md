@@ -13,7 +13,7 @@
 - [x] 6. ~~6a — Command Window (send to all)~~; ~~6b — Button Bar: именованные панели, Send String / Menu Function / Launch App, панель на сессию
 - [x] 7. Логирование сессий по шаблонам имён
 - [x] 8. ~~8a — jump host / port forwarding в UI, auto-reconnect~~; ~~8b — Telnet и Serial~~
-- [ ] 9. ~~9a — Logon Actions (expect/send)~~; ~~9b — keyword highlighting, color schemes~~; 9c — импорт из SecureCRT `.ini` (сессии, кнопки)
+- [x] 9. ~~9a — Logon Actions (expect/send)~~; ~~9b — keyword highlighting, color schemes~~; ~~9c — импорт из SecureCRT `.ini` (сессии, кнопки)~~
 - [ ] 10. Скрипты на Python: модуль `crt` (API как в SecureCRT), меню Script, запуск с Button Bar / клавиши / logon script / `--script`
 
 ## Бэклог
@@ -24,7 +24,7 @@
 - Синхронизация папок в SFTP
 - X/Y/Zmodem (`rz`/`sz`)
 - Command Manager (дерево сохранённых команд)
-- Импорт кнопок Button Bar из SecureCRT (из `.ini` / экспорта: Send String → Send String, Menu Function → ближайшая функция, Run Script → скрипт)
+- Импорт Button Bar из SecureCRT: Run Script (после фазы 10) и кнопки Menu Function / Launch App (в настоящих файлах не встретились, формат строк неизвестен)
 - Перетаскивание вкладки между группами и в новое окно
 - Шрифт и его размер в Global Options
 - Запись скрипта (Script → Start Recording)

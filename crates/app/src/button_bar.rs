@@ -97,6 +97,19 @@ impl ButtonBar {
         self.functions = FUNCTIONS.iter().map(|(_, label)| label()).collect();
     }
 
+    /// Bars brought in by an import (names that are not here yet): added and saved. `Some`: why
+    /// they could not be saved.
+    pub fn merge(&mut self, bars: Vec<Bar>) -> Option<String> {
+        let mut any = false;
+        for b in bars {
+            if self.bars.index_of(&b.name).is_none() {
+                self.bars.bars.push(b);
+                any = true;
+            }
+        }
+        any.then(|| self.save()).flatten()
+    }
+
     pub fn broken(&self) -> Option<&str> {
         self.broken.as_deref()
     }

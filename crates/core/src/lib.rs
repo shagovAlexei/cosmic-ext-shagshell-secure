@@ -11,6 +11,7 @@ pub mod logon;
 pub mod macros;
 pub mod panel;
 pub mod reconnect;
+pub mod securecrt;
 pub mod session;
 pub mod sftp;
 pub mod shell;
