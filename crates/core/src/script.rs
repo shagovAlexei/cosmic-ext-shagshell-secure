@@ -310,6 +310,100 @@ pub trait Host: Send + Sync {
     fn input(&self, tab: u64, bytes: Vec<u8>) -> bool;
     /// Everything else (dialogs, tabs, sessions): the app's window answers.
     fn ui(&self, call: &str, tab: u64, args: &[Value]) -> Result<Value, String>;
+    /// Debug mode: every call is reported through `trace`.
+    fn debug(&self) -> bool {
+        false
+    }
+    fn trace(&self, _line: String) {}
+}
+
+/// What the Script Console shows a line as.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kind {
+    /// A run's start / end line.
+    Mark,
+    Out,
+    Err,
+    /// A `crt` call (debug mode).
+    Debug,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Line {
+    pub run: u64,
+    pub kind: Kind,
+    pub text: String,
+}
+
+/// The last lines of what scripts wrote, oldest dropped first.
+#[derive(Default)]
+pub struct Console {
+    lines: std::collections::VecDeque<Line>,
+}
+
+impl Console {
+    const MAX: usize = 5000;
+
+    pub fn push(&mut self, run: u64, kind: Kind, text: impl Into<String>) {
+        if self.lines.len() == Self::MAX {
+            self.lines.pop_front();
+        }
+        self.lines.push_back(Line {
+            run,
+            kind,
+            text: text.into(),
+        });
+    }
+
+    pub fn clear(&mut self) {
+        self.lines.clear();
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.lines.is_empty()
+    }
+
+    /// The newest `n` lines, oldest first.
+    pub fn last(&self, n: usize) -> Vec<Line> {
+        let skip = self.lines.len().saturating_sub(n);
+        self.lines.iter().skip(skip).cloned().collect()
+    }
+
+    /// All the text (Copy).
+    pub fn text(&self) -> String {
+        self.lines
+            .iter()
+            .map(|l| l.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+}
+
+/// A `crt` call and its result as one debug line: `→ Screen.Send("ls\r")  ← null`. Long text is
+/// cut; what a password prompt returned and what `Prompt(bPassword)` shows is not printed.
+pub fn trace_line(call: &str, args: &[Value], result: &Result<Value, String>) -> String {
+    fn show(v: &Value) -> String {
+        let s = v.to_string();
+        match s.char_indices().nth(80) {
+            Some((i, _)) => format!("{}…", &s[..i]),
+            None => s,
+        }
+    }
+    let secret = call == "Dialog.Prompt" && args.get(3).and_then(Value::as_bool) == Some(true);
+    // A password prompt's default text may be one too.
+    let args = (args.iter().enumerate())
+        .map(|(i, a)| match secret && i == 2 {
+            true => "\"***\"".to_string(),
+            false => show(a),
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    let back = match result {
+        _ if secret => "\"***\"".to_string(),
+        Ok(v) => show(v),
+        Err(e) => format!("error: {e}"),
+    };
+    format!("→ {call}({args})  ← {back}")
 }
 
 /// Answers the requests of one script until it closes the connection or `cancel` is set.
@@ -329,7 +423,16 @@ pub fn serve<S: io::Read + io::Write>(
             continue;
         };
         let id = req["id"].clone();
-        let reply = match handle(&req, host, cancel) {
+        let result = handle(&req, host, cancel);
+        if host.debug() {
+            let args: &[Value] = req["args"].as_array().map_or(&[], |a| a.as_slice());
+            host.trace(trace_line(
+                req["call"].as_str().unwrap_or("?"),
+                args,
+                &result,
+            ));
+        }
+        let reply = match result {
             Ok(v) => json!({"id": id, "ok": v}),
             Err(e) => json!({"id": id, "err": e}),
         };
@@ -459,6 +562,40 @@ pub fn command(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn console_keeps_the_newest_lines() {
+        let mut c = Console::default();
+        for i in 0..Console::MAX + 3 {
+            c.push(1, Kind::Out, i.to_string());
+        }
+        let last = c.last(2);
+        assert_eq!(last[1].text, (Console::MAX + 2).to_string());
+        assert_eq!(c.last(usize::MAX).len(), Console::MAX);
+        assert_eq!(c.last(usize::MAX)[0].text, "3");
+        c.clear();
+        assert!(c.is_empty());
+    }
+
+    #[test]
+    fn trace_shows_the_call_cuts_long_text_and_hides_passwords() {
+        let ok = Ok(json!(true));
+        assert_eq!(
+            trace_line("Screen.WaitForString", &[json!("login:"), json!(10)], &ok),
+            "→ Screen.WaitForString(\"login:\", 10)  ← true"
+        );
+        let long = trace_line("Screen.Send", &[json!("x".repeat(200))], &Ok(Value::Null));
+        assert!(long.contains('…') && long.len() < 140);
+        let secret = trace_line(
+            "Dialog.Prompt",
+            &[json!("pw?"), json!(""), json!("old-secret"), json!(true)],
+            &Ok(json!("hunter2")),
+        );
+        assert!(secret.ends_with("← \"***\"") && !secret.contains("hunter2"));
+        assert!(!secret.contains("old-secret"));
+        let err = trace_line("Screen.Send", &[json!("a")], &Err("no such tab".into()));
+        assert!(err.ends_with("← error: no such tab"));
+    }
+
     #[test]
     fn message_box_flags() {
         let f = Flags::parse(4 | 32 | 256); // YESNO | QUESTION | DEFBUTTON2

@@ -188,6 +188,9 @@ impl Application for App {
         tabs.set_sftp_prefs(&config);
         tabs.set_log_prefs(&config);
         let scripts = crate::script::Scripts::new(tabs.taps.clone(), control_dir.clone());
+        scripts
+            .debug
+            .store(config.script_debug, std::sync::atomic::Ordering::SeqCst);
         let (user_keys, keys_error) = match shagshell_core::keymap::Keymap::load(
             &shagshell_core::keymap::Keymap::default_path(),
         ) {
@@ -379,6 +382,9 @@ impl Application for App {
         let focused = self.core.focused_window() == Some(id);
         if let Some(o) = self.options.as_ref().filter(|o| o.window == id) {
             return o.view(focused);
+        }
+        if self.scripts.console_win == Some(id) {
+            return self.scripts.console_view(focused);
         }
         if self.scripts.win == Some(id)
             && let Some(v) = self.scripts.window_view(focused)
@@ -908,6 +914,9 @@ impl App {
             Message::CloseRequested(w) if self.tabs.tab_in(w).is_some() => {
                 return self.update(Message::Tabs(crate::tabs::TabsMsg::Reattach(w)));
             }
+            Message::CloseRequested(w) if self.scripts.console_win == Some(w) => {
+                return self.script(crate::script::ScMsg::ConsoleClose);
+            }
             Message::CloseRequested(w) if self.scripts.win == Some(w) => {
                 return self.script(crate::script::ScMsg::Cancel);
             }
@@ -1183,6 +1192,7 @@ impl App {
                     cosmic::Action::App(Message::Script(crate::script::ScMsg::Picked(p)))
                 });
             }
+            Action::ScriptConsole => return self.open_console(),
             Action::CancelScript => {
                 self.scripts.cancel();
                 return self.script_window();
@@ -1263,6 +1273,27 @@ impl App {
         let Some(m) = m else {
             return Task::none();
         };
+        match &m {
+            crate::script::ScMsg::ConsoleClose => {
+                return match self.scripts.console_win.take() {
+                    Some(w) => cosmic::iced::window::close(w),
+                    None => Task::none(),
+                };
+            }
+            crate::script::ScMsg::ConsoleDrag => {
+                return self
+                    .scripts
+                    .console_win
+                    .map_or_else(Task::none, cosmic::iced::window::drag);
+            }
+            crate::script::ScMsg::ConsoleDebug(on) => {
+                let mut c = self.config.clone();
+                c.script_debug = *on;
+                self.config = c;
+                self.save_config();
+            }
+            _ => {}
+        }
         if matches!(m, crate::script::ScMsg::Drag) {
             return self
                 .scripts
@@ -1307,12 +1338,37 @@ impl App {
             ));
         }
         tasks.push(self.script_window());
+        if out.output.is_some() && self.config.script_console_auto {
+            tasks.push(self.open_console());
+        }
+        if let Some(text) = out.copy {
+            tasks.push(cosmic::iced::clipboard::write(text));
+        }
         if let Some((name, reply)) = out.connect {
             // Their scripts do not run: a script that connects its own session would loop.
             tasks.push(self.open_sessions(&[name], false));
             reply.send(Ok(serde_json::Value::Null)); // the tab is there now
         }
         Task::batch(tasks)
+    }
+
+    /// Script → Console: the window, raised when it is already there.
+    fn open_console(&mut self) -> Task<Message> {
+        if let Some(w) = self.scripts.console_win {
+            return cosmic::iced::window::gain_focus(w);
+        }
+        let (window, open) = cosmic::iced::window::open(cosmic::iced::window::Settings {
+            size: cosmic::iced::Size::new(720.0, 440.0),
+            min_size: Some(cosmic::iced::Size::new(420.0, 240.0)),
+            decorations: false,
+            exit_on_close_request: false,
+            ..Default::default()
+        });
+        self.scripts.console_win = Some(window);
+        Task::batch([
+            open.map(|_| cosmic::Action::None),
+            cosmic::ApplicationExt::set_window_title(self, fl!("console-title"), window),
+        ])
     }
 
     /// The window of the script dialog that is up: opened with the first ask, gone with the last.
