@@ -559,13 +559,14 @@ impl Application for App {
         if self.config.command_window_visible {
             col = col.push(self.command.view());
         }
+        col = col.push(status_bar::view(
+            self.tabs.status(),
+            self.sessions.notice.as_deref(),
+        ));
         if self.config.button_bar_visible {
             col = col.push(self.buttons.view(self.shown_bar(), window));
         }
-        col.push(status_bar::view(
-            self.tabs.status(),
-            self.sessions.notice.as_deref(),
-        ))
+        col
         .into()
     }
 }
