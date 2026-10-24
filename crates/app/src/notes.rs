@@ -237,6 +237,7 @@ impl NoteView {
                     use cosmic::iced::widget::text_editor::Catalog;
                     let mut st = theme.style(&<cosmic::Theme as Catalog>::default(), status);
                     st.selection.a = 0.3;
+                    st.border.width = 0.0;
                     st
                 })
                 .padding(8)
@@ -245,6 +246,13 @@ impl NoteView {
             false => text_editor::TextEditor::new(&self.text)
                 .id(editor_id)
                 .on_action(move |a| m(NoteMsg::Edit(a)))
+                // The tab's own frame is enough: no second one around the text.
+                .style(|theme, status| {
+                    use cosmic::iced::widget::text_editor::Catalog;
+                    let mut st = theme.style(&<cosmic::Theme as Catalog>::default(), status);
+                    st.border.width = 0.0;
+                    st
+                })
                 .padding(8)
                 .height(Length::Fill)
                 .into(),

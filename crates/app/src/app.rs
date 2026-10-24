@@ -2059,7 +2059,7 @@ impl App {
         launch.title =
             (path.file_name()).map_or_else(String::new, |n| n.to_string_lossy().into_owned());
         launch.note = Some(path.to_path_buf());
-        let task = self.tabs.open(launch, &look(&self.config));
+        let task = self.tabs.open_note_right(launch, &look(&self.config));
         self.remember_notes();
         task
     }
