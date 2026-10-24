@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.shagovalexei.ShagShellSecure</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <name>ShagShell Secure</name>
+  <summary>SSH/SFTP session manager in the spirit of SecureCRT</summary>
+  <description>
+    <p>Session tree, tabs, saved credentials in the keyring, SFTP with a transfer queue,
+    sending commands to many sessions at once. Runs the system OpenSSH, so ~/.ssh/config,
+    keys and jump hosts just work.</p>
+  </description>
+  <developer id="io.github.shagovalexei"><name>Shagov Alexei</name></developer>
+  <url type="homepage">https://github.com/shagovAlexei/cosmic-ext-shagshell-secure</url>
+  <launchable type="desktop-id">io.github.shagovalexei.ShagShellSecure.desktop</launchable>
+  <provides><binary>shagshell</binary></provides>
+</component>

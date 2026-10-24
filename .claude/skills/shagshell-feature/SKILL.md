@@ -21,7 +21,7 @@ Every feature and every roadmap phase goes through these steps in order. Do not 
    - `crates/app` stays thin and split by feature module (own `Message` / `update` / `view`); `app.rs` only routes.
    - Every new UI string in `fl!` with both `en` and `ru`.
    - Secrets never touch files or logs.
-6. **Verify.** `just verify` must pass. Then look at the real UI with `.claude/skills/shagshell-feature/headless.sh` (adapted from shagoff-commander's in phase 1: invisible sway + `wtype` + `grim`; never the user's desktop or config): `start`, keys, `shot name`, then Read the png. Connection features are checked against a local `sshd` on `localhost` (password via askpass, SFTP put/get). Add the manual check to `TESTING.md`.
+6. **Verify.** `just verify` must pass. Then look at the real UI with `.claude/skills/shagshell-feature/headless.sh` (adapted from shagoff-commander's in phase 1: invisible sway + `wtype` + `grim`; never the user's desktop or config): `start`, keys, `shot name`, then Read the png. Connection features are checked against a local `sshd` on `localhost` (password via askpass, SFTP put/get). Limit: in headless sway clicks on header menu **items** never arrive (the menu opens, the item does nothing; same in shagoff-commander) — reach the action by its key, or leave it to the manual check. Add the manual check to `TESTING.md` as `- [ ]` items under the phase; the user ticks them.
 7. **Review.** Run `/code-review` and fix what it confirms.
 8. **PR.**
    - Tick the phase / feature in `ROADMAP.md`; if the architecture changed, update `CLAUDE.md` and `specs/00-architecture.md`.

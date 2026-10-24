@@ -4,8 +4,8 @@
 
 ## Этапы
 
-- [ ] 0. Bootstrap: репозиторий, CLAUDE.md, архитектура, разбор SecureCRT, навык `shagshell-feature`
-- [ ] 1. Каркас: workspace, пустое окно libcosmic, justfile, CI, i18n en/ru, `.desktop`, metainfo, иконка
+- [x] 0. Bootstrap: репозиторий, CLAUDE.md, архитектура, разбор SecureCRT, навык `shagshell-feature`
+- [x] 1. Каркас: workspace, пустое окно libcosmic, justfile, CI, i18n en/ru, `.desktop`, metainfo, иконка
 - [ ] 2. Терминал: вкладка локального shell, вкладки + `pane_grid` (tab groups)
 - [ ] 3. Сессии: модель + хранилище (TDD), Session Manager, Session Options, Quick Connect, запуск ssh
 - [ ] 4. Аутентификация: askpass-сокет, keyring, Credentials Manager, диалог host key
