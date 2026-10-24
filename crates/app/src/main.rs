@@ -13,6 +13,7 @@ mod keymap_editor;
 mod menu;
 mod options;
 mod quick_connect;
+mod scheduler;
 mod script;
 mod securecrt_import;
 mod session_manager;

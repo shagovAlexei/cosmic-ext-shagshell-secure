@@ -73,6 +73,8 @@ pub enum Action {
     CancelScript,
     /// Script → Console.
     ScriptConsole,
+    /// Script → Scheduler….
+    Scheduler,
     /// Script → Scripts / Recent: the n-th entry of the app's list (folder files, then recents).
     Listed(u16),
     /// Script → Choose scripts folder….
@@ -124,6 +126,8 @@ impl Action {
             "ToggleCommandManager" => Action::ToggleCommandManager,
             "ToggleRecording" => Action::ToggleRecording,
             "GlobalOptions" => Action::GlobalOptions,
+            "ScriptConsole" => Action::ScriptConsole,
+            "Scheduler" => Action::Scheduler,
             _ => return None,
         })
     }
@@ -299,6 +303,7 @@ pub fn bar(
                 Button(fl!("menu-script-run"), None, Action::RunScript),
                 Button(fl!("menu-script-cancel"), None, Action::CancelScript),
                 Button(fl!("menu-script-console"), None, Action::ScriptConsole),
+                Button(fl!("menu-script-scheduler"), None, Action::Scheduler),
                 Divider,
                 CheckBox(
                     fl!("menu-script-record"),
