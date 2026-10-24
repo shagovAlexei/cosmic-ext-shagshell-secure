@@ -451,9 +451,16 @@ impl Scripts {
                 if a.call.args.get(3).and_then(Value::as_bool) == Some(true) {
                     input = input.password();
                 }
-                body = body
-                    .push(widget::text::body(a.arg(0).to_string()))
-                    .push(input);
+                let text = widget::text::body(a.arg(0).to_string());
+                let top: Element<'_, Message> = match a.call.args.get(3).and_then(Value::as_bool) {
+                    Some(true) => widget::row::with_capacity(2)
+                        .spacing(16)
+                        .push(crate::dialog_icons::Kind::Lock.icon(48))
+                        .push(text)
+                        .into(),
+                    _ => text.into(),
+                };
+                body = body.push(top).push(input);
                 buttons = buttons
                     .push(widget::button::standard(fl!("cancel")).on_press(m(ScMsg::Cancel)))
                     .push(widget::button::suggested(fl!("ok")).on_press(m(ScMsg::Ok)));
@@ -483,16 +490,17 @@ impl Scripts {
             }
             _ => {
                 let f = a.flags();
+                use crate::dialog_icons::Kind;
                 let icon = match f.icon {
                     script::Icon::None => None,
-                    script::Icon::Stop => Some("dialog-error-symbolic"),
-                    script::Icon::Question => Some("dialog-question-symbolic"),
-                    script::Icon::Warning => Some("dialog-warning-symbolic"),
-                    script::Icon::Info => Some("dialog-information-symbolic"),
+                    script::Icon::Stop => Some(Kind::Stop),
+                    script::Icon::Question => Some(Kind::Question),
+                    script::Icon::Warning => Some(Kind::Warning),
+                    script::Icon::Info => Some(Kind::Info),
                 };
                 let mut line = widget::row::with_capacity(2).spacing(16);
-                if let Some(name) = icon {
-                    line = line.push(widget::icon::from_name(name).size(48));
+                if let Some(kind) = icon {
+                    line = line.push(kind.icon(48));
                 }
                 body = body.push(line.push(widget::text::body(a.arg(0).to_string())));
                 let ids = f.ids();

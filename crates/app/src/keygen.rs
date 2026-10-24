@@ -163,6 +163,7 @@ impl KeyGen {
             ])
             .spacing(10);
             return widget::dialog()
+                .icon(crate::dialog_icons::Kind::Key.icon(48))
                 .title(fl!("kg-title"))
                 .control(body)
                 .primary_action(widget::button::suggested(fl!("kg-copy")).on_press(m(KgMsg::Copy)))
@@ -219,6 +220,7 @@ impl KeyGen {
             body = body.push(widget::text::body(e.clone()).class(cosmic::theme::Text::Accent));
         }
         widget::dialog()
+            .icon(crate::dialog_icons::Kind::Key.icon(48))
             .title(fl!("kg-title"))
             .control(body)
             .primary_action(
@@ -275,6 +277,7 @@ impl Upload {
         ])
         .spacing(10);
         widget::dialog()
+            .icon(crate::dialog_icons::Kind::Key.icon(48))
             .title(fl!("ku-title"))
             .control(body)
             .primary_action(widget::button::suggested(fl!("ku-run")).on_press(m(KgMsg::Upload)))

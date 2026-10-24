@@ -146,6 +146,7 @@ impl QuickConnect {
             body = body.push(widget::text::caption(e.clone()).class(cosmic::theme::Text::Accent));
         }
         widget::dialog()
+            .icon(crate::dialog_icons::Kind::Server.icon(48))
             .title(fl!("qc-title"))
             .control(body)
             .primary_action(

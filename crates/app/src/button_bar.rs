@@ -370,6 +370,7 @@ impl ButtonBar {
         let d = self.dialog.as_ref()?;
         fn ok<'a>(title: String, body: Element<'a, Message>, ok: String) -> Element<'a, Message> {
             widget::dialog()
+                .icon(crate::dialog_icons::Kind::Edit.icon(48))
                 .title(title)
                 .control(body)
                 .primary_action(
@@ -499,6 +500,7 @@ impl ButtonBar {
                     .map(|b| b.name.clone())
                     .unwrap_or_default();
                 widget::dialog()
+                    .icon(crate::dialog_icons::Kind::Warning.icon(48))
                     .title(fl!("bb-delete-title", name = name))
                     .body(fl!("bb-delete-body"))
                     .primary_action(

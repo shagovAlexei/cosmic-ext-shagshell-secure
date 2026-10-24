@@ -541,6 +541,7 @@ impl SessionManager {
                     body.push(widget::text::caption(e.clone()).class(cosmic::theme::Text::Accent));
             }
             widget::dialog()
+                .icon(crate::dialog_icons::Kind::Folder.icon(48))
                 .title(title)
                 .control(body)
                 .primary_action(widget::button::suggested(ok).on_press(m(SmMsg::Submit)))
@@ -566,6 +567,7 @@ impl SessionManager {
                     false => fl!("sm-delete-body"),
                 };
                 widget::dialog()
+                    .icon(crate::dialog_icons::Kind::Warning.icon(48))
                     .title(fl!("sm-delete-title", name = name_of(id)))
                     .body(body)
                     .primary_action(

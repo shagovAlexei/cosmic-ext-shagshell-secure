@@ -184,6 +184,7 @@ impl ScImport {
         let run = widget::button::suggested(fl!("sc-import"))
             .on_press_maybe((!self.busy).then(|| m(ScMsg::Run)));
         widget::dialog()
+            .icon(crate::dialog_icons::Kind::Import.icon(48))
             .title(fl!("sc-title"))
             .control(col)
             .primary_action(run)

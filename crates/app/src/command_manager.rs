@@ -374,6 +374,7 @@ impl CommandManager {
         }
         Some(
             widget::dialog()
+                .icon(crate::dialog_icons::Kind::Edit.icon(48))
                 .title(title)
                 .control(col)
                 .primary_action(ok)

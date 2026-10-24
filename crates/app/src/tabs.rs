@@ -1337,6 +1337,7 @@ impl Tabs {
         let msg = |m| Message::Tabs(m);
         Some(
             widget::dialog()
+                .icon(crate::dialog_icons::Kind::Warning.icon(48))
                 .title(fl!("close-tab-title", name = name))
                 .body(fl!("close-tab-body"))
                 .primary_action(

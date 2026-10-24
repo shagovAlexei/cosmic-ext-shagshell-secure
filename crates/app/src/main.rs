@@ -6,6 +6,7 @@ mod command_manager;
 mod command_window;
 mod config;
 mod credentials_window;
+mod dialog_icons;
 mod i18n;
 mod keygen;
 mod keymap_editor;
