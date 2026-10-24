@@ -73,6 +73,12 @@ pub enum Action {
     CancelScript,
     /// Script → Console.
     ScriptConsole,
+    /// Script → Scripts / Recent: the n-th entry of the app's list (folder files, then recents).
+    Listed(u16),
+    /// Script → Choose scripts folder….
+    ScriptsFolder,
+    /// Script → Refresh the list.
+    ScriptsRefresh,
     // Shown, not working yet (later phases).
     Disconnect,
     ConnectSftp,
@@ -154,6 +160,7 @@ fn key_binds() -> HashMap<KeyBind, Action> {
 pub fn bar(
     (session_manager, command_window, button_bar, command_manager): (bool, bool, bool, bool),
     (tabs, live, split, logging, recording): (bool, bool, bool, bool, bool),
+    (folder, recent): (&[String], &[String]),
 ) -> Element<'static, Message> {
     use menu::Item::{Button, ButtonDisabled, CheckBox, Divider};
     let off = |label: String| ButtonDisabled(label, None, Action::Pending);
@@ -175,6 +182,23 @@ pub fn bar(
         on(tabs && has_tool(tool), label, a)
     };
     use shagshell_core::zmodem::Proto;
+    // A submenu of scripts: their entries are numbered from `first` in the app's list.
+    let list = |title: String, names: &[String], first: usize| {
+        let items: Vec<_> = match names.is_empty() {
+            true => vec![ButtonDisabled(
+                fl!("menu-script-none"),
+                None,
+                Action::Pending,
+            )],
+            false => (names.iter().enumerate())
+                .map(|(i, n)| {
+                    let at = u16::try_from(first + i).unwrap_or(u16::MAX);
+                    Button(n.clone(), None, Action::Listed(at))
+                })
+                .collect(),
+        };
+        menu::Item::Folder(title, items)
+    };
     let roots = [
         (
             fl!("menu-file"),
@@ -282,6 +306,16 @@ pub fn bar(
                     recording,
                     Action::ToggleRecording,
                 ),
+                Divider,
+                list(fl!("menu-script-folder"), folder, 0),
+                list(fl!("menu-script-recent"), recent, folder.len()),
+                Divider,
+                Button(
+                    fl!("menu-script-choose-folder"),
+                    None,
+                    Action::ScriptsFolder,
+                ),
+                Button(fl!("menu-script-refresh"), None, Action::ScriptsRefresh),
             ],
         ),
         (

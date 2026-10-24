@@ -237,6 +237,16 @@ pub fn view<'a>(
             text(&config.log_template, |c, v| c.log_template = v),
         ))
         .add(widget::text::caption(fl!("options-log-hint")));
+    let scripts = settings::section()
+        .title(fl!("options-scripts"))
+        .add(settings::item(
+            fl!("options-scripts-folder"),
+            text(&config.scripts_folder, |c, v| c.scripts_folder = v),
+        ))
+        .add(settings::item(
+            fl!("options-startup-script"),
+            text(&config.startup_script, |c, v| c.startup_script = v),
+        ));
     let updates = settings::section()
         .title(fl!("options-updates"))
         .add(settings::item(
@@ -304,6 +314,7 @@ pub fn view<'a>(
         colours.into(),
         logging.into(),
         zmodem.into(),
+        scripts.into(),
         updates.into(),
         sftp.into(),
         passwords.into(),

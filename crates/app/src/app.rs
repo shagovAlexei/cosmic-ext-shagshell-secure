@@ -72,6 +72,8 @@ pub struct App {
     update: Option<String>,
     /// `--script`: runs once the terminals can start (their event channel is up).
     startup: Option<(std::path::PathBuf, Vec<String>)>,
+    /// The `*.py` files of the Script menu's folder (read at start, and when asked).
+    script_files: Vec<std::path::PathBuf>,
 }
 
 /// The open dialog of Tools → Create / Upload Public Key….
@@ -98,6 +100,8 @@ pub enum Message {
     OpenUrl(String),
     /// A recorded script and where the user put it (none: given up).
     RecordSaved(String, Option<std::path::PathBuf>),
+    /// Script → Choose scripts folder…
+    ScriptsFolder(Option<std::path::PathBuf>),
     CloseDrawer,
     Tabs(TabsMsg),
     TermTx(crate::term::Events),
@@ -226,13 +230,20 @@ impl Application for App {
             scripts,
             update: None,
             startup: None,
+            script_files: Vec::new(),
         };
         // A broken buttonbars.toml is said, and left alone.
         app.sessions.notice = (app.buttons.broken().map(String::from))
             .or(hl_error)
             .or(keys_error);
         app.tabs.set_looks(&app.config, &app.hl, &look(&app.config));
-        app.startup = startup;
+        app.startup = startup.or_else(|| {
+            let p = shagshell_core::script::expand_home(std::path::Path::new(
+                &app.config.startup_script,
+            ));
+            (!app.config.startup_script.is_empty() && p.is_file()).then_some((p, Vec::new()))
+        });
+        app.refresh_scripts();
         let check = match app.config.update_check {
             true => check_updates(false),
             false => Task::none(),
@@ -430,6 +441,10 @@ impl Application for App {
                 self.config.command_manager_visible,
             ),
             self.tabs.menu_state(),
+            (
+                &self.script_labels(&self.script_files),
+                &self.script_labels(&self.recent_files()),
+            ),
         )]
     }
 
@@ -597,8 +612,12 @@ impl App {
                     c.language != self.config.language,
                     c.app_theme != self.config.app_theme,
                 );
+                let folder = c.scripts_folder != self.config.scripts_folder;
                 self.config = c;
                 self.save_config();
+                if folder {
+                    self.refresh_scripts();
+                }
                 self.tabs.set_sftp_prefs(&self.config);
                 self.tabs.set_log_prefs(&self.config);
                 self.tabs
@@ -622,8 +641,18 @@ impl App {
                 }
                 return Task::batch(tasks);
             }
+            Message::ScriptsFolder(Some(dir)) => {
+                let mut c = self.config.clone();
+                c.scripts_folder = dir.display().to_string();
+                self.config = c;
+                self.save_config();
+                self.refresh_scripts();
+            }
+            Message::ScriptsFolder(None) => {}
             Message::RecordSaved(text, path) => {
                 if let Some(path) = path {
+                    self.remember_script_dir(&path);
+                    self.refresh_scripts();
                     self.sessions.notice = Some(match std::fs::write(&path, text) {
                         Ok(()) => fl!("rec-saved", path = path.display().to_string()),
                         Err(e) => fl!("rec-failed", error = e.to_string()),
@@ -1188,9 +1217,23 @@ impl App {
                 }
             }
             Action::RunScript => {
-                return Task::perform(crate::script::pick(fl!("script-pick")), |p| {
-                    cosmic::Action::App(Message::Script(crate::script::ScMsg::Picked(p)))
-                });
+                return Task::perform(
+                    crate::script::pick(fl!("script-pick"), self.script_start_dir()),
+                    |p| cosmic::Action::App(Message::Script(crate::script::ScMsg::Picked(p))),
+                );
+            }
+            Action::Listed(i) => {
+                let all = [self.script_files.clone(), self.recent_files()].concat();
+                if let Some(path) = all.get(usize::from(i)).cloned() {
+                    return self.script(crate::script::ScMsg::Picked(Some(path)));
+                }
+            }
+            Action::ScriptsRefresh => self.refresh_scripts(),
+            Action::ScriptsFolder => {
+                return Task::perform(
+                    crate::script::pick_folder(fl!("script-folder-title"), self.scripts_dir()),
+                    |p| cosmic::Action::App(Message::ScriptsFolder(p)),
+                );
             }
             Action::ScriptConsole => return self.open_console(),
             Action::CancelScript => {
@@ -1240,7 +1283,12 @@ impl App {
     fn script(&mut self, m: crate::script::ScMsg) -> Task<Message> {
         use crate::script::ScMsg;
         let (start, m) = match m {
-            ScMsg::Picked(p) => (Some(p.map(|p| (None, p, Vec::new()))), None),
+            ScMsg::Picked(p) => {
+                if let Some(p) = &p {
+                    self.remember_script(p);
+                }
+                (Some(p.map(|p| (None, p, Vec::new()))), None)
+            }
             ScMsg::Start(p, a) => (Some(Some((None, p, a))), None),
             ScMsg::StartOn(t, p, a) => (Some(Some((Some(t), p, a))), None),
             m => (None, Some(m)),
@@ -1352,6 +1400,61 @@ impl App {
         Task::batch(tasks)
     }
 
+    /// The folder the Script menu lists.
+    fn scripts_dir(&self) -> std::path::PathBuf {
+        match self.config.scripts_folder.as_str() {
+            "" => shagshell_core::script::default_dir(),
+            f => shagshell_core::script::expand_home(std::path::Path::new(f)),
+        }
+    }
+
+    /// Where Run… and Save Recording open: the folder of the last script, else the menu's folder.
+    fn script_start_dir(&self) -> std::path::PathBuf {
+        match self.config.script_dir.as_str() {
+            "" => self.scripts_dir(),
+            d => std::path::PathBuf::from(d),
+        }
+    }
+
+    fn refresh_scripts(&mut self) {
+        self.script_files = shagshell_core::script::list_dir(&self.scripts_dir());
+    }
+
+    fn recent_files(&self) -> Vec<std::path::PathBuf> {
+        (self.config.recent_scripts.iter())
+            .map(std::path::PathBuf::from)
+            .filter(|p| p.is_file())
+            .collect()
+    }
+
+    fn script_labels(&self, files: &[std::path::PathBuf]) -> Vec<String> {
+        files
+            .iter()
+            .map(|p| {
+                p.file_name()
+                    .map_or_else(String::new, |n| n.to_string_lossy().into_owned())
+            })
+            .collect()
+    }
+
+    fn remember_script_dir(&mut self, path: &std::path::Path) {
+        if let Some(d) = path.parent() {
+            self.config.script_dir = d.display().to_string();
+            self.save_config();
+        }
+    }
+
+    /// A script picked or run from the menu: its folder is where the next chooser opens, and it
+    /// is the newest of the recent ones.
+    fn remember_script(&mut self, path: &std::path::Path) {
+        self.config.recent_scripts = shagshell_core::script::recent_push(
+            &self.config.recent_scripts,
+            &path.display().to_string(),
+            10,
+        );
+        self.remember_script_dir(path);
+    }
+
     /// Script → Console: the window, raised when it is already there.
     fn open_console(&mut self) -> Task<Message> {
         if let Some(w) = self.scripts.console_win {
@@ -1411,7 +1514,7 @@ impl App {
             "Recorded by ShagShell Secure from «{title}», {when}"
         ));
         Task::perform(
-            crate::script::save_script(fl!("rec-save-title")),
+            crate::script::save_script(fl!("rec-save-title"), self.script_start_dir()),
             move |p| cosmic::Action::App(Message::RecordSaved(text.clone(), p)),
         )
     }
