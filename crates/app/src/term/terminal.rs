@@ -185,6 +185,8 @@ pub struct Terminal {
     dim_font_weight: Weight,
     mouse_reporter: MouseReporter,
     notifier: Notifier,
+    /// The session log: what the PTY gives is copied to it while it is on.
+    pub log: super::log::Tap,
     search_regex_opt: Option<RegexSearch>,
     search_value: String,
     size: Size,
@@ -202,6 +204,7 @@ impl Terminal {
         options: Options,
         app_config: &AppConfig,
         colors: Colors,
+        log: super::log::Tap,
     ) -> Result<Self, io::Error> {
         let font_stretch = app_config.typed_font_stretch();
         let font_weight = app_config.font_weight;
@@ -255,7 +258,8 @@ impl Terminal {
         )));
 
         let window_id = 0;
-        let pty = tty::new(&options, size.into(), window_id)?;
+        let pty =
+            super::log::TeePty::new(tty::new(&options, size.into(), window_id)?, log.clone())?;
         let pty_event_loop =
             EventLoop::new(term.clone(), event_proxy, pty, options.drain_on_exit, false)?;
         let notifier = Notifier(pty_event_loop.channel());
@@ -275,6 +279,7 @@ impl Terminal {
             mouse_reporter: Default::default(),
             needs_update: true,
             notifier,
+            log,
             search_regex_opt: None,
             search_value: String::new(),
             size,

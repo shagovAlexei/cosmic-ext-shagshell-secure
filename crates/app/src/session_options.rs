@@ -28,6 +28,7 @@ pub enum Target {
 enum Category {
     Connection,
     Ssh2,
+    Log,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -39,6 +40,7 @@ pub enum Field {
     Identity,
     Keepalive,
     Extra,
+    LogFile,
 }
 
 #[derive(Clone, Debug)]
@@ -57,6 +59,8 @@ pub enum SoMsg {
     Credential(usize),
     /// «Button Bar»: 0 = none, else the n-th bar.
     Bar(usize),
+    LogAppend(bool),
+    LogRaw(bool),
     /// «Забыть»: the session's saved secrets removed.
     Forget,
     Ok,
@@ -102,6 +106,7 @@ impl SessionOptions {
                     .activate()
             })
             .insert(|b| b.text(fl!("so-ssh2")).data(Category::Ssh2))
+            .insert(|b| b.text(fl!("so-log")).data(Category::Log))
             .build();
         let name = match &target {
             Target::Edit { id } => name_of(id).to_string(),
@@ -163,10 +168,13 @@ impl SessionOptions {
                 Field::Identity => f.identity = v,
                 Field::Keepalive => f.keepalive = v,
                 Field::Extra => f.extra = v,
+                Field::LogFile => f.log_file = v,
             },
             SoMsg::Category(e) => self.categories.activate(e),
             SoMsg::Protocol(i) => f.protocol = Protocol::ALL.get(i).copied().unwrap_or_default(),
             SoMsg::Saved(w, saved) if w == self.window => self.saved = saved,
+            SoMsg::LogAppend(on) => f.log_append = on,
+            SoMsg::LogRaw(on) => f.log_raw = on,
             SoMsg::Bar(i) => {
                 f.button_bar = match i {
                     0 => String::new(),
@@ -205,6 +213,18 @@ impl SessionOptions {
         let f = &self.form;
         let local = f.protocol == Protocol::Local;
         let fields: Vec<Element<'_, Message>> = match category {
+            Some(Category::Log) => vec![
+                field(fl!("so-log-file"), Field::LogFile, &f.log_file, false),
+                widget::text::caption(fl!("so-log-hint")).into(),
+                widget::checkbox(f.log_append)
+                    .label(fl!("so-log-append"))
+                    .on_toggle(move |v| m(SoMsg::LogAppend(v)))
+                    .into(),
+                widget::checkbox(f.log_raw)
+                    .label(fl!("so-log-raw"))
+                    .on_toggle(move |v| m(SoMsg::LogRaw(v)))
+                    .into(),
+            ],
             Some(Category::Ssh2) if local => vec![widget::text::body(fl!("so-ssh-only")).into()],
             Some(Category::Ssh2) => vec![
                 widget::column::with_children(vec![

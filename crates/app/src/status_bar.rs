@@ -6,22 +6,27 @@ use cosmic::Element;
 use cosmic::widget;
 
 /// A tab's state: connected, protocol, a terminal's cols × rows.
-pub type Status = (bool, String, Option<(usize, usize)>);
+pub type Status = (bool, String, Option<(usize, usize)>, bool);
 
 /// `tab`: the active tab's (connected, protocol, a terminal's cols × rows); none open:
 /// «Not connected».
 pub fn view(tab: Option<Status>, notice: Option<&str>) -> Element<'_, Message> {
     let text = match tab {
         None => fl!("status-disconnected"),
-        Some((alive, protocol, size)) => {
+        Some((alive, protocol, size, logging)) => {
             let state = match alive {
                 true => fl!("status-connected"),
                 false => fl!("status-ended"),
             };
-            match size {
+            let mut text = match size {
                 Some((cols, rows)) => format!("{state} · {protocol} · {cols}×{rows}"),
                 None => format!("{state} · {protocol}"),
+            };
+            if logging {
+                text.push_str(" · ● ");
+                text.push_str(&fl!("status-logging"));
             }
+            text
         }
     };
     let mut row = widget::row::with_capacity(2)

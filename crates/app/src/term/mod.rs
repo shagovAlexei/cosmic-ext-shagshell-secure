@@ -1,6 +1,7 @@
 //! cosmic-term's terminal (via shagoff-commander), one per tab. Every connection is a program in
 //! its PTY: a local shell now, `ssh` / `telnet` / `picocom` later.
 
+pub mod log;
 mod mouse_reporter;
 pub mod style;
 pub mod terminal;
@@ -33,6 +34,7 @@ pub fn start(
     dark: bool,
     bg: u32,
     style: &style::Style,
+    log: log::Tap,
 ) -> std::io::Result<Terminal> {
     terminal::WINDOW_BG_COLOR.store(bg, Ordering::SeqCst);
     let colors = colors(dark);
@@ -48,7 +50,7 @@ pub fn start(
         scrolling_history: HISTORY,
         ..term::Config::default()
     };
-    let mut t = Terminal::new(id, tx, config, options, style, colors)?;
+    let mut t = Terminal::new(id, tx, config, options, style, colors, log)?;
     t.set_config(style, &colors);
     Ok(t)
 }

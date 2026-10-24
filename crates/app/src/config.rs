@@ -103,10 +103,29 @@ pub struct Config {
     pub command_window_visible: bool,
     /// View → Button Bar.
     pub button_bar_visible: bool,
+    /// Where session logs go ("" = `~/ShagShellLogs`).
+    pub log_dir: String,
+    /// The log name when it is started by hand (File → Log Session).
+    pub log_template: String,
     /// SFTP tabs open with dot files shown (Ctrl+H flips it in a tab).
     pub sftp_show_hidden: bool,
     /// SFTP: the target is already there.
     pub sftp_overwrite: ExistsRule,
+}
+
+impl Config {
+    /// The folder of session logs: `~`, `~/x` or absolute; a relative one is under home too.
+    pub fn log_dir(&self) -> std::path::PathBuf {
+        let home = std::env::home_dir().unwrap_or_else(std::env::temp_dir);
+        match self.log_dir.trim() {
+            "" => home.join("ShagShellLogs"),
+            "~" => home,
+            d => match d.strip_prefix("~/") {
+                Some(rest) => home.join(rest),
+                None => home.join(d), // an absolute `d` replaces `home` in `join`
+            },
+        }
+    }
 }
 
 impl Default for Config {
@@ -121,6 +140,8 @@ impl Default for Config {
             app_theme: AppTheme::System,
             command_window_visible: false,
             button_bar_visible: true,
+            log_dir: String::new(),
+            log_template: "%S_%Y-%M-%D_%h%m%s.log".into(),
             sftp_show_hidden: true,
             sftp_overwrite: ExistsRule::Ask,
         }

@@ -31,6 +31,17 @@ pub enum Protocol {
     },
 }
 
+/// A session log asked for: the file name template and how to write it.
+#[derive(Clone, Debug, Default)]
+pub struct LogSpec {
+    pub file: String,
+    pub append: bool,
+    pub raw: bool,
+    /// For the template's `%P` and `%U`.
+    pub port: Option<u16>,
+    pub user: String,
+}
+
 /// What a tab runs (again on Reconnect).
 #[derive(Clone, Debug)]
 pub struct Launch {
@@ -43,6 +54,8 @@ pub struct Launch {
     pub protocol: Protocol,
     /// An SFTP tab (`args`: `sftp_args`), not a terminal.
     pub sftp: bool,
+    /// Logged from the start (the session says so).
+    pub log: Option<LogSpec>,
 }
 
 impl Launch {
@@ -55,6 +68,7 @@ impl Launch {
             title: fl!("tab-local-shell"),
             protocol: Protocol::Local,
             sftp: false,
+            log: None,
         }
     }
 
@@ -184,6 +198,10 @@ pub struct Tabs {
     sftp_tx: Option<crate::sftp_worker::Events>,
     /// Global Options → SFTP: the answer to a conflict, dot files shown in a new tab.
     sftp_prefs: (Option<shagshell_core::sftp::queue::Choice>, bool),
+    /// Global Options → Logging: the folder, and the name used when a log is started by hand.
+    log_prefs: (std::path::PathBuf, String),
+    /// What the last log action had to say (a log that could not start / stopped).
+    notice: Mutex<Option<String>>,
     /// A live tab asked to close: waits for the dialog.
     confirm: Option<(pane_grid::Pane, Entity)>,
     /// The tab right-clicked last: `TabCmd`s are about it.
@@ -287,7 +305,10 @@ impl Tabs {
             let term = t.term.lock();
             (term.columns(), term.screen_lines())
         });
-        Some((tab.live(), label, size))
+        let logging = tab
+            .terminal()
+            .is_some_and(|t| t.lock().unwrap_or_else(|e| e.into_inner()).log.active());
+        Some((tab.live(), label, size, logging))
     }
 
     /// The active tab, if it is an SFTP one (its keys are routed to it).
@@ -364,15 +385,15 @@ impl Tabs {
     }
 
     /// For the menu bar: (any tab, the active one ended, its group can be split).
-    pub fn menu_state(&self) -> (bool, bool, bool) {
+    pub fn menu_state(&self) -> (bool, bool, bool, bool) {
         let Some((pane, _, id)) = self.active() else {
-            return (false, false, false);
+            return (false, false, false, false);
         };
         let live = self.tabs.get(&id).is_some_and(Tab::live);
         let many = (self.grid.as_ref())
             .and_then(|g| g.get(pane))
             .is_some_and(|g| g.model.len() > 1);
-        (true, live, many)
+        (true, live, many, self.logging())
     }
 
     fn tab_at(&self, pane: pane_grid::Pane, e: Entity) -> Option<(pane_grid::Pane, Entity, TabId)> {
@@ -440,7 +461,8 @@ impl Tabs {
         if !env.is_empty() {
             env.push(("SHAGSHELL_TAB".into(), id.to_string()));
         }
-        term::start(
+        let tap = term::log::Tap::default();
+        let t = term::start(
             id,
             tx,
             &launch.program,
@@ -449,10 +471,91 @@ impl Tabs {
             *dark,
             *bg,
             style,
+            tap.clone(),
         )
         .inspect_err(|e| log::error!("start {}: {e}", launch.program))
-        .ok()
-        .map(|t| Body::Terminal(Box::new(Mutex::new(t))))
+        .ok()?;
+        if let Some(spec) = launch.log.as_ref().filter(|s| !s.file.is_empty())
+            && let Err(e) = self.begin_log(&tap, launch, spec)
+        {
+            *self.notice.lock().unwrap_or_else(|e| e.into_inner()) = Some(e);
+        }
+        Some(Body::Terminal(Box::new(Mutex::new(t))))
+    }
+
+    /// The log of `launch` started per `spec`; the file it writes, or why not.
+    fn begin_log(
+        &self,
+        tap: &term::log::Tap,
+        launch: &Launch,
+        spec: &LogSpec,
+    ) -> Result<(), String> {
+        use shagshell_core::logfile::{Ctx, resolve};
+        let host = match &launch.protocol {
+            Protocol::Ssh { host, .. } => host.as_str(),
+            Protocol::Local => "",
+        };
+        let ctx = Ctx {
+            host,
+            session: &launch.title,
+            port: spec.port,
+            user: &spec.user,
+            now: shagshell_core::logfile::now(),
+        };
+        let home = std::env::home_dir().unwrap_or_default();
+        let path = resolve(&self.log_prefs.0, &spec.file, &ctx, &home);
+        tap.start(&path, spec.append, spec.raw)
+            .map_err(|e| format!("{}: {e}", path.display()))
+    }
+
+    pub fn set_log_prefs(&mut self, config: &Config) {
+        self.log_prefs = (config.log_dir(), config.log_template.clone());
+    }
+
+    /// Log Session: the active tab's log on / off (a started one by the session's own template,
+    /// else the one of Global Options). `Err`: why it could not start.
+    pub fn toggle_log(&mut self) -> Result<(), String> {
+        let Some((_, _, id)) = self.active() else {
+            return Ok(());
+        };
+        let Some(tab) = self.tabs.get(&id) else {
+            return Ok(());
+        };
+        let Some(t) = tab.terminal() else {
+            return Ok(());
+        };
+        let tap = t.lock().unwrap_or_else(|e| e.into_inner()).log.clone();
+        if tap.active() {
+            tap.stop();
+            return Ok(());
+        }
+        // The session's own name template, else the one of Global Options; the port and user are
+        // the session's either way.
+        let mut spec = tab.launch.log.clone().unwrap_or_default();
+        if spec.file.is_empty() {
+            spec.file = self.log_prefs.1.clone();
+        }
+        self.begin_log(&tap, &tab.launch, &spec)
+    }
+
+    /// The active tab is being logged.
+    fn logging(&self) -> bool {
+        self.active()
+            .and_then(|(_, _, id)| self.terminal(id))
+            .is_some_and(|t| t.lock().unwrap_or_else(|e| e.into_inner()).log.active())
+    }
+
+    /// What a log said that the user should see: it could not start, or stopped (disk full).
+    pub fn take_notice(&self) -> Option<String> {
+        let own = self.notice.lock().unwrap_or_else(|e| e.into_inner()).take();
+        own.or_else(|| {
+            self.tabs.values().filter_map(Tab::terminal).find_map(|t| {
+                t.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .log
+                    .take_failure()
+            })
+        })
     }
 
     /// Start the program again in a tab whose program ended (SecureCRT's Reconnect / Enter).
@@ -635,6 +738,12 @@ impl Tabs {
             Action::CloseTab => on_active(self, TabCmd::Close),
             Action::Reconnect => on_active(self, TabCmd::Reconnect),
             Action::Disconnect => on_active(self, TabCmd::Disconnect),
+            Action::ToggleLog => {
+                if let Err(e) = self.toggle_log() {
+                    *self.notice.lock().unwrap_or_else(|e| e.into_inner()) = Some(e);
+                }
+                Task::none()
+            }
             Action::ConnectSftp => on_active(self, TabCmd::Sftp),
             Action::NextTab | Action::PrevTab => {
                 if let Some(group) = self.focused_group_mut() {

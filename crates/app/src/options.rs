@@ -80,6 +80,28 @@ pub fn view(config: &Config, separate: Option<bool>) -> ContextDrawer<'_, Messag
             widget::toggler(config.sftp_show_hidden)
                 .on_toggle(set(|c, on| c.sftp_show_hidden = on)),
         ));
+    let text = |value: &str, f: fn(&mut Config, String)| -> cosmic::Element<'static, Message> {
+        let c = config.clone();
+        widget::text_input("", value.to_string())
+            .on_input(move |v| {
+                let mut c = c.clone();
+                f(&mut c, v);
+                Message::SetConfig(c)
+            })
+            .width(cosmic::iced::Length::Fixed(260.0))
+            .into()
+    };
+    let logging = settings::section()
+        .title(fl!("options-logging"))
+        .add(settings::item(
+            fl!("options-log-dir"),
+            text(&config.log_dir, |c, v| c.log_dir = v),
+        ))
+        .add(settings::item(
+            fl!("options-log-template"),
+            text(&config.log_template, |c, v| c.log_template = v),
+        ))
+        .add(widget::text::caption(fl!("options-log-hint")));
     let terminal = settings::section()
         .title(fl!("options-terminal"))
         .add(settings::item(
@@ -114,6 +136,7 @@ pub fn view(config: &Config, separate: Option<bool>) -> ContextDrawer<'_, Messag
     let content = widget::column::with_children(vec![
         interface.into(),
         terminal.into(),
+        logging.into(),
         sftp.into(),
         passwords.into(),
     ])
