@@ -9,7 +9,7 @@ use cosmic::iced::{Length, mouse};
 use cosmic::widget::{self, menu};
 use cosmic::{Element, iced};
 use shagshell_core::session::rows::{self, Row};
-use shagshell_core::session::store::{NameError, Node, Store, valid_name};
+use shagshell_core::session::store::{NameError, Node, Store, name_of, valid_name};
 use std::collections::{BTreeSet, HashMap};
 
 pub const MIN_WIDTH: f32 = 160.0;
@@ -19,6 +19,8 @@ pub const MAX_WIDTH: f32 = 600.0;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SmCmd {
     Connect,
+    /// Session Options for the session.
+    Edit,
     Rename,
     Delete,
     NewSession,
@@ -93,8 +95,12 @@ pub struct Outcome {
     pub open: Vec<String>,
     /// Width or open folders changed: save the config.
     pub save: bool,
-    /// «New session…»: Quick Connect with «Save» on, into this folder.
+    /// «New session…»: Session Options for a new one in this folder.
     pub new_session: Option<String>,
+    /// «Edit…»: Session Options for this session.
+    pub edit: Option<String>,
+    /// A session or folder renamed / moved (old id, new id): its open tabs follow.
+    pub moved: Option<(String, String)>,
 }
 
 pub struct SessionManager {
@@ -304,6 +310,7 @@ impl SessionManager {
                         match self.store.move_to(&id, &into) {
                             Ok(new) => {
                                 self.retarget_expanded(&id, &new);
+                                out.moved = Some((id.clone(), new.clone()));
                                 if !into.is_empty() {
                                     self.expanded.insert(into);
                                 }
@@ -395,6 +402,15 @@ impl SessionManager {
         }
     }
 
+    /// The one selected row, if it is a session (Options → Session Options… with no tab).
+    pub fn one_session(&self) -> Option<String> {
+        let mut it = self.selected.iter();
+        match (it.next(), it.next()) {
+            (Some(id), None) if !self.store.is_folder(id) => Some(id.clone()),
+            _ => None,
+        }
+    }
+
     /// The selected sessions, folders standing for everything in them (SecureCRT "Connect all").
     pub fn connect(&self) -> Vec<String> {
         rows::sessions_under(&self.tree, &self.selected)
@@ -405,6 +421,7 @@ impl SessionManager {
         let one = self.anchor.clone().filter(|a| self.selected.contains(a));
         match cmd {
             SmCmd::Connect => out.open = self.connect(),
+            SmCmd::Edit => out.edit = one.filter(|id| !self.store.is_folder(id)),
             SmCmd::NewSession => out.new_session = Some(self.target_folder()),
             SmCmd::NewFolder => {
                 self.dialog = Some(SmDialog::NewFolder {
@@ -487,6 +504,7 @@ impl SessionManager {
                 match new {
                     Some((old, id)) => {
                         self.retarget_expanded(&old, &id);
+                        out.moved = Some((old, id.clone()));
                         self.select(&id);
                     }
                     None => self.reload(),
@@ -565,6 +583,11 @@ impl SessionManager {
                 "folder-new-symbolic",
                 fl!("sm-new-folder"),
                 Some(m(SmMsg::Menu(SmCmd::NewFolder))),
+            ),
+            tool(
+                "document-edit-symbolic",
+                fl!("sm-edit"),
+                self.one_session().map(|_| m(SmMsg::Menu(SmCmd::Edit))),
             ),
             tool(
                 "edit-delete-symbolic",
@@ -688,12 +711,17 @@ impl SessionManager {
     }
 }
 
-fn row_menu(_folder: bool) -> Vec<menu::Tree<Message>> {
-    use menu::Item::{Button, Divider};
+fn row_menu(folder: bool) -> Vec<menu::Tree<Message>> {
+    use menu::Item::{Button, ButtonDisabled, Divider};
+    let edit = match folder {
+        true => ButtonDisabled(fl!("sm-edit-menu"), None, SmCmd::Edit),
+        false => Button(fl!("sm-edit-menu"), None, SmCmd::Edit),
+    };
     menu::items(
         &HashMap::new(),
         vec![
             Button(fl!("sm-connect"), None, SmCmd::Connect),
+            edit,
             Divider,
             Button(fl!("sm-rename-menu"), None, SmCmd::Rename),
             Button(fl!("sm-delete-menu"), None, SmCmd::Delete),
@@ -712,10 +740,6 @@ fn unfocus() -> Task<Message> {
 
 fn parent(id: &str) -> &str {
     id.rsplit_once('/').map_or("", |(p, _)| p)
-}
-
-fn name_of(id: &str) -> &str {
-    id.rsplit_once('/').map_or(id, |(_, n)| n)
 }
 
 pub fn check(name: &str, at_root: bool) -> Result<(), String> {

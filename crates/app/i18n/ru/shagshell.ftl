@@ -98,3 +98,22 @@ qc-connect = Подключить
 qc-host-required = Введите хост (без пробелов, не с «-»)
 qc-bad-port = Порт — число от 1 до 65535
 name-invalid = Такое имя использовать нельзя
+
+# Session Options
+menu-edit-default = Изменить сессию по умолчанию…
+sm-edit = Параметры сессии
+sm-edit-menu = Изменить…
+so-title = Параметры сессии — { $name }
+so-title-new = Новая сессия
+so-title-default = Сессия по умолчанию
+so-connection = Подключение
+so-ssh2 = SSH2
+so-name = Имя
+so-identity = Закрытый ключ
+so-identity-agent = (ssh-agent / ключи ~/.ssh)
+so-browse = Обзор…
+so-keepalive = Keepalive, секунд (ServerAliveInterval)
+so-extra = Дополнительные параметры ssh
+so-bad-keepalive = Keepalive — число секунд
+so-nothing = Выделите сессию в дереве или откройте её вкладку
+ok = OK

@@ -7,7 +7,7 @@
 - [x] 0. Bootstrap: репозиторий, CLAUDE.md, архитектура, разбор SecureCRT, навык `shagshell-feature`
 - [x] 1. Каркас: workspace, пустое окно libcosmic, justfile, CI, i18n en/ru, `.desktop`, metainfo, иконка
 - [x] 2. Терминал: вкладка локального shell, вкладки + `pane_grid` (tab groups)
-- [ ] 3. Сессии: ~~3a — модель + хранилище, Session Manager, Quick Connect, запуск ssh, импорт ~/.ssh/config~~; 3b — окно Session Options
+- [x] 3. Сессии: 3a — модель + хранилище, Session Manager, Quick Connect, запуск ssh, импорт ~/.ssh/config; 3b — окно Session Options
 - [ ] 4. Аутентификация: askpass-сокет, keyring, Credentials Manager, диалог host key
 - [ ] 5. SFTP: двухпанельная вкладка + очередь передач (drag-drop, докачка, правила перезаписи)
 - [ ] 6. Command Window (send to all) и Button Bar: именованные панели, Send String / Menu Function / Launch App, панель на сессию

@@ -110,3 +110,35 @@
 - [ ] `headless.sh sshd start|stop`: user-space `/usr/sbin/sshd -D -f $DIR/sshd/sshd_config -p 2222` (temp host key, temp client key `id_test` in `authorized_keys`, `UsePAM no`, `StrictModes no`, `ListenAddress 127.0.0.1`), prints the `ssh` options to use; sessions in headless point to it with `identity = $DIR/sshd/id_test`, `extra = "-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$DIR/sshd/known_hosts"`.
 - [ ] TESTING.md phase 3a checklist; ROADMAP (3a); CLAUDE.md (session module, launch); version 0.3.0
 - [ ] `/code-review`, fix confirmed; PR based on `feat/terminal`
+
+---
+
+# 3b — Session Options window
+
+**Goal:** SecureCRT's Session Options as a window of its own: new session, edit, the Default template.
+**Spec:** `.claude/docs/specs/03-sessions.md` § Session Options (3b). Branch `feat/session-options` (on `feat/sessions`), version 0.4.0.
+
+## Task 1: `core::session::form` (TDD)
+
+- `pub struct Form { name, host, port, user, identity, keepalive, extra: String }` — the window's fields as typed.
+- `Form::from_session(name: &str, s: &Session) -> Form`; `Form::apply(&self, need_host: bool) -> Result<Session, FormError>` — fields trimmed, empty → `None` (every `Session` field is in the form; a later field not in it will need a `base`).
+- `pub enum FormError { Host, Port, Keepalive, Extra }`; `pub fn valid_host(&str) -> bool` (non-empty, no whitespace, no leading `-`), Quick Connect uses it too.
+- Tests: `round_trip`, `empty_fields_are_none`, `bad_port` (`0`, `70000`, `x`), `bad_keepalive`, `bad_extra` (unbalanced quote), `host_required_unless_default`, `host_with_dash_rejected`.
+
+## Task 2: `app::session_options` + wiring
+
+- `SessionOptions { window: window::Id, target: Target, form, categories: segmented_button model, error }`, `Target::{New { folder }, Edit { id }, Default}`; `SoMsg::{Field(Field, String), Category(Entity), Browse, Browsed(Option<String>), Ok, Cancel}`.
+- Window: `window::open` 760×540, `decorations: false`, `exit_on_close_request: false`; `view_window(id)` draws `header_bar` (close = Cancel, drag) + categories left + fields right + [Cancel] [OK]; window background class. A second call raises it (`gain_focus`).
+- OK (in the app, it owns the store): New → `check` name, `Store::create` + apply + save, select it; Edit → `store.get(id)` as base (gone → error, no file recreated); Default → `get("Default")` or `Session::default()`, `need_host = false`.
+- «Обзор…»: `cosmic::dialog::file_chooser::open::Dialog` in `~/.ssh` (libcosmic feature `xdg-portal`).
+- Entry points: tree menu «Изменить…» (`SmCmd::Edit`, sessions only), «Новая сессия…» (now this window, not Quick Connect), toolbar / Options → Session Options… (active tab's session, else the tree's one selected session), Options → Edit Default Session… (`Action::EditDefault`). `Protocol::Ssh` carries the session id.
+- Keys: the app's key subscriptions act only on the main window's events (Alt+Q in the options window must not open Quick Connect).
+- `close_requests` for the options window = Cancel.
+
+## Review Focus
+
+- Session renamed / deleted while its window is open → OK says so, writes nothing.
+- Default.toml missing → the window opens empty, OK creates it.
+- Keys typed in the options window never reach the main window's terminal or tree.
+- Editing a session that is open in a tab: Reconnect replays the tab's stored command; the new options apply on the next connect from the tree.
+- Main window closed while options is open → the app exits.

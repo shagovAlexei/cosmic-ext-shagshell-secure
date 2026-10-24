@@ -64,7 +64,7 @@ We do **not** implement SSH. The system OpenSSH does it; we drive it.
 ### Workspace
 
 - **`crates/core` (`shagshell-core`)** has no libcosmic dependency. All logic lives here and is unit-tested:
-  - `session/{model,store,rows}.rs` — `Session` (every field defaulted, unknown ignored), the tree on disk (`Store`: load / create from Default / atomic save / rename / move / delete), the rows on screen (`rows::visible` with filter, Shift ranges, `sessions_under` for Connect all);
+  - `session/{model,store,rows,form}.rs` — `Session` (every field defaulted, unknown ones kept in `rest` and written back), the tree on disk (`Store`: load / create from Default / atomic save / rename / move / delete), the rows on screen (`rows::visible` with filter, Shift ranges, `sessions_under` for Connect all), the Session Options fields → checked `Session` (`form`);
   - `sshconfig.rs` — `~/.ssh/config` hosts → sessions (alias only; ssh applies the rest);
   - `launch.rs` — `Session` → argv + env (pure, tested against expected argv);
   - `askpass.rs` — prompt classification + socket protocol;
@@ -81,6 +81,9 @@ We do **not** implement SSH. The system OpenSSH does it; we drive it.
   - `options.rs`: Options → Global Options drawer.
   - `session_manager.rs`: the tree pane (own `SmMsg`, `Outcome { open, save, new_session }` back to the app), dialogs for rename / new folder / delete, drag (press a row, enter another, release anywhere — mouse events subscribed only while held), splitter. A click in the tree takes the keys from the terminal (`unfocus`), so Enter / F2 / Delete reach it.
   - `quick_connect.rs`: Alt+Q dialog; saving goes through `Store::create` (Default template).
+  - `session_options.rs`: Session Options, a window of its own (`window::open`, drawn in `App::view_window`, `header_bar` with drag / close); `Target::{New, Edit, Default}`; fields checked by `core::session::form`; the app saves (it owns the store). One at a time, a second call raises it. «Новая сессия…» opens it, not Quick Connect.
+  - A session saved, renamed or moved: `App::sessions_changed` rebuilds the `Launch` of the tabs opened from it (`store::retarget`), so Reconnect / Clone / Session Options follow it.
+  - Key and pointer subscriptions are tagged with their window (`Message::Input`) and acted on only from the main one: keys typed in Session Options never reach the terminal or the tree.
   - App keys (`key_action`) are handled whatever the event status: a text field would take Alt+Q as a letter. Enter and the tree's keys only when no widget took them.
   - Popups (menus) are windows: `App::view_window` returns an empty `Space` for them, or libcosmic panics ("no view for window"). A `segmented_button` context menu is one root whose children are one menu per tab.
   - `main.rs` also dispatches the `askpass` subcommand and `--check`.

@@ -23,7 +23,11 @@ const TAB_MIME: &str = "application/x-shagshell-tab";
 #[derive(Clone, Debug)]
 pub enum Protocol {
     Local,
-    Ssh { host: String },
+    /// `session`: the saved one it was opened from (Quick Connect without saving: none).
+    Ssh {
+        host: String,
+        session: Option<String>,
+    },
 }
 
 /// What a tab runs (again on Reconnect).
@@ -50,7 +54,7 @@ impl Launch {
     fn label(&self) -> String {
         match &self.protocol {
             Protocol::Local => fl!("tab-local-shell"),
-            Protocol::Ssh { host } => format!("SSH · {host}"),
+            Protocol::Ssh { host, .. } => format!("SSH · {host}"),
         }
     }
 }
@@ -146,6 +150,19 @@ impl Tabs {
         let term = t.term.lock();
         let label = tab.launch.label();
         Some((tab.alive, label, term.columns(), term.screen_lines()))
+    }
+
+    /// What every tab runs (again on Reconnect / Clone).
+    pub fn launches_mut(&mut self) -> impl Iterator<Item = &mut Launch> {
+        self.tabs.values_mut().map(|t| &mut t.launch)
+    }
+
+    /// The saved session the active tab was opened from.
+    pub fn active_session(&self) -> Option<String> {
+        match &self.tabs.get(&self.active()?.2)?.launch.protocol {
+            Protocol::Ssh { session, .. } => session.clone(),
+            Protocol::Local => None,
+        }
     }
 
     /// Focused group, its active entity and that tab's id.

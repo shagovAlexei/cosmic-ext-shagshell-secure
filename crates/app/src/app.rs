@@ -4,6 +4,7 @@ use crate::config::{self, Config};
 use crate::menu::Action;
 use crate::quick_connect::{QcMsg, QuickConnect};
 use crate::session_manager::{SessionManager, SmMsg, TreeKey};
+use crate::session_options::{SessionOptions, SoMsg, Target};
 use crate::tabs::{self, Tabs, TabsMsg};
 use crate::{about, fl, menu, options, status_bar, toolbar};
 use cosmic::app::{Core, Task};
@@ -12,6 +13,7 @@ use cosmic::iced::keyboard::{self, Modifiers, key::Code, key::Physical};
 use cosmic::iced::{Length, Subscription, event};
 use cosmic::widget::{self, about::About};
 use cosmic::{Application, Element};
+use shagshell_core::session::store::DEFAULT;
 
 pub const APP_ID: &str = "io.github.shagovalexei.ShagShellSecure";
 
@@ -31,6 +33,8 @@ pub struct App {
     tabs: Tabs,
     sessions: SessionManager,
     quick: Option<QuickConnect>,
+    /// The Session Options window, when open (one at a time).
+    options: Option<SessionOptions>,
     /// ssh's ControlMaster sockets (`launch::ensure_control_dir`).
     control_dir: std::path::PathBuf,
 }
@@ -51,6 +55,10 @@ pub enum Message {
     Surface(cosmic::surface::Action),
     Sessions(SmMsg),
     QuickConnect(QcMsg),
+    SessionOptions(SoMsg),
+    /// Keys and the pointer: acted on only when from the main window (not Session Options).
+    Input(cosmic::iced::window::Id, Box<Message>),
+    CloseRequested(cosmic::iced::window::Id),
 }
 
 impl Application for App {
@@ -86,6 +94,7 @@ impl Application for App {
             tabs: Tabs::default(),
             sessions,
             quick: None,
+            options: None,
             control_dir,
         };
         (app, Task::none())
@@ -134,7 +143,13 @@ impl Application for App {
                 let mut tasks: Vec<_> = out.task.into_iter().collect();
                 tasks.push(self.open_sessions(&out.open));
                 if let Some(folder) = out.new_session {
-                    tasks.push(self.quick_connect(Some(folder)));
+                    tasks.push(self.open_options(Target::New { folder }));
+                }
+                if let Some((old, new)) = &out.moved {
+                    self.sessions_changed(old, new);
+                }
+                if let Some(id) = out.edit {
+                    tasks.push(self.open_options(Target::Edit { id }));
                 }
                 return Task::batch(tasks);
             }
@@ -145,6 +160,21 @@ impl Application for App {
                 };
                 return self.quick_connected(req);
             }
+            Message::SessionOptions(m) => return self.session_options(m),
+            Message::Input(w, m) if Some(w) == self.core.main_window_id() => {
+                return self.update(*m);
+            }
+            // Esc in Session Options (no field took it): Cancel, as SecureCRT's dialogs.
+            Message::Input(w, m) if self.options.as_ref().is_some_and(|o| o.window == w) => {
+                if let Message::Sessions(SmMsg::Key(TreeKey::Clear)) = *m {
+                    return self.session_options(SoMsg::Cancel);
+                }
+            }
+            Message::Input(..) => {}
+            Message::CloseRequested(w) if self.options.as_ref().is_some_and(|o| o.window == w) => {
+                return self.session_options(SoMsg::Cancel);
+            }
+            Message::CloseRequested(_) => {}
         }
         Task::none()
     }
@@ -155,23 +185,31 @@ impl Application for App {
             // them through). Taken by a text field: only the Alt / Ctrl+Tab ones (Alt+Q would be a
             // «q» there), never Ctrl+Shift+C / V / W — the field's paste must not paste into the
             // terminal too. Enter and the tree's keys only when no widget took them.
-            event::listen_with(|e, status, _| match e {
-                cosmic::iced::Event::Keyboard(keyboard::Event::KeyPressed {
-                    physical_key,
-                    modifiers,
-                    repeat: false,
-                    ..
-                }) => match key_action(&physical_key, modifiers) {
-                    Some(a) if status == event::Status::Ignored || over_fields(a) => {
-                        Some(Message::Action(a))
-                    }
-                    Some(_) => None,
-                    None if status == event::Status::Ignored => route_key(&physical_key, modifiers),
-                    None => None,
-                },
-                _ => None,
+            event::listen_with(|e, status, w| {
+                input(
+                    w,
+                    match e {
+                        cosmic::iced::Event::Keyboard(keyboard::Event::KeyPressed {
+                            physical_key,
+                            modifiers,
+                            repeat: false,
+                            ..
+                        }) => match key_action(&physical_key, modifiers) {
+                            Some(a) if status == event::Status::Ignored || over_fields(a) => {
+                                Some(Message::Action(a))
+                            }
+                            Some(_) => None,
+                            None if status == event::Status::Ignored => {
+                                route_key(&physical_key, modifiers)
+                            }
+                            None => None,
+                        },
+                        _ => None,
+                    },
+                )
             }),
-            // Ctrl / Shift for clicks in the session tree.
+            // Ctrl / Shift for clicks in the session tree; from any window, or a Ctrl let go in
+            // Session Options would stay held for the tree.
             event::listen_with(|e, _, _| match e {
                 cosmic::iced::Event::Keyboard(keyboard::Event::ModifiersChanged(m)) => {
                     Some(Message::Sessions(SmMsg::Mods(m)))
@@ -180,20 +218,25 @@ impl Application for App {
             }),
             // A row (drag) or the splitter is held: where the pointer goes, where it comes up.
             match self.sessions.holding() {
-                true => event::listen_with(|e, _, _| {
+                true => event::listen_with(|e, _, w| {
                     use cosmic::iced::mouse::{Button, Event as M};
-                    match e {
-                        cosmic::iced::Event::Mouse(M::ButtonReleased(Button::Left)) => {
-                            Some(Message::Sessions(SmMsg::Release))
-                        }
-                        cosmic::iced::Event::Mouse(M::CursorMoved { position }) => {
-                            Some(Message::Sessions(SmMsg::Cursor(position.x)))
-                        }
-                        _ => None,
-                    }
+                    input(
+                        w,
+                        match e {
+                            cosmic::iced::Event::Mouse(M::ButtonReleased(Button::Left)) => {
+                                Some(Message::Sessions(SmMsg::Release))
+                            }
+                            cosmic::iced::Event::Mouse(M::CursorMoved { position }) => {
+                                Some(Message::Sessions(SmMsg::Cursor(position.x)))
+                            }
+                            _ => None,
+                        },
+                    )
                 }),
                 false => Subscription::none(),
             },
+            // Session Options' × / Alt+F4: Cancel.
+            cosmic::iced::window::close_requests().map(Message::CloseRequested),
             crate::term::subscription(),
             self.core()
                 .watch_config::<Config>(APP_ID)
@@ -226,9 +269,13 @@ impl Application for App {
         }
     }
 
-    /// Popups (menus) are windows too; libcosmic draws them itself, only asking here.
-    fn view_window(&self, _: cosmic::iced::window::Id) -> Element<'_, Message> {
-        widget::Space::new().into()
+    /// Session Options; popups (menus) are windows too, libcosmic draws them itself, only
+    /// asking here.
+    fn view_window(&self, id: cosmic::iced::window::Id) -> Element<'_, Message> {
+        match self.options.as_ref().filter(|o| o.window == id) {
+            Some(o) => o.view(self.core.focused_window() == Some(id)),
+            None => widget::Space::new().into(),
+        }
     }
 
     fn dialog(&self) -> Option<Element<'_, Message>> {
@@ -292,8 +339,20 @@ impl App {
                 return widget::text_input::focus(self.sessions.filter_id.clone());
             }
             Action::QuickConnect if self.quick.is_some() => {} // open: keep what is typed
-            Action::QuickConnect => return self.quick_connect(None),
+            Action::QuickConnect => return self.quick_connect(),
             Action::ImportSshConfig => self.import_ssh_config(),
+            // The active tab's session, else the tree's one selected.
+            Action::SessionOptions => {
+                match self
+                    .tabs
+                    .active_session()
+                    .or_else(|| self.sessions.one_session())
+                {
+                    Some(id) => return self.open_options(Target::Edit { id }),
+                    None => self.sessions.notice = Some(fl!("so-nothing")),
+                }
+            }
+            Action::EditDefault => return self.open_options(Target::Default),
             Action::About => self.toggle_drawer(Drawer::About),
             Action::GlobalOptions => self.toggle_drawer(Drawer::Options),
             _ => {}
@@ -307,8 +366,8 @@ impl App {
         for id in ids {
             match self.sessions.store.get(id) {
                 Ok(s) => {
-                    let name = id.rsplit_once('/').map_or(id.as_str(), |(_, n)| n);
-                    match self.ssh_launch(&s, name.to_string()) {
+                    let name = shagshell_core::session::store::name_of(id).to_string();
+                    match ssh_launch(&self.control_dir, &s, name, Some(id)) {
                         Ok(l) => tasks.push(self.tabs.open(l, &look())),
                         Err(e) => self.sessions.notice = Some(e),
                     }
@@ -319,27 +378,37 @@ impl App {
         Task::batch(tasks)
     }
 
-    fn ssh_launch(
-        &self,
-        s: &shagshell_core::session::Session,
-        title: String,
-    ) -> Result<tabs::Launch, String> {
-        let home = std::env::home_dir().unwrap_or_default();
-        let mut argv = shagshell_core::launch::ssh_argv(s, &self.control_dir, &home)
-            .map_err(|_| fl!("bad-extra"))?;
-        let program = argv.remove(0);
-        Ok(tabs::Launch {
-            program,
-            args: argv,
-            title,
-            protocol: tabs::Protocol::Ssh {
-                host: s.host.clone(),
-            },
-        })
+    /// Session files changed (`old` saved, or renamed / moved to `new`): the tabs opened from
+    /// it follow, and Reconnect / Clone run it as saved now (SecureCRT re-reads the session).
+    fn sessions_changed(&mut self, old: &str, new: &str) {
+        let store = &self.sessions.store;
+        for l in self.tabs.launches_mut() {
+            let tabs::Protocol::Ssh {
+                session: Some(id), ..
+            } = &l.protocol
+            else {
+                continue;
+            };
+            let Some(id) = shagshell_core::session::store::retarget(id, old, new) else {
+                continue;
+            };
+            let relaunch = store
+                .get(&id)
+                .ok()
+                .and_then(|s| ssh_launch(&self.control_dir, &s, l.title.clone(), Some(&id)).ok());
+            match relaunch {
+                Some(n) => *l = n,
+                None => {
+                    if let tabs::Protocol::Ssh { session, .. } = &mut l.protocol {
+                        *session = Some(id);
+                    }
+                }
+            }
+        }
     }
 
-    fn quick_connect(&mut self, folder: Option<String>) -> Task<Message> {
-        let q = QuickConnect::new(folder);
+    fn quick_connect(&mut self) -> Task<Message> {
+        let q = QuickConnect::new();
         let focus = q.focus();
         self.quick = Some(q);
         focus
@@ -352,6 +421,7 @@ impl App {
             None => req.session.host.clone(),
         };
         let mut session = req.session.clone();
+        let mut saved_id = None;
         if let Some((folder, name)) = &req.save_as {
             if let Err(e) = crate::session_manager::check(name, folder.is_empty()) {
                 if let Some(q) = &mut self.quick {
@@ -360,13 +430,10 @@ impl App {
                 return Task::none();
             }
             let store = &self.sessions.store;
-            let saved = store
-                .create(folder, name, &req.session.host)
-                .and_then(|id| {
-                    let mut s = store.get(&id)?;
-                    (s.port, s.user) = (req.session.port, req.session.user.clone());
-                    store.save(&id, &s).map(|()| (id, s))
-                });
+            let mut s = store.template();
+            s.host = req.session.host.clone();
+            (s.port, s.user) = (req.session.port, req.session.user.clone());
+            let saved = store.add(folder, name, &s).map(|id| (id, s));
             match saved {
                 // Opened as saved: the Default template's key / keepalive / options too.
                 Ok((id, s)) => {
@@ -375,6 +442,7 @@ impl App {
                     self.save_config();
                     title = name.clone();
                     session = s;
+                    saved_id = Some(id);
                 }
                 Err(e) => {
                     if let Some(q) = &mut self.quick {
@@ -385,13 +453,123 @@ impl App {
             }
         }
         self.quick = None;
-        match self.ssh_launch(&session, title) {
+        match ssh_launch(&self.control_dir, &session, title, saved_id.as_deref()) {
             Ok(l) => self.tabs.open(l, &look()),
             Err(e) => {
                 self.sessions.notice = Some(e);
                 Task::none()
             }
         }
+    }
+
+    /// Session Options in its window; open already: raised, what is typed there kept.
+    fn open_options(&mut self, target: Target) -> Task<Message> {
+        if let Some(o) = &self.options {
+            return cosmic::iced::window::gain_focus(o.window);
+        }
+        let store = &self.sessions.store;
+        let loaded = match &target {
+            // As SecureCRT: a new session starts as a copy of Default.
+            Target::New { .. } => Ok(store.template()),
+            Target::Edit { id } => store.get(id),
+            // A broken Default.toml is said, not overwritten with an empty one.
+            Target::Default => match store.get(DEFAULT) {
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Default::default()),
+                r => r,
+            },
+        };
+        let session = match loaded {
+            Ok(s) => s,
+            Err(e) => {
+                self.sessions.notice = Some(crate::session_manager::io_text(&e));
+                return Task::none();
+            }
+        };
+        let (window, open) = cosmic::iced::window::open(crate::session_options::settings());
+        let o = SessionOptions::new(window, target, &session);
+        // The first field focused once the window is there (before, the focus goes nowhere).
+        let first = o.first_field();
+        let tasks = [
+            open.then(move |_| widget::text_input::focus(first.clone())),
+            cosmic::ApplicationExt::set_window_title(self, o.title(), window),
+        ];
+        self.options = Some(o);
+        Task::batch(tasks)
+    }
+
+    fn session_options(&mut self, msg: SoMsg) -> Task<Message> {
+        let Some(o) = &mut self.options else {
+            return Task::none();
+        };
+        match msg {
+            SoMsg::Cancel => {
+                let w = o.window;
+                self.options = None;
+                return cosmic::iced::window::close(w);
+            }
+            SoMsg::Drag => return cosmic::iced::window::drag(o.window),
+            SoMsg::Browse => {
+                let title = fl!("so-identity");
+                let w = o.window;
+                return Task::perform(crate::session_options::browse(title), move |p| {
+                    cosmic::Action::App(Message::SessionOptions(SoMsg::Browsed(w, p)))
+                });
+            }
+            SoMsg::Ok => {
+                // What the window doesn't show is kept from the file as it is now.
+                let base = match &o.target {
+                    Target::Edit { id } => match self.sessions.store.get(id) {
+                        Ok(s) => s,
+                        // Renamed or deleted meanwhile: said, not written back under the old name.
+                        Err(e) => {
+                            o.error = Some(crate::session_manager::io_text(&e));
+                            return Task::none();
+                        }
+                    },
+                    Target::New { .. } => self.sessions.store.template(),
+                    Target::Default => self.sessions.store.get(DEFAULT).unwrap_or_default(),
+                };
+                let Some(s) = o.checked(&base) else {
+                    return Task::none();
+                };
+                if let Err(e) = self.save_options(&s) {
+                    if let Some(o) = &mut self.options {
+                        o.error = Some(e);
+                    }
+                    return Task::none();
+                }
+                return self.session_options(SoMsg::Cancel);
+            }
+            m => o.update(m),
+        }
+        Task::none()
+    }
+
+    /// OK: the session written where the window's target says.
+    fn save_options(&mut self, s: &shagshell_core::session::Session) -> Result<(), String> {
+        let Some(o) = &self.options else {
+            return Ok(());
+        };
+        let store = &self.sessions.store;
+        let io = |e: std::io::Error| crate::session_manager::io_text(&e);
+        match &o.target {
+            Target::New { folder } => {
+                let name = o.name();
+                crate::session_manager::check(&name, folder.is_empty())?;
+                let id = store.add(folder, &name, s).map_err(io)?;
+                self.sessions.select(&id); // reloads the tree
+                self.config.expanded = self.sessions.expanded.iter().cloned().collect();
+                self.save_config();
+            }
+            Target::Edit { id } => {
+                let id = id.clone();
+                store.save(&id, s).map_err(io)?;
+                self.sessions.reload();
+                self.sessions_changed(&id, &id);
+            }
+            Target::Default => store.save(DEFAULT, s).map_err(io)?,
+        }
+        Ok(())
     }
 
     fn import_ssh_config(&mut self) {
@@ -430,6 +608,32 @@ impl App {
         let open = (self.drawer != Some(d)).then_some(d);
         self.set_drawer(open);
     }
+}
+
+fn ssh_launch(
+    control_dir: &std::path::Path,
+    s: &shagshell_core::session::Session,
+    title: String,
+    session: Option<&str>,
+) -> Result<tabs::Launch, String> {
+    let home = std::env::home_dir().unwrap_or_default();
+    let mut argv =
+        shagshell_core::launch::ssh_argv(s, control_dir, &home).map_err(|_| fl!("bad-extra"))?;
+    let program = argv.remove(0);
+    Ok(tabs::Launch {
+        program,
+        args: argv,
+        title,
+        protocol: tabs::Protocol::Ssh {
+            host: s.host.clone(),
+            session: session.map(str::to_string),
+        },
+    })
+}
+
+/// A key or pointer event, tagged with the window it came from (`Message::Input`).
+fn input(w: cosmic::iced::window::Id, m: Option<Message>) -> Option<Message> {
+    m.map(|m| Message::Input(w, Box::new(m)))
 }
 
 /// The terminals' look: cosmic-term's style, the theme's darkness and window background.

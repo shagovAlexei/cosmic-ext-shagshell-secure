@@ -104,6 +104,7 @@ mod tests {
             identity: Some("~/k".into()),
             keepalive: Some(30),
             extra: "-A -o Compression=yes".into(),
+            ..Default::default()
         };
         let mut want = vec!["ssh", "-p", "2222", "-l", "admin", "-i", "/home/u/k"];
         want.extend(["-o", "ServerAliveInterval=30"]);
