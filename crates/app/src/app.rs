@@ -48,6 +48,8 @@ pub struct App {
     control_dir: std::path::PathBuf,
     /// ssh's prompts waiting for an answer (`askpass`).
     asks: crate::askpass::Asks,
+    /// View → Command Window.
+    command: crate::command_window::CommandWindow,
 }
 
 #[derive(Clone, Debug)]
@@ -71,6 +73,7 @@ pub enum Message {
     /// Anything else a widget speaking `cosmic::Action` says (the tab bar): to the runtime.
     Cosmic(Box<cosmic::Action<Message>>),
     Sessions(SmMsg),
+    CommandWindow(crate::command_window::CwMsg),
     QuickConnect(QcMsg),
     SessionOptions(SoMsg),
     /// Keys and the pointer: acted on only when from the main window (not Session Options).
@@ -135,6 +138,7 @@ impl Application for App {
             separate: None,
             control_dir,
             asks,
+            command: crate::command_window::CommandWindow::new(),
         };
         (app, theme.unwrap_or_else(Task::none))
     }
@@ -159,6 +163,7 @@ impl Application for App {
                     ));
                     self.core.window.header_title = fl!("app-title");
                     self.about = about::about();
+                    self.command.relabel();
                 }
                 if theme {
                     tasks.push(
@@ -221,6 +226,15 @@ impl Application for App {
                 ));
             }
             Message::EditTick => self.tabs.edit_tick(),
+            Message::CommandWindow(m) => {
+                if matches!(m, crate::command_window::CwMsg::Focus) {
+                    return widget::text_input::focus(self.command.input_id.clone());
+                }
+                if let Some((to, pieces)) = self.command.update(m) {
+                    let ids = self.tabs.send_targets(to);
+                    return self.tabs.send(ids, pieces);
+                }
+            }
             Message::Restyle => self.tabs.restyle(&look()),
             Message::Cosmic(a) => return cosmic::task::message(*a),
             Message::Sessions(m) => {
@@ -481,7 +495,10 @@ impl Application for App {
 
     fn header_start(&self) -> Vec<Element<'_, Message>> {
         vec![menu::bar(
-            self.config.session_manager_visible,
+            (
+                self.config.session_manager_visible,
+                self.config.command_window_visible,
+            ),
             self.tabs.menu_state(),
         )]
     }
@@ -508,11 +525,16 @@ impl Application for App {
         if self.config.session_manager_visible {
             middle = middle.push(self.sessions.view(window));
         }
-        widget::column::with_children(vec![
-            toolbar::view(),
-            middle.push(center).height(Length::Fill).into(),
-            status_bar::view(self.tabs.status(), self.sessions.notice.as_deref()),
-        ])
+        let mut col = widget::column::with_capacity(4)
+            .push(toolbar::view())
+            .push(middle.push(center).height(Length::Fill));
+        if self.config.command_window_visible {
+            col = col.push(self.command.view());
+        }
+        col.push(status_bar::view(
+            self.tabs.status(),
+            self.sessions.notice.as_deref(),
+        ))
         .into()
     }
 }
@@ -536,6 +558,14 @@ impl App {
             Action::Exit => {
                 let _ = std::fs::remove_file(askpass_sock(&self.control_dir));
                 return cosmic::iced::exit();
+            }
+            Action::ToggleCommandWindow => {
+                self.config.command_window_visible = !self.config.command_window_visible;
+                self.save_config();
+                if self.config.command_window_visible {
+                    return widget::text_input::focus(self.command.input_id.clone());
+                }
+                return self.tabs.focus_active();
             }
             Action::ToggleSessionManager => {
                 self.config.session_manager_visible = !self.config.session_manager_visible;

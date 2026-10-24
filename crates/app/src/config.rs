@@ -99,6 +99,8 @@ pub struct Config {
     /// Interface language: "" (system), "en", "ru".
     pub language: String,
     pub app_theme: AppTheme,
+    /// View → Command Window.
+    pub command_window_visible: bool,
     /// SFTP tabs open with dot files shown (Ctrl+H flips it in a tab).
     pub sftp_show_hidden: bool,
     /// SFTP: the target is already there.
@@ -115,6 +117,7 @@ impl Default for Config {
             expanded: Vec::new(),
             language: String::new(),
             app_theme: AppTheme::System,
+            command_window_visible: false,
             sftp_show_hidden: true,
             sftp_overwrite: ExistsRule::Ask,
         }

@@ -14,6 +14,8 @@ use std::collections::HashMap;
 pub enum Action {
     Exit,
     ToggleSessionManager,
+    /// View → Command Window.
+    ToggleCommandWindow,
     About,
     GlobalOptions,
     NewLocalShell,
@@ -73,7 +75,7 @@ fn key_binds() -> HashMap<KeyBind, Action> {
 /// `(tabs, live, splittable)`: any tab open; the active one connected; its group has
 /// more than one tab (`Tabs::menu_state`).
 pub fn bar(
-    session_manager: bool,
+    (session_manager, command_window): (bool, bool),
     (tabs, live, split): (bool, bool, bool),
 ) -> Element<'static, Message> {
     use menu::Item::{Button, ButtonDisabled, CheckBox, Divider};
@@ -116,6 +118,12 @@ pub fn bar(
                     None,
                     session_manager,
                     Action::ToggleSessionManager,
+                ),
+                CheckBox(
+                    fl!("menu-command-window"),
+                    None,
+                    command_window,
+                    Action::ToggleCommandWindow,
                 ),
                 off(fl!("menu-toolbar")),
                 off(fl!("menu-status-bar")),

@@ -170,6 +170,8 @@ pub enum TabsMsg {
     PaneClicked(pane_grid::Pane),
     Resized(pane_grid::ResizeEvent),
     Paste(Option<String>),
+    /// Bytes to these tabs' programs; a pause sends the rest later.
+    Send(Vec<TabId>, Vec<shagshell_core::macros::Piece>),
 }
 
 #[derive(Default)]
@@ -206,6 +208,56 @@ impl Tabs {
                 drop(v.update(SftpMsg::EditTick));
             }
         }
+    }
+
+    /// The terminals a Command Window line goes to (ones whose program runs).
+    pub fn send_targets(&self, to: crate::command_window::SendTo) -> Vec<TabId> {
+        use crate::command_window::SendTo;
+        let live = |id: &TabId| {
+            self.tabs
+                .get(id)
+                .is_some_and(|t| t.terminal().is_some() && t.alive)
+        };
+        let ids: Vec<TabId> = match to {
+            SendTo::Current => self.active().map(|(_, _, id)| id).into_iter().collect(),
+            SendTo::Visible => (self.grid.iter().flat_map(|g| g.iter()))
+                .filter_map(|(_, group)| group.active_id())
+                .collect(),
+            SendTo::All => self.tabs.keys().copied().collect(),
+        };
+        let mut ids: Vec<TabId> = ids.into_iter().filter(live).collect();
+        ids.sort_unstable();
+        ids
+    }
+
+    pub fn send(
+        &mut self,
+        ids: Vec<TabId>,
+        mut pieces: Vec<shagshell_core::macros::Piece>,
+    ) -> Task<Message> {
+        use shagshell_core::macros::Piece;
+        while !pieces.is_empty() {
+            match pieces.remove(0) {
+                Piece::Bytes(b) => {
+                    for id in &ids {
+                        if let Some(t) = self.terminal(*id) {
+                            t.lock()
+                                .unwrap_or_else(|e| e.into_inner())
+                                .input_scroll(b.clone());
+                        }
+                    }
+                }
+                Piece::Pause(d) => {
+                    return Task::perform(tokio::time::sleep(d), move |()| {
+                        cosmic::Action::App(Message::Tabs(TabsMsg::Send(
+                            ids.clone(),
+                            pieces.clone(),
+                        )))
+                    });
+                }
+            }
+        }
+        Task::none()
     }
 
     pub fn set_sftp_prefs(&mut self, config: &Config) {
@@ -746,6 +798,7 @@ impl Tabs {
                 }
             }
             TabsMsg::Paste(None) => {}
+            TabsMsg::Send(ids, pieces) => return self.send(ids, pieces),
         }
         Task::none()
     }
