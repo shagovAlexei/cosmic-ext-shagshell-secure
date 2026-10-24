@@ -39,6 +39,25 @@ pub fn ssh_argv(s: &Session, control_dir: &Path, home: &Path) -> Result<Vec<Stri
     Ok(a)
 }
 
+/// A terminal tab's ssh arguments (after `ssh`) for its SFTP tab: the same options and
+/// ControlPath (the open connection is reused), `-s -- host sftp`. `None`: not an ssh of ours.
+pub fn sftp_args(ssh_args: &[String]) -> Option<Vec<String>> {
+    let at = ssh_args.iter().rposition(|a| a == "--")?;
+    let host = ssh_args.get(at + 1)?;
+    if at + 2 != ssh_args.len() {
+        return None; // a remote command after the host: not one we built
+    }
+    // Not what a session's own options may ask of its terminal: a tty would corrupt the SFTP
+    // stream, -N / -f would never start it, its forwards are the terminal's.
+    let mut a: Vec<String> = (ssh_args[..at].iter())
+        .filter(|o| !matches!(o.as_str(), "-t" | "-tt" | "-N" | "-f"))
+        .cloned()
+        .collect();
+    a.extend(["-T", "-o", "ClearAllForwardings=yes", "-s", "--"].map(String::from));
+    a.extend([host.clone(), "sftp".into()]);
+    Some(a)
+}
+
 /// ssh's environment: every prompt to our askpass (`exe`), which asks the app over `sock`.
 /// `session`: the saved session (its keyring entries); the tab id is added by the tab.
 pub fn askpass_env(
@@ -88,6 +107,40 @@ pub fn ensure_control_dir() -> std::io::Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sftp_from_terminal_args() {
+        let ssh: Vec<String> = ["-p", "22", "-o", "ControlPath=/r/%C", "--", "-weird"]
+            .map(String::from)
+            .to_vec();
+        let want = [
+            "-p",
+            "22",
+            "-o",
+            "ControlPath=/r/%C",
+            "-T",
+            "-o",
+            "ClearAllForwardings=yes",
+            "-s",
+            "--",
+            "-weird",
+            "sftp",
+        ];
+        assert_eq!(sftp_args(&ssh).unwrap(), want);
+        // A session's extra -t / -N / -L: not for the SFTP channel.
+        let extra: Vec<String> = ["-t", "-N", "-L", "8080:h:80", "--", "h"]
+            .map(String::from)
+            .to_vec();
+        let got = sftp_args(&extra).unwrap();
+        assert!(!got.iter().any(|a| a == "-t" || a == "-N"), "{got:?}");
+        assert!(
+            got.windows(2)
+                .any(|w| w == ["-o", "ClearAllForwardings=yes"])
+        );
+        assert_eq!(sftp_args(&["host".to_string()]), None);
+        let cmd: Vec<String> = ["--", "h", "ls"].map(String::from).to_vec();
+        assert_eq!(sftp_args(&cmd), None);
+    }
 
     #[test]
     fn askpass_env_names() {

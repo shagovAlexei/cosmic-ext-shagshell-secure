@@ -44,7 +44,7 @@ We do **not** implement SSH. The system OpenSSH does it; we drive it.
   - env: `SSH_ASKPASS=<path to shagshell>`, `SSH_ASKPASS_REQUIRE=force`, `SHAGSHELL_SESSION=<session id>`.
 - Telnet = `telnet host port`; Serial = `picocom -b <baud> <dev>`; Local shell = `$SHELL`.
 - **Askpass:** ssh runs `shagshell "<prompt>"` (one argument; `SHAGSHELL_ASKPASS_SOCK` set = helper mode), which connects to this app instance's socket `$XDG_RUNTIME_DIR/shagshell/askpass-<pid>.sock` (one JSON line each way). The app classifies the prompt (password / passphrase / host-key yes-no / other), answers from the keyring on the first try of that ssh (its pid = the helper's ppid) or shows a dialog in the main window ("Save password", off by default; a second try = «wrong password»), and the helper prints the answer to stdout. Cancel kills that ssh (checked ours by its `/proc/<pid>/environ`): ssh would send empty passwords for its other tries.
-- **SFTP** = `openssh` crate (native-mux) + `openssh-sftp-client` over the session's ControlMaster.
+- **SFTP** = our own SFTP v3 client (`core::sftp::proto`) on the pipes of `ssh <the tab's options> -s -- host sftp` (same ControlPath: an open connection is reused, else askpass asks). Not `openssh-sftp-client`: one non-UTF-8 file name kills its connection (`ssh_format` reads paths with `String::from_utf8`), and its reads aren't pipelined (15 MB/s). Names are bytes; READ / WRITE keep 16 × 64 KiB in flight.
 - Why not russh: own known_hosts / ssh_config parsing, known russh bugs (one stalled channel freezes the connection, SFTP breaks on non-UTF-8 names), API churn. Switching later stays cheap: the terminal does not care where bytes come from. Do **not** add an "SSH backend" trait in advance.
 
 ### Button Bar and scripting (SecureCRT style)
@@ -71,7 +71,8 @@ We do **not** implement SSH. The system OpenSSH does it; we drive it.
   - `askpass.rs` — prompt classification, the socket protocol, the helper, `Tries` (first / retry / cancelled per ssh), `abort`;
   - `keyring.rs` — Secret Service over zbus (from shagoff-commander, + `lookup` / `delete`);
   - `credentials.rs` — `credentials.toml` (name → user, unknown fields kept), `put` (checked add / rename), `resolve`; `Store::using` / `relink` follow a renamed / deleted set;
-  - `sftp/{client,queue}.rs` — the transfer queue is a pure state machine;
+  - `sftp/{proto,queue}.rs` — the SFTP v3 client (tested against `/usr/lib/openssh/sftp-server` run directly) and the transfer queue (a pure state machine: one job at a time, retry, cancel, per-batch «for all»);
+  - `panel.rs` — a file panel (listing, cursor, marks, targets) and size / time text, after shagoff-commander;
   - `logfile.rs` — log name templates `%H %S %Y %M %D %h %m %s %P %U`;
   - `macros.rs` — Button Bar / Command Window escapes (`\r \n \t \e \\ \p`);
   - `buttonbar.rs` — named bars, buttons (Send String / Run Script / Menu Function / Launch App), `buttonbars.toml`;
@@ -88,6 +89,7 @@ We do **not** implement SSH. The system OpenSSH does it; we drive it.
   - App keys (`key_action`) are handled whatever the event status: a text field would take Alt+Q as a letter. Enter and the tree's keys only when no widget took them.
   - Popups (menus) are windows: `App::view_window` returns an empty `Space` for them, or libcosmic panics ("no view for window"). A `segmented_button` context menu is one root whose children are one menu per tab.
   - `askpass.rs`: the socket (listener thread → subscription), the prompt queue and its dialog; keyring calls go through `App::ask_outcome` off the UI thread (`off_ui`). Prompts of a closed / ended tab are cancelled (`prune`). Secrets in messages are `Hidden` (redacted `Debug`).
+  - `sftp_view.rs` / `sftp_worker.rs`: the SFTP tab (a `tabs::Body::Sftp`), a commander: local | server panels, F5–F8, Tab, Insert, the queue under them; its keys are routed by the app (`Message::Key`) when it is the active tab. Two workers per tab (browse, transfer: listing never waits for a copy), each a thread with its own ssh; events tagged by worker (a replaced one's are dropped). Local folders are read on the UI thread (fast), the server's in the worker. `Launch::sftp` makes the SFTP launch from a terminal's ssh args.
   - `credentials_window.rs`: Tools → Credentials Manager, a window like Session Options; the app saves (file, sessions relinked, keyring rename then store — in that order).
   - Blocking work (keyring, D-Bus) goes through `app::off_ui`: started when the task runs, so `Task::chain` orders it (a `spawn_blocking` made eagerly would race).
   - `main.rs` also dispatches the askpass helper and `--check`.

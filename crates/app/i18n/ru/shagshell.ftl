@@ -156,3 +156,40 @@ options-master-hint = Отдельная связка keyring «ShagShell Secure
 options-credentials = Учётные данные: наборы «логин + пароль»
 options-open = Открыть…
 credentials-broken = Не читается credentials.toml: исправьте или удалите его, чтобы подключить эту сессию
+
+# SFTP
+sm-sftp = Открыть SFTP
+sftp-connecting = Подключение…
+sftp-disconnected = Нет подключения: { $why }
+sftp-not-connected = Нет подключения
+sftp-keys = Tab панель · Enter открыть · Backspace вверх · Insert отметить · F5 копировать · F6 перенести · Shift+F6 переименовать · F7 папка · F8 удалить · Ctrl+R обновить
+sftp-n-items = { $count ->
+    [one] { $count } объект
+    [few] { $count } объекта
+   *[other] { $count } объектов
+}
+sftp-copy-title = Копировать { $what }
+sftp-move-title = Перенести { $what }
+sftp-copy = Копировать
+sftp-move = Перенести
+sftp-to = Куда
+sftp-mkdir-title = Новая папка
+sftp-create = Создать
+sftp-rename-title = Переименовать
+sftp-delete-title = Удалить { $what }?
+sftp-delete-body = Папки удаляются со всем содержимым.
+sftp-exists-title = Уже есть
+sftp-for-all = Для всех файлов этого копирования
+sftp-overwrite = Перезаписать
+sftp-skip = Пропустить
+sftp-queue = Передачи
+sftp-clear-done = Очистить готовые
+sftp-waiting = ожидает
+sftp-done = готово
+sftp-skipped = пропущено
+sftp-cancelled = отменено
+sftp-retry = Повтор
+sftp-goto-title = Перейти в папку
+sftp-go = Перейти
+sftp-goto-title = Перейти в папку
+sftp-go = Перейти

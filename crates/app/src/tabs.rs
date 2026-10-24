@@ -5,6 +5,7 @@ use crate::app::Message;
 use crate::config::Config;
 use crate::fl;
 use crate::menu::Action;
+use crate::sftp_view::{Connect, SftpMsg, SftpView};
 use crate::term::{self, Events, Outcome, TabId, terminal::Terminal};
 use alacritty_terminal::grid::Dimensions;
 use cosmic::app::Task;
@@ -40,6 +41,8 @@ pub struct Launch {
     /// Ours (a session's name, «Local Shell»), numbered if taken.
     pub title: String,
     pub protocol: Protocol,
+    /// An SFTP tab (`args`: `sftp_args`), not a terminal.
+    pub sftp: bool,
 }
 
 impl Launch {
@@ -51,19 +54,41 @@ impl Launch {
             env: Vec::new(),
             title: fl!("tab-local-shell"),
             protocol: Protocol::Local,
+            sftp: false,
         }
     }
 
+    /// This ssh tab's SFTP tab: the same connection (ControlPath), `-s … sftp`.
+    pub fn sftp(&self) -> Option<Self> {
+        if self.sftp {
+            return Some(self.clone());
+        }
+        let args = shagshell_core::launch::sftp_args(&self.args)?;
+        Some(Self {
+            args,
+            title: format!("SFTP · {}", self.title),
+            sftp: true,
+            ..self.clone()
+        })
+    }
+
     fn label(&self) -> String {
-        match &self.protocol {
-            Protocol::Local => fl!("tab-local-shell"),
-            Protocol::Ssh { host, .. } => format!("SSH · {host}"),
+        match (&self.protocol, self.sftp) {
+            (Protocol::Local, _) => fl!("tab-local-shell"),
+            (Protocol::Ssh { host, .. }, true) => format!("SFTP · {host}"),
+            (Protocol::Ssh { host, .. }, false) => format!("SSH · {host}"),
         }
     }
 }
 
+/// What a tab shows.
+pub enum Body {
+    Terminal(Box<Mutex<Terminal>>),
+    Sftp(Box<SftpView>),
+}
+
 pub struct Tab {
-    pub terminal: Mutex<Terminal>,
+    pub body: Body,
     launch: Launch,
     /// «web-01 (2)»: ours, shown while the program sets none.
     base: String,
@@ -79,7 +104,22 @@ impl Tab {
             true => &self.base,
             false => &self.program_title,
         };
-        format!("{} {t}", if self.alive { "✓" } else { "✗" })
+        format!("{} {t}", if self.live() { "✓" } else { "✗" })
+    }
+
+    /// Its program runs (a terminal), or it is connected (SFTP).
+    fn live(&self) -> bool {
+        match &self.body {
+            Body::Terminal(_) => self.alive,
+            Body::Sftp(v) => v.connected,
+        }
+    }
+
+    fn terminal(&self) -> Option<&Mutex<Terminal>> {
+        match &self.body {
+            Body::Terminal(t) => Some(t),
+            Body::Sftp(_) => None,
+        }
     }
 }
 
@@ -102,6 +142,8 @@ pub type Look = (term::style::Style, bool, u32);
 pub enum TabCmd {
     Reconnect,
     Clone,
+    /// «Connect SFTP Tab»: an SFTP tab over this ssh tab's connection.
+    Sftp,
     SplitRight,
     SplitDown,
     Close,
@@ -135,6 +177,7 @@ pub struct Tabs {
     tabs: HashMap<TabId, Tab>,
     next_id: TabId,
     tx: Option<Events>,
+    sftp_tx: Option<crate::sftp_worker::Events>,
     /// A live tab asked to close: waits for the dialog.
     confirm: Option<(pane_grid::Pane, Entity)>,
     /// The tab right-clicked last: `TabCmd`s are about it.
@@ -146,13 +189,45 @@ impl Tabs {
         self.tx = Some(tx);
     }
 
-    /// Active tab: (connected, protocol label, cols, rows).
-    pub fn status(&self) -> Option<(bool, String, usize, usize)> {
+    pub fn set_sftp_sender(&mut self, tx: crate::sftp_worker::Events) {
+        self.sftp_tx = Some(tx);
+    }
+
+    /// Active tab: (connected, protocol label, cols × rows of a terminal).
+    pub fn status(&self) -> Option<crate::status_bar::Status> {
         let tab = self.tabs.get(&self.active()?.2)?;
-        let t = tab.terminal.lock().unwrap_or_else(|e| e.into_inner());
-        let term = t.term.lock();
         let label = tab.launch.label();
-        Some((tab.alive, label, term.columns(), term.screen_lines()))
+        let size = tab.terminal().map(|t| {
+            let t = t.lock().unwrap_or_else(|e| e.into_inner());
+            let term = t.term.lock();
+            (term.columns(), term.screen_lines())
+        });
+        Some((tab.live(), label, size))
+    }
+
+    /// The active tab, if it is an SFTP one (its keys are routed to it).
+    pub fn active_sftp(&self) -> Option<TabId> {
+        let id = self.active()?.2;
+        matches!(self.tabs.get(&id)?.body, Body::Sftp(_)).then_some(id)
+    }
+
+    /// The active SFTP tab shows a dialog of its own (its Enter / Esc are the dialog's).
+    pub fn sftp_dialog(&self) -> Option<TabId> {
+        let id = self.active_sftp()?;
+        match &self.tabs.get(&id)?.body {
+            Body::Sftp(v) if v.has_dialog() && self.confirm.is_none() => Some(id),
+            _ => None,
+        }
+    }
+
+    /// An SFTP tab's message; its title follows its connection.
+    pub fn on_sftp(&mut self, id: TabId, msg: SftpMsg) -> Task<Message> {
+        let Some(Body::Sftp(v)) = self.tabs.get_mut(&id).map(|t| &mut t.body) else {
+            return Task::none();
+        };
+        let task = v.update(msg);
+        self.retitle(id);
+        task
     }
 
     /// What every tab runs (again on Reconnect / Clone).
@@ -164,9 +239,13 @@ impl Tabs {
         self.tabs.get(&id).map(|t| t.launch.title.clone())
     }
 
-    /// Its program runs (an askpass prompt from it is still wanted).
+    /// Its program runs (an askpass prompt from it is still wanted). An SFTP tab: always (its
+    /// ssh asks while connecting).
     pub fn alive(&self, id: TabId) -> bool {
-        self.tabs.get(&id).is_some_and(|t| t.alive)
+        self.tabs.get(&id).is_some_and(|t| match t.body {
+            Body::Terminal(_) => t.alive,
+            Body::Sftp(_) => true,
+        })
     }
 
     /// Bring tab `id` to the front of its group: an askpass dialog is about it.
@@ -204,7 +283,7 @@ impl Tabs {
         let Some((pane, _, id)) = self.active() else {
             return (false, false, false);
         };
-        let ended = self.tabs.get(&id).is_some_and(|t| !t.alive);
+        let ended = self.tabs.get(&id).is_some_and(|t| !t.live());
         let many = (self.grid.as_ref())
             .and_then(|g| g.get(pane))
             .is_some_and(|g| g.model.len() > 1);
@@ -217,7 +296,7 @@ impl Tabs {
     }
 
     fn terminal(&self, id: TabId) -> Option<&Mutex<Terminal>> {
-        self.tabs.get(&id).map(|t| &t.terminal)
+        self.tabs.get(&id)?.terminal()
     }
 
     /// A new tab running `launch` in the focused group (the first group if none).
@@ -225,13 +304,13 @@ impl Tabs {
         let taken: Vec<&str> = self.tabs.values().map(|t| t.base.as_str()).collect();
         let base = rules::numbered(&launch.title, &taken);
         let id = self.next_id;
-        let Some(terminal) = self.spawn(id, &launch, look) else {
+        let Some(body) = self.spawn(id, &launch, look) else {
             return Task::none();
         };
         self.next_id += 1;
         let widget_id = widget::Id::unique();
         let tab = Tab {
-            terminal: Mutex::new(terminal),
+            body,
             launch,
             base,
             program_title: String::new(),
@@ -260,7 +339,16 @@ impl Tabs {
         focus(widget_id)
     }
 
-    fn spawn(&self, id: TabId, launch: &Launch, look: &Look) -> Option<Terminal> {
+    fn spawn(&self, id: TabId, launch: &Launch, look: &Look) -> Option<Body> {
+        if launch.sftp {
+            let connect = Connect {
+                program: launch.program.clone(),
+                args: launch.args.clone(),
+                env: launch.env.clone(),
+            };
+            let v = SftpView::new(id, connect, self.sftp_tx.clone()?);
+            return Some(Body::Sftp(Box::new(v)));
+        }
         let tx = self.tx.clone()?;
         let (style, dark, bg) = look;
         let mut env = launch.env.clone();
@@ -279,12 +367,27 @@ impl Tabs {
         )
         .inspect_err(|e| log::error!("start {}: {e}", launch.program))
         .ok()
+        .map(|t| Body::Terminal(Box::new(Mutex::new(t))))
     }
 
     /// Start the program again in a tab whose program ended (SecureCRT's Reconnect / Enter).
     /// Under a new id: the old program's late events (Exit after ChildExit) find no tab.
     fn restart(&mut self, id: TabId, look: &Look) -> Task<Message> {
-        if self.tabs.get(&id).is_none_or(|t| t.alive) {
+        if self.tabs.get(&id).is_none_or(|t| t.live()) {
+            return Task::none();
+        }
+        // SFTP: a new connection in the same tab (its old workers' events are told apart),
+        // with the session as it is now (`sessions_changed` keeps `launch` current).
+        if let Some(tab) = self.tabs.get_mut(&id)
+            && let Body::Sftp(v) = &mut tab.body
+        {
+            v.set_connect(Connect {
+                program: tab.launch.program.clone(),
+                args: tab.launch.args.clone(),
+                env: tab.launch.env.clone(),
+            });
+            v.reconnect();
+            self.retitle(id);
             return Task::none();
         }
         let new_id = self.next_id;
@@ -296,7 +399,7 @@ impl Tabs {
         let Some(mut tab) = self.tabs.remove(&id) else {
             return Task::none();
         };
-        (tab.terminal, tab.alive) = (Mutex::new(terminal), true);
+        (tab.body, tab.alive) = (terminal, true);
         tab.program_title.clear();
         let widget_id = tab.widget_id.clone();
         self.tabs.insert(new_id, tab);
@@ -396,6 +499,13 @@ impl Tabs {
                     None => Task::none(),
                 }
             }
+            TabCmd::Sftp => {
+                self.focus = Some(t.0);
+                match self.tabs.get(&t.2).and_then(|tab| tab.launch.sftp()) {
+                    Some(launch) => self.open(launch, look),
+                    None => Task::none(),
+                }
+            }
             TabCmd::SplitRight => self.split(t, pane_grid::Axis::Vertical),
             TabCmd::SplitDown => self.split(t, pane_grid::Axis::Horizontal),
             TabCmd::Close => self.update(TabsMsg::Close(t.0, t.1), look),
@@ -412,6 +522,7 @@ impl Tabs {
             Action::NewLocalShell => self.open(Launch::local_shell(), look),
             Action::CloseTab => on_active(self, TabCmd::Close),
             Action::Reconnect => on_active(self, TabCmd::Reconnect),
+            Action::ConnectSftp => on_active(self, TabCmd::Sftp),
             Action::NextTab | Action::PrevTab => {
                 if let Some(group) = self.focused_group_mut() {
                     let len = group.model.len();
@@ -465,14 +576,17 @@ impl Tabs {
     pub fn enter_on_dead(&self) -> bool {
         self.active()
             .and_then(|(_, _, id)| self.tabs.get(&id))
-            .is_some_and(|t| !t.alive)
+            .is_some_and(|t| !t.live() && t.terminal().is_some())
     }
 
     pub fn on_term(&mut self, id: TabId, event: alacritty_terminal::event::Event) -> Task<Message> {
         let Some(tab) = self.tabs.get_mut(&id) else {
             return Task::none();
         };
-        match term::on_event(&tab.terminal, event) {
+        let Body::Terminal(terminal) = &tab.body else {
+            return Task::none();
+        };
+        match term::on_event(terminal, event) {
             Outcome::None => {}
             Outcome::Copy(text) => return cosmic::iced::clipboard::write(text),
             Outcome::Title(title) => {
@@ -486,7 +600,7 @@ impl Tabs {
                     Some(code) => fl!("term-exited-code", code = code.to_string()),
                     None => fl!("term-exited"),
                 };
-                term::print(&tab.terminal, &format!("\r\n[{line}]\r\n"));
+                term::print(terminal, &format!("\r\n[{line}]\r\n"));
                 self.retitle(id);
             }
             Outcome::Exit(_) => {}
@@ -496,8 +610,8 @@ impl Tabs {
 
     pub fn restyle(&self, look: &Look) {
         let (style, dark, bg) = look;
-        for t in self.tabs.values() {
-            term::restyle(&t.terminal, style, *dark, *bg);
+        for t in self.tabs.values().filter_map(Tab::terminal) {
+            term::restyle(t, style, *dark, *bg);
         }
     }
 
@@ -520,7 +634,7 @@ impl Tabs {
                 let alive = (self.grid.as_ref())
                     .and_then(|g| g.get(pane)?.model.data::<TabId>(e).copied())
                     .and_then(|id| self.tabs.get(&id))
-                    .is_some_and(|t| t.alive);
+                    .is_some_and(|t| t.live());
                 if alive {
                     self.confirm = Some((pane, e));
                 } else {
@@ -565,7 +679,14 @@ impl Tabs {
 
     /// Asks before closing a live tab, as SecureCRT's "Confirm disconnect".
     pub fn dialog(&self) -> Option<Element<'_, Message>> {
-        let (pane, e) = self.confirm?;
+        let Some((pane, e)) = self.confirm else {
+            // The active SFTP tab's own (copy, rename, overwrite…).
+            let id = self.active_sftp()?;
+            let Body::Sftp(v) = &self.tabs.get(&id)?.body else {
+                return None;
+            };
+            return v.dialog();
+        };
         let id = *self.grid.as_ref()?.get(pane)?.model.data::<TabId>(e)?;
         let name = self.tabs.get(&id)?.title();
         let name = name.trim_start_matches(['✓', '✗', ' ']).to_string();
@@ -612,7 +733,16 @@ impl Tabs {
                 .on_reorder(move |ev| Message::Tabs(TabsMsg::Reorder(pane, ev)));
             let body: Element<'_, Message> =
                 match group.active_id().and_then(|id| self.tabs.get(&id)) {
-                    Some(tab) => term::terminal_box::terminal_box(&tab.terminal, is_app_key)
+                    Some(Tab {
+                        body: Body::Sftp(v),
+                        ..
+                    }) => v.view(),
+                    Some(
+                        tab @ Tab {
+                            body: Body::Terminal(terminal),
+                            ..
+                        },
+                    ) => term::terminal_box::terminal_box(terminal, is_app_key)
                         .id(tab.widget_id.clone())
                         .copy_on_select(copy)
                         .paste_on_middle(middle)
@@ -681,12 +811,13 @@ fn tab_menu(model: &SingleSelectModel, tabs: &HashMap<TabId, Tab>) -> Vec<menu::
         false => ButtonDisabled(label, None, cmd),
     };
     let one = |e: Entity| {
-        let ended = (model.data::<TabId>(e))
-            .and_then(|id| tabs.get(id))
-            .is_some_and(|t| !t.alive);
+        let tab = model.data::<TabId>(e).and_then(|id| tabs.get(id));
+        let ended = tab.is_some_and(|t| !t.live());
+        let sftp = tab.is_some_and(|t| t.launch.sftp().is_some());
         let items = vec![
             on(ended, fl!("menu-reconnect"), TabCmd::Reconnect),
             Button(fl!("menu-clone"), None, TabCmd::Clone),
+            on(sftp, fl!("menu-connect-sftp"), TabCmd::Sftp),
             Divider,
             on(can_split, fl!("menu-split-right"), TabCmd::SplitRight),
             on(can_split, fl!("menu-split-down"), TabCmd::SplitDown),

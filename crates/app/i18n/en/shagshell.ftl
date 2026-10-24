@@ -156,3 +156,39 @@ options-master-hint = A separate keyring “ShagShell Secure”: its password is
 options-credentials = Credentials: username + password sets
 options-open = Open…
 credentials-broken = credentials.toml can't be read: fix or remove it to connect this session
+
+# SFTP
+sm-sftp = Open SFTP
+sftp-connecting = Connecting…
+sftp-disconnected = Not connected: { $why }
+sftp-not-connected = Not connected
+sftp-keys = Tab panel · Enter open · Backspace up · Insert mark · F5 copy · F6 move · Shift+F6 rename · F7 folder · F8 delete · Ctrl+R refresh
+sftp-n-items = { $count ->
+    [one] { $count } item
+   *[other] { $count } items
+}
+sftp-copy-title = Copy { $what }
+sftp-move-title = Move { $what }
+sftp-copy = Copy
+sftp-move = Move
+sftp-to = To
+sftp-mkdir-title = New folder
+sftp-create = Create
+sftp-rename-title = Rename
+sftp-delete-title = Delete { $what }?
+sftp-delete-body = Folders are deleted with everything in them.
+sftp-exists-title = Already exists
+sftp-for-all = For all files of this copy
+sftp-overwrite = Overwrite
+sftp-skip = Skip
+sftp-queue = Transfers
+sftp-clear-done = Clear finished
+sftp-waiting = waiting
+sftp-done = done
+sftp-skipped = skipped
+sftp-cancelled = cancelled
+sftp-retry = Retry
+sftp-goto-title = Go to folder
+sftp-go = Go
+sftp-goto-title = Go to folder
+sftp-go = Go

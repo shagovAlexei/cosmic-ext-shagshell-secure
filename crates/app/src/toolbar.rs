@@ -20,7 +20,11 @@ pub fn view() -> Element<'static, Message> {
         ),
         ("view-refresh-symbolic", fl!("menu-reconnect"), None),
         ("process-stop-symbolic", fl!("menu-disconnect"), None),
-        ("folder-remote-symbolic", fl!("menu-connect-sftp"), None),
+        (
+            "folder-remote-symbolic",
+            fl!("menu-connect-sftp"),
+            Some(Action::ConnectSftp),
+        ),
         (
             "emblem-system-symbolic",
             fl!("menu-session-options"),
