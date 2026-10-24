@@ -21,5 +21,6 @@ pub mod sftp;
 pub mod shell;
 pub mod sshconfig;
 pub mod tabs;
+pub mod update;
 pub mod uri;
 pub mod zmodem;

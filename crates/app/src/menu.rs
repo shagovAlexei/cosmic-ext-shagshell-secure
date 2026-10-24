@@ -22,6 +22,10 @@ pub enum Action {
     /// File → Log Session.
     ToggleLog,
     About,
+    /// Help → Check for Updates…
+    CheckUpdates,
+    /// Help → Support the Project.
+    Donate,
     GlobalOptions,
     NewLocalShell,
     CloseTab,
@@ -284,7 +288,12 @@ pub fn bar(
         ),
         (
             fl!("menu-help"),
-            vec![Button(fl!("menu-about"), None, Action::About)],
+            vec![
+                Button(fl!("menu-check-updates"), None, Action::CheckUpdates),
+                Button(fl!("menu-donate"), None, Action::Donate),
+                Divider,
+                Button(fl!("menu-about"), None, Action::About),
+            ],
         ),
     ];
     let binds = key_binds();

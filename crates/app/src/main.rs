@@ -25,6 +25,7 @@ mod tabs;
 mod term;
 mod toolbar;
 mod transfer_pick;
+mod updates;
 
 use shagshell_core::check;
 

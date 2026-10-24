@@ -82,6 +82,8 @@ menu-next-tab = Next Tab
 menu-prev-tab = Previous Tab
 menu-help = Help
 menu-about = About
+menu-check-updates = Check for Updates…
+menu-donate = Support the Project
 
 sessions-empty = No sessions
 no-sessions = No open sessions
@@ -499,3 +501,14 @@ menu-move-left = Move to Group — Left
 menu-move-right = Move to Group — Right
 menu-move-up = Move to Group — Up
 menu-move-down = Move to Group — Down
+
+up-title = Version { $tag } is available
+up-body = You have { $current }. The new version is on the releases page.
+up-support = ShagShell Secure is free. If it helps you, please support the project: the price of one lunch at McDonald's or a couple of cups of coffee.
+up-update = Update
+up-skip = Skip this version
+up-donate = Support the project
+up-latest = You have the latest version
+up-failed = Could not check for updates: { $error }
+options-updates = Updates
+options-update-check = Check for updates at startup

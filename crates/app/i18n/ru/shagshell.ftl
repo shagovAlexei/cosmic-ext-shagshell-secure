@@ -80,6 +80,8 @@ menu-next-tab = Следующая вкладка
 menu-prev-tab = Предыдущая вкладка
 menu-help = Справка
 menu-about = О программе
+menu-check-updates = Проверить обновления…
+menu-donate = Поддержать проект
 
 sessions-empty = Нет сессий
 no-sessions = Нет открытых сессий
@@ -500,3 +502,14 @@ menu-move-left = Перенести в группу — слева
 menu-move-right = Перенести в группу — справа
 menu-move-up = Перенести в группу — сверху
 menu-move-down = Перенести в группу — снизу
+
+up-title = Доступна версия { $tag }
+up-body = У вас { $current }. Новая версия — на странице релизов.
+up-support = ShagShell Secure бесплатен. Если он вам помогает, поддержите проект: это один обед в Маке или пара чашек кофе.
+up-update = Обновить
+up-skip = Пропустить версию
+up-donate = Поддержать проект
+up-latest = У вас последняя версия
+up-failed = Не удалось проверить обновления: { $error }
+options-updates = Обновления
+options-update-check = Проверять обновления при запуске
