@@ -128,6 +128,8 @@ so-appearance = Appearance
 so-scheme = Colour scheme
 so-scheme-global = (the one of Global Options)
 options-terminal = Terminal
+options-font = Font (empty = system monospace)
+options-font-size = Font size
 options-copy-on-select = Copy on select
 options-paste-on-middle = Paste with the middle mouse button
 term-disconnected = Disconnected — press Enter to reconnect

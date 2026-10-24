@@ -117,6 +117,10 @@ pub struct Config {
     pub download_dir: String,
     /// A Zmodem send from the server is received without asking (needs lrzsz).
     pub zmodem_auto: bool,
+    /// Terminal font family ("" = the system's monospace).
+    pub font_family: String,
+    /// Terminal font size, px (0 = 14); read through `font_px`.
+    pub font_size: u16,
     /// SFTP tabs open with dot files shown (Ctrl+H flips it in a tab).
     pub sftp_show_hidden: bool,
     /// SFTP: the target is already there.
@@ -153,6 +157,16 @@ impl Config {
     }
 }
 
+impl Config {
+    /// The terminal font size in px, kept to 6–48 (0 = the default 14).
+    pub fn font_px(&self) -> f32 {
+        match self.font_size {
+            0 => 14.0,
+            n => f32::from(n.clamp(6, 48)),
+        }
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -172,6 +186,8 @@ impl Default for Config {
             download_dir: String::new(),
             zmodem_auto: true,
             log_template: "%S_%Y-%M-%D_%h%m%s.log".into(),
+            font_family: String::new(),
+            font_size: 14,
             sftp_show_hidden: true,
             sftp_overwrite: ExistsRule::Ask,
         }
@@ -195,4 +211,21 @@ pub fn read(h: Option<&cosmic_config::Config>) -> Config {
         })
     })
     .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn font_size_is_kept_in_range() {
+        let px = |n| {
+            Config {
+                font_size: n,
+                ..Config::default()
+            }
+            .font_px()
+        };
+        assert_eq!((px(0), px(3), px(14), px(500)), (14.0, 6.0, 14.0, 48.0));
+    }
 }

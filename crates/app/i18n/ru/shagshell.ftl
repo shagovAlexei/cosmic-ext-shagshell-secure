@@ -128,6 +128,8 @@ so-appearance = Внешний вид
 so-scheme = Цветовая схема
 so-scheme-global = (как в Общих параметрах)
 options-terminal = Терминал
+options-font = Шрифт (пусто = системный моноширинный)
+options-font-size = Размер шрифта
 options-copy-on-select = Копировать при выделении
 options-paste-on-middle = Вставлять средней кнопкой мыши
 term-disconnected = Отключено — Enter, чтобы подключиться заново

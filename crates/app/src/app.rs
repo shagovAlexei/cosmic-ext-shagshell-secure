@@ -220,7 +220,7 @@ impl Application for App {
         app.sessions.notice = (app.buttons.broken().map(String::from))
             .or(hl_error)
             .or(keys_error);
-        app.tabs.set_looks(&app.config, &app.hl, &look());
+        app.tabs.set_looks(&app.config, &app.hl, &look(&app.config));
         app.startup = startup;
         (app, theme.unwrap_or_else(Task::none))
     }
@@ -326,7 +326,7 @@ impl Application for App {
         _: &[&'static str],
         _: &cosmic::cosmic_theme::Theme,
     ) -> Task<Message> {
-        self.tabs.restyle(&look());
+        self.tabs.restyle(&look(&self.config));
         Task::none()
     }
 
@@ -335,7 +335,7 @@ impl Application for App {
         _: &[&'static str],
         _: &cosmic::cosmic_theme::ThemeMode,
     ) -> Task<Message> {
-        self.tabs.restyle(&look());
+        self.tabs.restyle(&look(&self.config));
         Task::none()
     }
 
@@ -445,7 +445,8 @@ impl App {
                 self.save_config();
                 self.tabs.set_sftp_prefs(&self.config);
                 self.tabs.set_log_prefs(&self.config);
-                self.tabs.set_looks(&self.config, &self.hl, &look());
+                self.tabs
+                    .set_looks(&self.config, &self.hl, &look(&self.config));
                 let mut tasks = Vec::new();
                 if lang {
                     crate::i18n::init(&config::languages(
@@ -475,14 +476,16 @@ impl App {
             Message::CloseDrawer => self.set_drawer(None),
             Message::Tabs(m) => {
                 self.sessions.focused = false; // a terminal is used: Enter is its again
-                let task = self.tabs.update(m, &look());
+                let task = self.tabs.update(m, &look(&self.config));
                 return Task::batch([task, self.prune_asks()]);
             }
             Message::TermTx(tx) => {
                 self.tabs.set_sender(tx);
                 if let Some((path, args)) = self.startup.take() {
                     // The shell is the active tab at once; what it prints waits in the script's buffer.
-                    let open = self.tabs.open(tabs::Launch::local_shell(), &look());
+                    let open = self
+                        .tabs
+                        .open(tabs::Launch::local_shell(), &look(&self.config));
                     return Task::batch([
                         open,
                         self.script(crate::script::ScMsg::Start(path, args)),
@@ -667,7 +670,7 @@ impl App {
                 // Only the words changed: no need to restyle every terminal.
                 self.tabs.set_highlights(&self.config, &self.hl);
             }
-            Message::Restyle => self.tabs.restyle(&look()),
+            Message::Restyle => self.tabs.restyle(&look(&self.config)),
             Message::Cosmic(a) => return cosmic::task::message(*a),
             Message::Sessions(m) => {
                 let out = self.sessions.update(m);
@@ -747,9 +750,15 @@ impl App {
                 {
                     match code {
                         Code::Enter | Code::NumpadEnter => {
-                            return self.tabs.update(TabsMsg::CloseConfirmed, &look());
+                            return self
+                                .tabs
+                                .update(TabsMsg::CloseConfirmed, &look(&self.config));
                         }
-                        Code::Escape => return self.tabs.update(TabsMsg::CloseCancelled, &look()),
+                        Code::Escape => {
+                            return self
+                                .tabs
+                                .update(TabsMsg::CloseCancelled, &look(&self.config));
+                        }
                         _ => {}
                     }
                 }
@@ -897,7 +906,7 @@ impl App {
                 }
             };
         }
-        if let Some(task) = self.tabs.act(action, &look()) {
+        if let Some(task) = self.tabs.act(action, &look(&self.config)) {
             return task;
         }
         match action {
@@ -1236,12 +1245,12 @@ impl App {
         );
         l.title = fl!("ku-tab", name = name);
         (l.log, l.logon, l.auto_reconnect) = (None, None, None);
-        self.tabs.open(l, &look())
+        self.tabs.open(l, &look(&self.config))
     }
 
     /// A tab for `launch`; the session's `script` (if any) runs on it.
     fn open_tab(&mut self, launch: tabs::Launch, script: &str) -> Task<Message> {
-        let open = self.tabs.open(launch, &look());
+        let open = self.tabs.open(launch, &look(&self.config));
         match (self.tabs.last_opened(), script.trim()) {
             (Some(tab), s) if !s.is_empty() => Task::batch([
                 open,
@@ -1312,7 +1321,7 @@ impl App {
         let creds = load_credentials();
         match ssh_launch(&self.control_dir, creds.as_ref(), &s, name, Some(id)) {
             Ok(l) => match l.sftp() {
-                Some(l) => self.tabs.open(l, &look()),
+                Some(l) => self.tabs.open(l, &look(&self.config)),
                 None => Task::none(),
             },
             Err(e) => {
@@ -1644,7 +1653,7 @@ impl App {
             title,
             saved_id.as_deref(),
         ) {
-            Ok(l) => self.tabs.open(l, &look()),
+            Ok(l) => self.tabs.open(l, &look(&self.config)),
             Err(e) => {
                 self.sessions.notice = Some(e);
                 Task::none()
@@ -1831,7 +1840,7 @@ impl App {
                 self.sessions.reload();
                 self.sessions_changed(&id, &new);
                 // A scheme chosen for the session shows in its open tabs at once.
-                self.tabs.restyle(&look());
+                self.tabs.restyle(&look(&self.config));
                 if renamed {
                     self.sessions.select(&new);
                     let (from, to) = (id, new.clone());
@@ -2087,13 +2096,18 @@ fn input(w: cosmic::iced::window::Id, m: Option<Message>) -> Option<Message> {
 }
 
 /// The terminals' look: cosmic-term's style, the theme's darkness and window background.
-fn look() -> tabs::Look {
+fn look(config: &Config) -> tabs::Look {
     let theme = cosmic::theme::active();
     let c = theme.cosmic();
     let bg = c.bg_color();
     let byte = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u32;
     let bg = 0xFF00_0000 | byte(bg.red) << 16 | byte(bg.green) << 8 | byte(bg.blue);
-    (Default::default(), c.is_dark, bg)
+    let style = crate::term::style::Style {
+        font_size: config.font_px(),
+        font_family: config.font_family.clone(),
+        ..Default::default()
+    };
+    (style, c.is_dark, bg)
 }
 
 /// App keys that act even when a text field took the key.

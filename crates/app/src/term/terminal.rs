@@ -19,7 +19,7 @@ use alacritty_terminal::{
 };
 use cosmic::iced::{advanced::graphics::text::font_system, mouse::ScrollDelta};
 use cosmic_text::{
-    Attrs, AttrsList, Buffer, BufferLine, CacheKeyFlags, Family, LineEnding, Shaping, Weight, Wrap,
+    Attrs, AttrsList, Buffer, BufferLine, CacheKeyFlags, LineEnding, Shaping, Weight, Wrap,
 };
 use indexmap::IndexSet;
 use std::{
@@ -260,7 +260,7 @@ impl Terminal {
 
         //TODO: set color to default fg
         let default_attrs = Attrs::new()
-            .family(Family::Monospace)
+            .family(app_config.family())
             .weight(Weight(font_weight))
             .stretch(font_stretch)
             .color(default_fg)
@@ -616,6 +616,11 @@ impl Terminal {
             update_cell_size = true;
         }
 
+        if self.default_attrs.family != config.family() {
+            self.default_attrs = self.default_attrs.clone().family(config.family());
+            update_cell_size = true;
+        }
+
         if self.default_attrs.weight.0 != config.font_weight {
             self.default_attrs = self
                 .default_attrs
@@ -683,7 +688,7 @@ impl Terminal {
             let (default_metadata_idx, _) = self.metadata_set.insert_full(new_default_metadata);
 
             self.default_attrs = Attrs::new()
-                .family(Family::Monospace)
+                .family(config.family())
                 .weight(Weight(config.font_weight))
                 .stretch(config.typed_font_stretch())
                 .color(default_fg)
