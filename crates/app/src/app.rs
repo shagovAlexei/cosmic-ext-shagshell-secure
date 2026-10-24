@@ -1428,10 +1428,14 @@ impl App {
         &mut self,
         n: &shagshell_core::script::NewSession,
     ) -> Result<serde_json::Value, String> {
-        crate::session_manager::check(&n.name, n.folder.is_empty())?;
+        crate::session_manager::check(&n.name, n.folder.is_empty())
+            .map_err(|e| format!("Session.Create: {e}"))?;
         let store = &self.sessions.store;
         let mut s = store.template();
-        (s.host, s.user, s.port) = (n.host.clone(), n.user.clone(), n.port);
+        s.host = n.host.clone();
+        // Only what the script said: the rest is the Default template's.
+        s.user = n.user.clone().or(s.user);
+        s.port = n.port.or(s.port);
         let id =
             (store.add(&n.folder, &n.name, &s)).map_err(|e| crate::session_manager::io_text(&e))?;
         self.sessions.select(&id);

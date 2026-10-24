@@ -106,7 +106,9 @@ class _Screen:
         _call("Screen.Send", self._tab, text)
 
     def WaitForString(self, text, timeout=0, bCaseInsensitive=False):
-        return bool(_call("Screen.WaitForString", self._tab, text, timeout, bCaseInsensitive))
+        found = bool(_call("Screen.WaitForString", self._tab, text, timeout, bCaseInsensitive))
+        self.MatchIndex = int(found)
+        return found
 
     def WaitForStrings(self, *texts, **kw):
         # WaitForStrings("a", "b"[, timeout[, bCaseInsensitive]]) or WaitForStrings(["a", "b"], …)

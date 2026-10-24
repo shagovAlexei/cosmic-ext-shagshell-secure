@@ -502,8 +502,15 @@ pub fn new_session(args: &[Value]) -> Result<NewSession, String> {
         Some(p @ 1..=65535) => Some(p as u16),
         Some(p) => return Err(format!("Session.Create: bad port {p}")),
     };
+    let folder = text(4).trim_matches('/');
+    // A folder of the tree only: no `..`, no hidden or empty parts, nothing outside the sessions.
+    if folder.split('/').any(|d| {
+        !folder.is_empty() && (d.is_empty() || d.starts_with('.') || d.contains(['\\', '\0']))
+    }) {
+        return Err(format!("Session.Create: bad folder {folder:?}"));
+    }
     Ok(NewSession {
-        folder: text(4).trim_matches('/').to_string(),
+        folder: folder.to_string(),
         name: name.to_string(),
         host: host.to_string(),
         user: Some(text(2).to_string()).filter(|u| !u.is_empty()),
@@ -1046,6 +1053,10 @@ mod tests {
         assert_eq!((d.user, d.port, d.folder.as_str()), (None, None, ""));
         assert!(new_session(&[json!(""), json!("h")]).is_err());
         assert!(new_session(&[json!("a"), json!(" ")]).is_err());
+        for bad in ["../x", "a/../b", "a//b", ".hid", "a\\b"] {
+            let r = new_session(&[json!("a"), json!("h"), json!(""), json!(22), json!(bad)]);
+            assert!(r.is_err(), "{bad}");
+        }
         assert!(new_session(&[json!("a"), json!("h"), json!(""), json!(70000)]).is_err());
         assert!(new_session(&[json!("a"), json!("h"), json!(""), json!(0)]).is_err());
     }
