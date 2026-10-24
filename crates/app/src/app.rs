@@ -1080,7 +1080,7 @@ impl App {
         if out.refocus {
             tasks.push(self.tabs.focus_active());
         }
-        if let Some((set, reply)) = out.clip {
+        for (set, reply) in out.clip {
             match set {
                 Some(text) => {
                     tasks.push(cosmic::iced::clipboard::write(text));

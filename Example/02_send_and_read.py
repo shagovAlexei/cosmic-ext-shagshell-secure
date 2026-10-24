@@ -22,12 +22,12 @@ command = crt.Dialog.Prompt("Command / Команда:", "Example 02", "uname -a
 if command == "":
     crt.Quit()
 
-# EN: The prompt = the text of the cursor row left of the cursor. We take its last 12 characters
-#     (a short, stable tail) so that a changing directory in a long prompt does not matter.
-# RU: Приглашение = текст строки курсора левее курсора. Берём последние 12 символов
-#     (короткий устойчивый хвост), чтобы смена каталога в длинном приглашении не мешала.
+# EN: The prompt = the text of the cursor row left of the cursor. Do not `cd` between reading
+#     it and the commands: the prompt would change and ReadString would wait for the old one.
+# RU: Приглашение = текст строки курсора левее курсора. Не меняйте каталог (`cd`) между чтением
+#     приглашения и командами: приглашение изменится, а ReadString будет ждать старое.
 row, col = screen.CurrentRow, screen.CurrentColumn
-prompt = screen.Get(row, 1, row, col - 1).rstrip()[-12:]
+prompt = screen.Get(row, 1, row, col - 1).strip()
 
 screen.Send(command + "\r")
 screen.WaitForString("\n")   # EN: end of the echoed command line / RU: конец строки с эхом команды

@@ -156,24 +156,21 @@ impl Buffer {
 }
 
 /// `Screen.Get(r1, c1, r2, c2)`: the block of `rows` (1-based, ends included, clamped to the
-/// screen; a column below 1 counts as 1) as lines joined by `\n`, short rows padded with spaces.
+/// screen; a column below 1 counts as 1; an end before the start is an empty block) as lines
+/// joined by `\n`.
 pub fn slice(rows: &[String], r1: i64, c1: i64, r2: i64, c2: i64) -> String {
     let at = |v: i64| usize::try_from(v.max(1)).unwrap_or(1);
-    let (r1, r2, c1, c2) = (at(r1), at(r2), at(c1), at(c2));
-    let mut out = Vec::new();
-    for row in rows.iter().take(r2).skip(r1 - 1) {
-        let mut line: String = row
-            .chars()
-            .skip(c1 - 1)
-            .take((c2 + 1).saturating_sub(c1))
-            .collect();
-        let want = (c2 + 1).saturating_sub(c1);
-        while line.chars().count() < want {
-            line.push(' ');
-        }
-        out.push(line);
-    }
-    out.join("\n")
+    let width = rows.iter().map(|r| r.chars().count()).max().unwrap_or(0);
+    let (r1, r2, c1) = (at(r1), at(r2), at(c1));
+    let c2 = usize::try_from(c2).unwrap_or(0).min(width);
+    let want = (c2 + 1).saturating_sub(c1);
+    let lines: Vec<String> = rows
+        .iter()
+        .take(r2)
+        .skip(r1 - 1)
+        .map(|row| row.chars().skip(c1 - 1).take(want).collect())
+        .collect();
+    lines.join("\n")
 }
 
 /// `~/x` as the home folder's `x`; any other path as it is.
@@ -353,7 +350,9 @@ mod tests {
         let rows: Vec<String> = ["abcde", "fghij", "klmno"].map(String::from).to_vec();
         assert_eq!(slice(&rows, 1, 2, 2, 4), "bcd\nghi");
         assert_eq!(slice(&rows, 2, 0, 2, 2), "fg"); // column 0 is column 1
-        assert_eq!(slice(&rows, 3, 4, 9, 9), "no    "); // past the end: padded, rows clamped
+        assert_eq!(slice(&rows, 3, 4, 9, 9), "no"); // past the end: clamped
+        assert_eq!(slice(&rows, 1, 1, 1, 0), ""); // a prompt of no characters (cursor in column 1)
+        assert_eq!(slice(&rows, 1, 1, 1, 1_000_000_000), "abcde");
         assert_eq!(slice(&rows, 2, 3, 1, 3), ""); // backwards: nothing
     }
 

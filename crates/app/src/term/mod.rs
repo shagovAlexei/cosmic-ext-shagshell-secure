@@ -72,6 +72,7 @@ pub struct Screen {
     pub rows: Vec<String>,
     pub row: usize,
     pub col: usize,
+    pub cols: usize,
     pub selection: String,
 }
 
@@ -87,8 +88,17 @@ pub fn screen(t: &Mutex<Terminal>) -> Screen {
             let line = &grid[Line(i as i32)];
             (0..grid.columns())
                 .map(|j| &line[Column(j)])
-                .filter(|c| !c.flags.contains(Flags::WIDE_CHAR_SPACER))
-                .map(|c| c.c)
+                // One char per grid column (a wide char's second cell is a blank), so that
+                // column numbers are the screen's.
+                .map(|c| {
+                    match c
+                        .flags
+                        .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER)
+                    {
+                        true => ' ',
+                        false => c.c,
+                    }
+                })
                 .collect()
         })
         .collect();
@@ -96,6 +106,7 @@ pub fn screen(t: &Mutex<Terminal>) -> Screen {
         rows,
         row: usize::try_from(grid.cursor.point.line.0).unwrap_or(0),
         col: grid.cursor.point.column.0,
+        cols: grid.columns(),
         selection: term.selection_to_string().unwrap_or_default(),
     }
 }

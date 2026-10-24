@@ -15,10 +15,7 @@ if text == "":
 
 if session.LogFileName == "":
     session.Log(True, True)             # EN: start, append / RU: включить, дописывать
-path = session.LogFileName
-
-# EN: Writing to the file straight away: the log appends, so we add our own lines at the end.
-# RU: Пишем в файл напрямую: лог дописывается, поэтому добавляем свои строки в конец.
-with open(path, "a", encoding="utf-8") as f:
-    f.write("\n/* %s: %s */\n" % (datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), text))
-crt.Dialog.MessageBox("Added to / Добавлено в:\n" + path, "Example 10")
+# EN: LogText writes through the app's logger, in order with the terminal output.
+# RU: LogText пишет через логгер приложения, в порядке с выводом терминала.
+session.LogText("\n/* %s: %s */\n" % (datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), text))
+crt.Dialog.MessageBox("Added to / Добавлено в:\n" + session.LogFileName, "Example 10")

@@ -143,6 +143,10 @@ class _Session:
         """The file of the log that is on ("" when it is off)."""
         return _call("Session.LogFileName", self._tab) or ""
 
+    def LogText(self, text):
+        """Writes `text` into the tab's log (it must be on), in order with the output."""
+        _call("Session.LogText", self._tab, str(text))
+
     def Log(self, on=True, append=None):
         """Starts / stops the tab's log (name template of the session or Global Options)."""
         _call("Session.Log", self._tab, bool(on), None if append is None else bool(append))
@@ -175,6 +179,8 @@ class _Tab:
 
 class _Dialog:
     def MessageBox(self, text, title="", buttons=0):
+        if int(buttons) in (BUTTON_ABORTRETRYIGNORE, BUTTON_RETRYCANCEL):
+            raise ScriptError("MessageBox: only BUTTON_OK / OKCANCEL / YESNO / YESNOCANCEL")
         r = _call("Dialog.MessageBox", 0, str(text), str(title), int(buttons))
         return IDOK if r is None else r
 

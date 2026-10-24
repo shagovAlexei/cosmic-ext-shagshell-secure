@@ -709,12 +709,19 @@ impl Tabs {
     pub fn script_log(&self, id: TabId, on: bool, append: Option<bool>) -> Result<(), String> {
         let tap = self.tap_of(id).ok_or("no such tab")?;
         match on {
+            true if tap.active() => Ok(()),
             true => self.log_on(id, append).map(|_| ()),
             false => {
                 tap.stop();
                 Ok(())
             }
         }
+    }
+
+    /// Scripts: `Session.LogText(text)`.
+    pub fn script_log_text(&self, id: TabId, text: &str) -> Result<(), String> {
+        let tap = self.tap_of(id).ok_or("no such tab")?;
+        tap.log_text(text).map_err(|e| e.to_string())
     }
 
     /// Scripts: the file of the tab's log ("" when it is off).

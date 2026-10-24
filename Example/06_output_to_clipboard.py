@@ -11,7 +11,7 @@ COMMANDS = ["date", "whoami", "pwd"]
 
 screen = crt.GetScriptTab().Screen
 row, col = screen.CurrentRow, screen.CurrentColumn
-prompt = screen.Get(row, 1, row, col - 1).rstrip()[-12:]
+prompt = screen.Get(row, 1, row, col - 1).strip()
 
 parts = []
 for cmd in COMMANDS:

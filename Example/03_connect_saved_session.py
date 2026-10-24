@@ -11,6 +11,23 @@
 #     SecureCRT: crt.Session.Connect('/S "имя"') работает так же. Сессия с паролем берёт
 #     сохранённый для неё (askpass); скрипт секретов не видит.
 
+def wait_for_prompt(screen, timeout=60):
+    """EN: wait until the login is over: the cursor row has text (the prompt) and the
+    cursor stood still for a second (askpass / host key dialogs, MOTD and slow links take time).
+    RU: ждать конца входа: в строке курсора есть текст (приглашение), а курсор секунду
+    не двигался (диалоги askpass / ключа хоста, MOTD и медленный канал занимают время)."""
+    import time
+    end = time.time() + timeout
+    while time.time() < end:
+        row, col = screen.CurrentRow, screen.CurrentColumn
+        line = screen.Get(row, 1, row, col - 1).rstrip()
+        if line and not screen.WaitForCursor(1):
+            return
+        crt.Sleep(200)
+    crt.Dialog.MessageBox("No prompt / Приглашения нет")
+    crt.Quit()
+
+
 name = crt.Arguments[0] if len(crt.Arguments) else crt.Dialog.Prompt("Session / Сессия:", "Example 03")
 if name == "":
     crt.Quit()
@@ -21,15 +38,12 @@ except ScriptError:
     crt.Dialog.MessageBox("Cannot open: " + crt.GetLastErrorMessage(), "Example 03")
     crt.Quit()
 
-tab = crt.GetTab(crt.GetTabCount())          # EN: the newest tab / RU: самая новая вкладка
+tab = crt.GetActiveTab()                           # EN: a new tab is the active one / RU: новая вкладка активна
 screen = tab.Screen
 
-# EN: Wait for the login to finish: the cursor stops moving for a second.
-# RU: Ждём окончания входа: курсор не двигается секунду.
-while screen.WaitForCursor(1):
-    pass
+wait_for_prompt(screen)
 row, col = screen.CurrentRow, screen.CurrentColumn
-prompt = screen.Get(row, 1, row, col - 1).rstrip()[-12:]
+prompt = screen.Get(row, 1, row, col - 1).strip()
 
 command = "hostname; uptime"
 screen.Send(command + "\r")

@@ -110,7 +110,7 @@ pub struct Outcome {
     /// `Session.Connect` of a script: the saved session to open.
     pub connect: Option<(String, Reply)>,
     /// `Clipboard.Set` / `Clipboard.Get` of a script.
-    pub clip: Option<(Option<String>, Reply)>,
+    pub clip: Vec<(Option<String>, Reply)>,
 }
 
 impl Scripts {
@@ -224,9 +224,9 @@ impl Scripts {
                     }
                     "Clipboard.Set" => {
                         let text = c.args.first().and_then(Value::as_str).unwrap_or_default();
-                        out.clip = Some((Some(text.to_string()), c.reply.clone()));
+                        out.clip.push((Some(text.to_string()), c.reply.clone()));
                     }
-                    "Clipboard.Get" => out.clip = Some((None, c.reply.clone())),
+                    "Clipboard.Get" => out.clip.push((None, c.reply.clone())),
                     "Session.Connect" => {
                         match connect_arg(c.args.first().and_then(Value::as_str).unwrap_or("")) {
                             // Answered once the tab exists (the app opens it).
@@ -413,14 +413,9 @@ fn answer(c: &Call, tabs: &mut Tabs) -> Option<Answer> {
             let n = |i: usize| c.args.get(i).and_then(Value::as_i64).unwrap_or(0);
             json!(script::slice(&s.rows, n(0), n(1), n(2), n(3)))
         }),
-        "Screen.Info" => known(c.tab).and_then(|id| screen(tabs, id)).map(|s| {
-            json!([
-                s.row + 1,
-                s.col + 1,
-                s.rows.len(),
-                s.rows.first().map_or(0, |r| r.chars().count())
-            ])
-        }),
+        "Screen.Info" => known(c.tab)
+            .and_then(|id| screen(tabs, id))
+            .map(|s| json!([s.row + 1, s.col + 1, s.rows.len(), s.cols])),
         "Screen.Selection" => known(c.tab)
             .and_then(|id| screen(tabs, id))
             .map(|s| json!(s.selection)),
@@ -428,6 +423,10 @@ fn answer(c: &Call, tabs: &mut Tabs) -> Option<Answer> {
             let flag = |i: usize| c.args.get(i).and_then(Value::as_bool);
             tabs.script_log(id, flag(0).unwrap_or(true), flag(1))
                 .map(|()| Value::Null)
+        }),
+        "Session.LogText" => known(c.tab).and_then(|id| {
+            let text = c.args.first().and_then(Value::as_str).unwrap_or_default();
+            tabs.script_log_text(id, text).map(|()| Value::Null)
         }),
         "Session.LogFileName" => known(c.tab).map(|id| json!(tabs.log_file(id))),
         "Tab.Index" => {

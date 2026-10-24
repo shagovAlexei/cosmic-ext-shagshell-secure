@@ -18,7 +18,7 @@ os.makedirs(folder, exist_ok=True)
 
 screen = crt.GetScriptTab().Screen
 row, col = screen.CurrentRow, screen.CurrentColumn
-prompt = screen.Get(row, 1, row, col - 1).rstrip()[-12:]
+prompt = screen.Get(row, 1, row, col - 1).strip()
 screen.Send(command + "\r")
 screen.WaitForString("\n")   # EN: end of the echoed command line / RU: конец строки с эхом команды
 output = screen.ReadString(prompt, 60)

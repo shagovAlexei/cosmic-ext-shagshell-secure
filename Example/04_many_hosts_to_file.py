@@ -14,6 +14,23 @@
 #     SecureCRT: как ConnectToMultipleSessionsAndSendCommands.py; там список - постоянный файл.
 import os
 
+def wait_for_prompt(screen, timeout=60):
+    """EN: wait until the login is over: the cursor row has text (the prompt) and the
+    cursor stood still for a second (askpass / host key dialogs, MOTD and slow links take time).
+    RU: ждать конца входа: в строке курсора есть текст (приглашение), а курсор секунду
+    не двигался (диалоги askpass / ключа хоста, MOTD и медленный канал занимают время)."""
+    import time
+    end = time.time() + timeout
+    while time.time() < end:
+        row, col = screen.CurrentRow, screen.CurrentColumn
+        line = screen.Get(row, 1, row, col - 1).rstrip()
+        if line and not screen.WaitForCursor(1):
+            return
+        crt.Sleep(200)
+    crt.Dialog.MessageBox("No prompt / Приглашения нет")
+    crt.Quit()
+
+
 COMMANDS = ["hostname", "uptime"]      # EN: change to yours / RU: подставьте свои
 
 if len(crt.Arguments) < 1:
@@ -34,12 +51,11 @@ for name in names:
         # EN: one bad host does not stop the rest / RU: один плохой хост не останавливает остальных
         report.append("ERROR: " + crt.GetLastErrorMessage())
         continue
-    tab = crt.GetTab(crt.GetTabCount())
+    tab = crt.GetActiveTab()   # EN: the new tab is active / RU: новая вкладка активна
     screen = tab.Screen
-    while screen.WaitForCursor(1):      # EN: login finished / RU: вход завершён
-        pass
+    wait_for_prompt(screen)
     row, col = screen.CurrentRow, screen.CurrentColumn
-    prompt = screen.Get(row, 1, row, col - 1).rstrip()[-12:]
+    prompt = screen.Get(row, 1, row, col - 1).strip()
     for cmd in COMMANDS:
         screen.Send(cmd + "\r")
         screen.WaitForString("\n")   # EN: end of the echoed command line / RU: конец строки с эхом команды
