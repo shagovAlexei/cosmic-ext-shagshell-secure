@@ -138,6 +138,14 @@ pub struct Config {
     pub session_manager_side: Side,
     /// Options → Command Manager side.
     pub command_manager_side: Side,
+    /// Script menu: the folder whose `*.py` files it lists ("" = `~/.config/shagshell/scripts`).
+    pub scripts_folder: String,
+    /// The folder Script → Run… and Stop Recording open in: where the last script was.
+    pub script_dir: String,
+    /// Script → Recent, newest first.
+    pub recent_scripts: Vec<String>,
+    /// Run on a local shell at startup ("" = none).
+    pub startup_script: String,
     /// Script Console: every `crt` call is traced into it.
     pub script_debug: bool,
     /// Script Console: opens by itself when a script writes something.
@@ -234,6 +242,10 @@ impl Default for Config {
             paste_on_middle_click: true,
             session_manager_side: Side::Left,
             command_manager_side: Side::Right,
+            scripts_folder: String::new(),
+            script_dir: String::new(),
+            recent_scripts: Vec::new(),
+            startup_script: String::new(),
             script_debug: false,
             script_console_auto: true,
             commands_above: false,

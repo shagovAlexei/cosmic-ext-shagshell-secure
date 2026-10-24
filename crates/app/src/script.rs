@@ -1065,27 +1065,68 @@ impl Host for RunHost {
     }
 }
 
+/// The portal's file chooser, opened in `dir` when it is a folder (libcosmic's dialog has no way
+/// to pass one).
+mod portal {
+    use ashpd::desktop::file_chooser::{FileFilter, OpenFileRequest, SaveFileRequest};
+    use std::path::{Path, PathBuf};
+
+    fn folder(dir: &Path) -> Option<&Path> {
+        dir.is_dir().then_some(dir)
+    }
+
+    fn filters() -> [FileFilter; 2] {
+        [
+            FileFilter::new("Python").glob("*.py"),
+            FileFilter::new("*").glob("*"),
+        ]
+    }
+
+    pub async fn open(title: &str, dir: &Path, folders: bool) -> Option<PathBuf> {
+        let mut r = OpenFileRequest::default()
+            .title(Some(title))
+            .modal(true)
+            .directory(folders);
+        if !folders {
+            r = r.filters(filters());
+        }
+        if let Some(d) = folder(dir) {
+            r = r.current_folder::<&Path>(Some(d)).ok()?;
+        }
+        let picked = r.send().await.ok()?.response().ok()?;
+        picked.uris().first()?.to_file_path().ok()
+    }
+
+    pub async fn save(title: &str, dir: &Path) -> Option<PathBuf> {
+        let mut r = SaveFileRequest::default()
+            .title(Some(title))
+            .modal(true)
+            .filter(FileFilter::new("Python").glob("*.py"));
+        if let Some(d) = folder(dir) {
+            r = r.current_folder::<&Path>(Some(d)).ok()?;
+        }
+        let picked = r.send().await.ok()?.response().ok()?;
+        picked.uris().first()?.to_file_path().ok()
+    }
+}
+
 /// Stop Recording: where to put the script (`.py` is added when missing).
-pub async fn save_script(title: String) -> Option<PathBuf> {
-    use cosmic::dialog::file_chooser::{FileFilter, save::Dialog};
-    let r = Dialog::new()
-        .title(title)
-        .filter(FileFilter::new("Python").glob("*.py"))
-        .save_file()
-        .await
-        .ok()?;
-    let mut path = r.url()?.to_file_path().ok()?;
+pub async fn save_script(title: String, dir: PathBuf) -> Option<PathBuf> {
+    let mut path = portal::save(&title, &dir).await?;
     if path.extension().is_none() {
         path.set_extension("py");
     }
     Some(path)
 }
 
-/// Script → Run…: the file from the portal's chooser.
-pub async fn pick(title: String) -> Option<PathBuf> {
-    use cosmic::dialog::file_chooser::open::Dialog;
-    let picked = Dialog::new().title(title).open_file().await.ok()?;
-    picked.url().to_file_path().ok()
+/// Script → Run…: the file from the portal's chooser, opened in `dir`.
+pub async fn pick(title: String, dir: PathBuf) -> Option<PathBuf> {
+    portal::open(&title, &dir, false).await
+}
+
+/// Script → Choose scripts folder….
+pub async fn pick_folder(title: String, dir: PathBuf) -> Option<PathBuf> {
+    portal::open(&title, &dir, true).await
 }
 
 #[cfg(test)]

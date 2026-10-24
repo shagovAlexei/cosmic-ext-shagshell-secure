@@ -26,6 +26,8 @@ alacritty_terminal = "0.25.1"
 cosmic-text = { version = "0.19", features = ["monospace_fallback", "shape-run-cache"] }
 indexmap = "2"
 tokio = { version = "1", features = ["rt", "sync"] }
+# The file chooser portal, for the folder it opens in (libcosmic's dialog does not pass one).
+ashpd = { version = "0.12.3", default-features = false, features = ["tokio"] }
 
 [dependencies.libcosmic]
 git = "https://github.com/pop-os/libcosmic.git"

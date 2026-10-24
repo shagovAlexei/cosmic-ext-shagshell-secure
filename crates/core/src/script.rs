@@ -295,6 +295,41 @@ pub fn expand_home(path: &std::path::Path) -> std::path::PathBuf {
     }
 }
 
+/// The folder the Script menu lists when none is set: `~/.config/shagshell/scripts`.
+pub fn default_dir() -> std::path::PathBuf {
+    crate::session::store::default_root()
+        .parent()
+        .map_or_else(|| "scripts".into(), |p| p.join("scripts"))
+}
+
+/// The scripts of a folder for the Script menu: its `*.py` files (not hidden), by name, at most 60.
+pub fn list_dir(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut files: Vec<_> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.is_file()
+                && p.extension().is_some_and(|e| e == "py")
+                && !p
+                    .file_name()
+                    .is_some_and(|n| n.as_encoded_bytes().starts_with(b"."))
+        })
+        .collect();
+    files.sort_by_key(|p| p.file_name().map(|n| n.to_string_lossy().to_lowercase()));
+    files.truncate(60);
+    files
+}
+
+/// The recent scripts after `path` was run: it goes first, once, the list stays `max` long.
+pub fn recent_push(recent: &[String], path: &str, max: usize) -> Vec<String> {
+    let mut out = vec![path.to_string()];
+    out.extend(recent.iter().filter(|r| *r != path).cloned());
+    out.truncate(max);
+    out
+}
+
 /// The first char boundary of `s` at or after `i` (`s.len()` past the end).
 fn boundary(s: &str, i: usize) -> usize {
     (i.min(s.len())..=s.len())
@@ -562,6 +597,30 @@ pub fn command(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn list_dir_takes_visible_py_files_by_name() {
+        let d = std::env::temp_dir().join(format!("shagshell-list-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("sub.py")).unwrap();
+        for n in ["b.py", "A.py", ".hidden.py", "notes.txt"] {
+            std::fs::write(d.join(n), "").unwrap();
+        }
+        let names: Vec<_> = list_dir(&d)
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, ["A.py", "b.py"]);
+        assert!(list_dir(&d.join("nope")).is_empty());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn recent_goes_first_once_and_is_cut() {
+        let r: Vec<String> = ["a", "b", "c"].map(String::from).to_vec();
+        assert_eq!(recent_push(&r, "b", 10), ["b", "a", "c"]);
+        assert_eq!(recent_push(&r, "z", 3), ["z", "a", "b"]);
+    }
+
     #[test]
     fn console_keeps_the_newest_lines() {
         let mut c = Console::default();
