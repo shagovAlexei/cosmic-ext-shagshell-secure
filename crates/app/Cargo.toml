@@ -15,6 +15,7 @@ rust-embed = "8"
 log = "0.4"
 simple_logger = "5"
 serde = { version = "1", features = ["derive"] }
+shlex = "1"
 # Startup probe for the renderer (wgpu comes from libcosmic: `cosmic::iced::wgpu`).
 pollster = "0.4"
 

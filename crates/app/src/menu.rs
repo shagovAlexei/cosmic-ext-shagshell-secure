@@ -16,6 +16,8 @@ pub enum Action {
     ToggleSessionManager,
     /// View → Command Window.
     ToggleCommandWindow,
+    /// View → Button Bar.
+    ToggleButtonBar,
     About,
     GlobalOptions,
     NewLocalShell,
@@ -44,6 +46,46 @@ pub enum Action {
     Disconnect,
     ConnectSftp,
     Pending,
+}
+
+/// The functions a Button Bar button can call: the name in `buttonbars.toml` and its label.
+pub type NamedFn = (&'static str, fn() -> String);
+pub const NAMED: [NamedFn; 13] = [
+    ("Connect", || fl!("menu-connect")),
+    ("QuickConnect", || fl!("menu-quick-connect")),
+    ("NewLocalShell", || fl!("menu-new-local-shell")),
+    ("Reconnect", || fl!("menu-reconnect")),
+    ("Disconnect", || fl!("menu-disconnect")),
+    ("CloseTab", || fl!("menu-close-tab")),
+    ("ConnectSftp", || fl!("menu-connect-sftp")),
+    ("SessionOptions", || fl!("menu-session-options")),
+    ("SplitRight", || fl!("menu-split-right")),
+    ("SplitDown", || fl!("menu-split-down")),
+    ("ToggleSessionManager", || fl!("menu-session-manager")),
+    ("ToggleCommandWindow", || fl!("menu-command-window")),
+    ("GlobalOptions", || fl!("menu-global-options")),
+];
+
+impl Action {
+    /// A function by the name `NAMED` gives it.
+    pub fn named(name: &str) -> Option<Action> {
+        Some(match name {
+            "Connect" => Action::Connect,
+            "QuickConnect" => Action::QuickConnect,
+            "NewLocalShell" => Action::NewLocalShell,
+            "Reconnect" => Action::Reconnect,
+            "Disconnect" => Action::Disconnect,
+            "CloseTab" => Action::CloseTab,
+            "ConnectSftp" => Action::ConnectSftp,
+            "SessionOptions" => Action::SessionOptions,
+            "SplitRight" => Action::SplitRight,
+            "SplitDown" => Action::SplitDown,
+            "ToggleSessionManager" => Action::ToggleSessionManager,
+            "ToggleCommandWindow" => Action::ToggleCommandWindow,
+            "GlobalOptions" => Action::GlobalOptions,
+            _ => return None,
+        })
+    }
 }
 
 impl menu::Action for Action {
@@ -75,7 +117,7 @@ fn key_binds() -> HashMap<KeyBind, Action> {
 /// `(tabs, live, splittable)`: any tab open; the active one connected; its group has
 /// more than one tab (`Tabs::menu_state`).
 pub fn bar(
-    (session_manager, command_window): (bool, bool),
+    (session_manager, command_window, button_bar): (bool, bool, bool),
     (tabs, live, split): (bool, bool, bool),
 ) -> Element<'static, Message> {
     use menu::Item::{Button, ButtonDisabled, CheckBox, Divider};
@@ -124,6 +166,12 @@ pub fn bar(
                     None,
                     command_window,
                     Action::ToggleCommandWindow,
+                ),
+                CheckBox(
+                    fl!("menu-button-bar"),
+                    None,
+                    button_bar,
+                    Action::ToggleButtonBar,
                 ),
                 off(fl!("menu-toolbar")),
                 off(fl!("menu-status-bar")),

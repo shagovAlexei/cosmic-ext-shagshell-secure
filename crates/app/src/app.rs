@@ -50,6 +50,7 @@ pub struct App {
     asks: crate::askpass::Asks,
     /// View → Command Window.
     command: crate::command_window::CommandWindow,
+    buttons: crate::button_bar::ButtonBar,
 }
 
 #[derive(Clone, Debug)]
@@ -74,6 +75,7 @@ pub enum Message {
     Cosmic(Box<cosmic::Action<Message>>),
     Sessions(SmMsg),
     CommandWindow(crate::command_window::CwMsg),
+    ButtonBar(crate::button_bar::BbMsg),
     QuickConnect(QcMsg),
     SessionOptions(SoMsg),
     /// Keys and the pointer: acted on only when from the main window (not Session Options).
@@ -124,7 +126,7 @@ impl Application for App {
         let asks = crate::askpass::Asks::new(askpass_sock(&control_dir));
         let mut tabs = Tabs::default();
         tabs.set_sftp_prefs(&config);
-        let app = Self {
+        let mut app = Self {
             core,
             config,
             config_handler,
@@ -139,7 +141,10 @@ impl Application for App {
             control_dir,
             asks,
             command: crate::command_window::CommandWindow::new(),
+            buttons: crate::button_bar::ButtonBar::new(),
         };
+        // A broken buttonbars.toml is said, and left alone.
+        app.sessions.notice = app.buttons.broken().map(String::from);
         (app, theme.unwrap_or_else(Task::none))
     }
 
@@ -164,6 +169,7 @@ impl Application for App {
                     self.core.window.header_title = fl!("app-title");
                     self.about = about::about();
                     self.command.relabel();
+                    self.buttons.relabel();
                 }
                 if theme {
                     tasks.push(
@@ -233,6 +239,34 @@ impl Application for App {
                 if let Some((to, pieces)) = self.command.update(m) {
                     let ids = self.tabs.send_targets(to);
                     return self.tabs.send(ids, pieces);
+                }
+            }
+            Message::ButtonBar(m) => {
+                let opens = matches!(
+                    m,
+                    crate::button_bar::BbMsg::AddButton
+                        | crate::button_bar::BbMsg::Edit(_)
+                        | crate::button_bar::BbMsg::NewBar
+                        | crate::button_bar::BbMsg::RenameBar
+                );
+                let (run, notice) = self.buttons.update(m, self.shown_bar());
+                if notice.is_some() {
+                    self.sessions.notice = notice;
+                }
+                // A bar renamed or deleted: the sessions that named it follow.
+                if let Some((old, new)) = self.buttons.relink.take() {
+                    match self.sessions.store.relink_bar(&old, new.as_deref()) {
+                        Ok(_) => self.sessions.reload(),
+                        Err(e) => {
+                            self.sessions.notice = Some(crate::session_manager::io_text(&e));
+                        }
+                    }
+                }
+                if let Some(b) = run {
+                    return self.run_button(b);
+                }
+                if opens && self.buttons.has_dialog() {
+                    return widget::text_input::focus(self.buttons.first_field());
                 }
             }
             Message::Restyle => self.tabs.restyle(&look()),
@@ -488,6 +522,7 @@ impl Application for App {
 
     fn dialog(&self) -> Option<Element<'_, Message>> {
         (self.asks.dialog(|t| self.tabs.title(t)))
+            .or_else(|| self.buttons.dialog())
             .or_else(|| self.tabs.dialog())
             .or_else(|| self.quick.as_ref().map(QuickConnect::view))
             .or_else(|| self.sessions.dialog())
@@ -498,6 +533,7 @@ impl Application for App {
             (
                 self.config.session_manager_visible,
                 self.config.command_window_visible,
+                self.config.button_bar_visible,
             ),
             self.tabs.menu_state(),
         )]
@@ -531,6 +567,9 @@ impl Application for App {
         if self.config.command_window_visible {
             col = col.push(self.command.view());
         }
+        if self.config.button_bar_visible {
+            col = col.push(self.buttons.view(self.shown_bar(), window));
+        }
         col.push(status_bar::view(
             self.tabs.status(),
             self.sessions.notice.as_deref(),
@@ -540,6 +579,74 @@ impl Application for App {
 }
 
 impl App {
+    /// The bar on screen: the active session's own, else the one picked on the bar.
+    fn shown_bar(&self) -> Option<usize> {
+        let own = (self.tabs.active_session())
+            .and_then(|id| self.sessions.store.get(&id).ok())
+            .and_then(|s| s.button_bar);
+        self.buttons.shown(own.as_deref())
+    }
+
+    /// A Button Bar button pressed.
+    fn run_button(&mut self, b: shagshell_core::buttonbar::Button) -> Task<Message> {
+        use shagshell_core::buttonbar::{Kind, Target};
+        match b.kind {
+            Kind::Send => {
+                let to = match b.target {
+                    Target::Current => crate::command_window::SendTo::Current,
+                    Target::All => crate::command_window::SendTo::All,
+                };
+                let ids = self.tabs.send_targets(to);
+                self.tabs.send(ids, shagshell_core::macros::parse(&b.arg))
+            }
+            Kind::Menu => match Action::named(&b.arg) {
+                Some(a) => self.act(a),
+                None => {
+                    self.sessions.notice = Some(fl!("bb-unknown-function", name = b.arg));
+                    Task::none()
+                }
+            },
+            Kind::Launch => {
+                self.launch_app(&b.arg);
+                Task::none()
+            }
+        }
+    }
+
+    /// «Launch App»: `%H %P %U %S` from the active session, no shell (the words as split).
+    fn launch_app(&mut self, cmd: &str) {
+        let id = self.tabs.active_session();
+        let s = id.as_ref().and_then(|id| self.sessions.store.get(id).ok());
+        // Split first, then fill in: a host or user with a space or a leading dash stays one
+        // word of its own and is never taken for an option.
+        let port = (s.as_ref().and_then(|s| s.port)).map_or_else(String::new, |p| p.to_string());
+        let Some(words) = shlex::split(cmd).filter(|w| !w.is_empty()) else {
+            self.sessions.notice = Some(fl!("bb-bad-command"));
+            return;
+        };
+        let words: Vec<String> = words
+            .iter()
+            .map(|w| {
+                shagshell_core::buttonbar::substitute(
+                    w,
+                    s.as_ref().map_or("", |s| s.host.as_str()),
+                    &port,
+                    s.as_ref().and_then(|s| s.user.as_deref()).unwrap_or(""),
+                    id.as_deref()
+                        .map_or("", shagshell_core::session::store::name_of),
+                )
+            })
+            .collect();
+        match std::process::Command::new(&words[0])
+            .args(&words[1..])
+            .spawn()
+        {
+            // Reaped off the UI thread, or each start leaves a zombie until exit.
+            Ok(mut child) => drop(std::thread::spawn(move || child.wait())),
+            Err(e) => self.sessions.notice = Some(format!("{}: {e}", words[0])),
+        }
+    }
+
     fn act(&mut self, action: Action) -> Task<Message> {
         // SFTP: the active ssh tab's connection, else the session selected in the tree.
         if action == Action::ConnectSftp && !self.tabs.can_sftp() {
@@ -558,6 +665,10 @@ impl App {
             Action::Exit => {
                 let _ = std::fs::remove_file(askpass_sock(&self.control_dir));
                 return cosmic::iced::exit();
+            }
+            Action::ToggleButtonBar => {
+                self.config.button_bar_visible = !self.config.button_bar_visible;
+                self.save_config();
             }
             Action::ToggleCommandWindow => {
                 self.config.command_window_visible = !self.config.command_window_visible;
@@ -1007,7 +1118,7 @@ impl App {
             .into_iter()
             .map(|(n, s)| (n, s.user))
             .collect();
-        let o = SessionOptions::new(window, target, &session, sets);
+        let o = SessionOptions::new(window, target, &session, sets, self.buttons.names());
         // The first field focused once the window is there (before, the focus goes nowhere).
         let first = o.first_field();
         let mut tasks = vec![

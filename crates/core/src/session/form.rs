@@ -14,6 +14,8 @@ pub struct Form {
     pub extra: String,
     /// Credential set name, "" = none.
     pub credential: String,
+    /// Button Bar name, "" = the one picked on the bar itself.
+    pub button_bar: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -42,6 +44,7 @@ impl Form {
             keepalive: s.keepalive.map(|k| k.to_string()).unwrap_or_default(),
             extra: s.extra.clone(),
             credential: text(&s.credential),
+            button_bar: text(&s.button_bar),
         }
     }
 
@@ -74,6 +77,7 @@ impl Form {
             keepalive,
             extra,
             credential: opt(&self.credential),
+            button_bar: opt(&self.button_bar),
             ..base.clone()
         })
     }
