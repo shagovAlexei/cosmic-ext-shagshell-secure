@@ -54,6 +54,9 @@ pub enum Action {
     KeyMap,
     /// A key of the user's own (`keymap.toml`): the n-th binding.
     Bound(u16),
+    /// Transfer → Zmodem / Ymodem / Xmodem: send or receive, or stop.
+    Transfer(shagshell_core::zmodem::Proto, bool),
+    CancelTransfer,
     /// Script → Run….
     RunScript,
     /// Script → Cancel.
@@ -143,6 +146,19 @@ pub fn bar(
         false => ButtonDisabled(label, None, a),
     };
     let tab = |label: String, a| on(tabs, label, a);
+    // File transfer in a terminal needs a terminal tab and lrzsz.
+    let xfer = |label: String, a: Action| {
+        let tool = match a {
+            Action::Transfer(Proto::Zmodem, true) => "sz",
+            Action::Transfer(Proto::Ymodem, true) => "sb",
+            Action::Transfer(Proto::Xmodem, true) => "sx",
+            Action::Transfer(Proto::Ymodem, false) => "rb",
+            Action::Transfer(Proto::Xmodem, false) => "rx",
+            _ => "sz",
+        };
+        on(tabs && has_tool(tool), label, a)
+    };
+    use shagshell_core::zmodem::Proto;
     let roots = [
         (
             fl!("menu-file"),
@@ -207,7 +223,28 @@ pub fn bar(
             fl!("menu-transfer"),
             vec![
                 tab(fl!("menu-connect-sftp"), Action::ConnectSftp),
-                off(fl!("menu-send-file")),
+                Divider,
+                xfer(
+                    fl!("menu-send-zmodem"),
+                    Action::Transfer(Proto::Zmodem, true),
+                ),
+                xfer(
+                    fl!("menu-send-ymodem"),
+                    Action::Transfer(Proto::Ymodem, true),
+                ),
+                xfer(
+                    fl!("menu-send-xmodem"),
+                    Action::Transfer(Proto::Xmodem, true),
+                ),
+                xfer(
+                    fl!("menu-receive-ymodem"),
+                    Action::Transfer(Proto::Ymodem, false),
+                ),
+                xfer(
+                    fl!("menu-receive-xmodem"),
+                    Action::Transfer(Proto::Xmodem, false),
+                ),
+                xfer(fl!("menu-cancel-transfer"), Action::CancelTransfer),
             ],
         ),
         (
@@ -253,4 +290,14 @@ pub fn bar(
         .item_width(ItemWidth::Uniform(320))
         .spacing(4.0)
         .into()
+}
+
+/// This lrzsz program is installed. Looked for once (after installing lrzsz, restart).
+pub fn has_tool(name: &str) -> bool {
+    static FOUND: std::sync::OnceLock<Vec<(String, bool)>> = std::sync::OnceLock::new();
+    let found = FOUND.get_or_init(|| {
+        let path = std::env::var_os("PATH");
+        shagshell_core::check::probe(&shagshell_core::zmodem::programs(), path.as_deref())
+    });
+    found.iter().any(|(n, ok)| n == name && *ok)
 }

@@ -410,6 +410,14 @@ impl Terminal {
     }
 
     pub fn input_no_scroll<I: Into<Cow<'static, [u8]>>>(&self, input: I) {
+        // A file transfer owns the line: keys typed meanwhile would corrupt it.
+        if self.log.transferring() {
+            // Ctrl+C is the way out of a stuck one.
+            if input.into().as_ref() == b"\x03" {
+                self.log.cancel_transfer();
+            }
+            return;
+        }
         self.notifier.notify(input);
     }
 

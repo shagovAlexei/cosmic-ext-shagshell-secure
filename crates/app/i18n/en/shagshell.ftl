@@ -447,3 +447,21 @@ sy-conflict = a file and a folder of one name, or other size at the same time: n
 sy-queued = Synchronizing: { $n } copy batches in the queue
 sy-done = Synchronization finished
 sy-failed = Some copies failed: nothing was deleted
+
+## Transfer
+menu-send-zmodem = Send Zmodem…
+menu-send-ymodem = Send Ymodem…
+menu-send-xmodem = Send Xmodem…
+menu-receive-ymodem = Receive Ymodem…
+menu-receive-xmodem = Receive Xmodem…
+menu-cancel-transfer = Cancel Transfer
+zm-busy = A transfer is running in this tab already
+zm-done = Transfer finished: { $what }
+zm-failed = Transfer failed: { $why }
+zm-no-tab = Open a terminal tab first
+zm-pick-send = Files to send
+zm-pick-receive = Save the received file as
+options-download-dir = Download folder for Zmodem (empty: ~/Downloads)
+options-zmodem = File transfer in the terminal
+zm-cancelled = Transfer cancelled (Ctrl+C in the tab also cancels it)
+options-zmodem-auto = Receive a Zmodem send from the server at once

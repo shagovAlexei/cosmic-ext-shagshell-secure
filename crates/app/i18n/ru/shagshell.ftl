@@ -448,3 +448,21 @@ sy-conflict = файл и папка с одним именем или друг�
 sy-queued = Синхронизация: пачек копирования в очереди — { $n }
 sy-done = Синхронизация завершена
 sy-failed = Часть копирований не удалась: ничего не удалено
+
+## Передача
+menu-send-zmodem = Отправить по Zmodem…
+menu-send-ymodem = Отправить по Ymodem…
+menu-send-xmodem = Отправить по Xmodem…
+menu-receive-ymodem = Принять по Ymodem…
+menu-receive-xmodem = Принять по Xmodem…
+menu-cancel-transfer = Отменить передачу
+zm-busy = В этой вкладке передача уже идёт
+zm-done = Передача завершена: { $what }
+zm-failed = Передача не удалась: { $why }
+zm-no-tab = Сначала откройте вкладку с терминалом
+zm-pick-send = Файлы для отправки
+zm-pick-receive = Сохранить принятый файл как
+options-download-dir = Папка для Zmodem (пусто: ~/Downloads)
+options-zmodem = Передача файлов в терминале
+zm-cancelled = Передача отменена (отменяет её и Ctrl+C во вкладке)
+options-zmodem-auto = Сразу принимать файлы, которые сервер шлёт по Zmodem
