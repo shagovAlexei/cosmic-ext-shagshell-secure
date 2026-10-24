@@ -436,9 +436,6 @@ impl Terminal {
             }
             return;
         }
-        if self.locked {
-            return;
-        }
         self.notifier.notify(input);
     }
 
@@ -452,6 +449,9 @@ impl Terminal {
 
     /// What the user typed: to the program, and to a script being recorded.
     pub fn input_scroll<I: Into<Cow<'static, [u8]>>>(&self, input: I) {
+        if self.locked {
+            return;
+        }
         let input = input.into();
         self.log.record_input(&input);
         self.send_scroll(input);
@@ -459,11 +459,18 @@ impl Terminal {
 
     /// Bytes that are not the user's keys (the Command Window, the Button Bar): not recorded.
     pub fn send_scroll<I: Into<Cow<'static, [u8]>>>(&self, input: I) {
+        // The user's, the Command Window's: not the terminal's own replies (`input_no_scroll`).
+        if self.locked {
+            return;
+        }
         self.input_no_scroll(input);
         self.scroll(TerminalScroll::Bottom);
     }
 
     pub fn paste(&self, value: String) {
+        if self.locked {
+            return;
+        }
         // This code is ported from alacritty
         let bracketed_paste = {
             let term = self.term.lock();

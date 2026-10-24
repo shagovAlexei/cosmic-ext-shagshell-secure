@@ -1323,7 +1323,17 @@ impl Tabs {
 
     /// `crt.Session.Lock / Unlock` from run `run` (a locked tab drops what the user types).
     pub fn set_lock(&mut self, id: TabId, on: bool, run: u64) -> Result<(), String> {
-        let t = self.terminal(id).ok_or("no such terminal tab")?;
+        let Some(t) = self.terminal(id) else {
+            self.locks.remove(&id);
+            return Err("no such terminal tab".into());
+        };
+        // Held by another run: that one's to release.
+        match self.locks.get(&id) {
+            Some(owner) if *owner != run => {
+                return Err("the tab is locked by another script".into());
+            }
+            _ => {}
+        }
         t.lock().unwrap_or_else(|e| e.into_inner()).set_locked(on);
         match on {
             true => self.locks.insert(id, run),
@@ -1334,7 +1344,8 @@ impl Tabs {
     }
 
     pub fn locked(&self, id: TabId) -> bool {
-        self.locks.contains_key(&id)
+        self.terminal(id)
+            .is_some_and(|t| t.lock().unwrap_or_else(|e| e.into_inner()).locked())
     }
 
     /// A run ended: the tabs it locked are free.

@@ -275,6 +275,11 @@ class _Window:
         _call("Window.Activate", 0)
 
 
+def _abs(p):
+    p = str(p)
+    return p if p.startswith("~/") else os.path.abspath(p)
+
+
 class _FileTransfer:
     """SFTP over the script's tab (an SSH session); each call waits until it is done."""
 
@@ -282,12 +287,14 @@ class _FileTransfer:
         self._tab = tab
 
     def Upload(self, local, remote=""):
-        """A file or folder to the server (`remote`: a name, a folder, or empty = home)."""
-        return _call("FileTransfer.Upload", self._tab, str(local), str(remote))
+        """A file to the server (`remote`: a name, a folder, or empty = home); a folder goes whole
+        INTO `remote` (empty = home)."""
+        # Relative to the script's folder of work, not the app's.
+        return _call("FileTransfer.Upload", self._tab, _abs(local), str(remote))
 
     def Download(self, remote, local=""):
         """From the server (`local`: a name, a folder, or empty = ~/Downloads)."""
-        return _call("FileTransfer.Download", self._tab, str(remote), str(local))
+        return _call("FileTransfer.Download", self._tab, str(remote), _abs(local) if local else "")
 
 
 class _Crt:

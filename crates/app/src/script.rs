@@ -1102,9 +1102,24 @@ impl RunHost {
             .envs(env)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| format!("{program}: {e}"))?;
+        // A cancelled run must not wait for a stuck ssh (an askpass prompt, a dead network).
+        let pid = child.id();
+        let done = Arc::new(AtomicBool::new(false));
+        {
+            let (done, cancel) = (done.clone(), self.cancel.clone());
+            std::thread::spawn(move || {
+                while !done.load(Ordering::SeqCst) {
+                    if cancel.load(Ordering::SeqCst) {
+                        let _ = Command::new("kill").arg(pid.to_string()).status();
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+            });
+        }
         let (Some(w), Some(r)) = (child.stdin.take(), child.stdout.take()) else {
             return Err("FileTransfer: no pipes to ssh".into());
         };
@@ -1135,11 +1150,24 @@ impl RunHost {
                 !self.cancel.load(Ordering::SeqCst)
             })
         })();
+        done.store(true, Ordering::SeqCst);
         let _ = child.kill();
         let _ = child.wait();
         match result {
             Ok(()) => Ok(json!(true)),
-            Err(e) => Err(format!("FileTransfer: {e}")),
+            Err(e) => {
+                // ssh's own words (host key, permission denied…), now that it is gone.
+                let mut said = String::new();
+                if let Some(mut err) = child.stderr.take() {
+                    let _ = err.read_to_string(&mut said);
+                }
+                let said = said.trim();
+                let tail = said.get(said.len().saturating_sub(300)..).unwrap_or(said);
+                Err(match tail.is_empty() {
+                    true => format!("FileTransfer: {e}"),
+                    false => format!("FileTransfer: {e} ({tail})"),
+                })
+            }
         }
     }
 
