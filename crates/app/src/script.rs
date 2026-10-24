@@ -708,12 +708,7 @@ impl Scripts {
         };
         // Icons with a hint: the console is often a narrow tab at the side.
         let tool = |icon: &'static str, tip: String, msg: Option<ScMsg>| -> Element<'_, Message> {
-            widget::tooltip(
-                widget::button::icon(widget::icon::from_name(icon)).on_press_maybe(msg.map(m)),
-                widget::text::caption(tip),
-                widget::tooltip::Position::Bottom,
-            )
-            .into()
+            crate::toolbar::tip_button(icon, tip, msg.map(m))
         };
         let tools = widget::row::with_capacity(5)
             .spacing(8)

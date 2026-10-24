@@ -13,12 +13,15 @@ See [ROADMAP](.claude/docs/ROADMAP.md) and [architecture](.claude/docs/specs/00-
 
 ## Install
 
-Download the `.deb` and `SHA256SUMS` from the [latest release](https://github.com/shagovAlexei/cosmic-ext-shagshell-secure/releases/latest) — only from this repository — and check it before installing:
+Download the `.deb` and `SHA256SUMS` from the [latest release](https://github.com/shagovAlexei/cosmic-ext-shagshell-secure/releases/latest) — only from this repository — into one folder, check it there and install:
 
 ```sh
-sha256sum -c SHA256SUMS --ignore-missing
+cd ~/Downloads        # the folder with both files
+sha256sum -c SHA256SUMS
 sudo apt install ./shagshell_*.deb
 ```
+
+`sha256sum` must print `OK` for the `.deb`. If it says `No such file`, you are in the wrong folder or `SHA256SUMS` was not downloaded.
 
 The app checks for a newer release at startup (Options → Global Options → Updates to turn it off).
 

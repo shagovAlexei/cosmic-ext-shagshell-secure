@@ -3,6 +3,7 @@
 
 use crate::app::Message;
 use crate::fl;
+use crate::toolbar::tip_button;
 use cosmic::iced::Length;
 use cosmic::widget;
 use cosmic::widget::text_editor::{self, Action};
@@ -199,21 +200,30 @@ impl NoteView {
                 .push(widget::button::standard(fl!("cancel")).on_press(m(NoteMsg::RenameCancel))),
             None => bar
                 .push(widget::text::heading(self.name()).width(Length::Fill))
-                .push(
-                    widget::button::standard(fl!("note-rename")).on_press(m(NoteMsg::RenameStart)),
-                )
-                .push(widget::button::standard(fl!("note-open")).on_press(m(NoteMsg::Open))),
+                .push(tip_button(
+                    "document-edit-symbolic",
+                    fl!("note-rename"),
+                    Some(m(NoteMsg::RenameStart)),
+                ))
+                .push(tip_button(
+                    "document-open-symbolic",
+                    fl!("note-open"),
+                    Some(m(NoteMsg::Open)),
+                )),
         };
         if notes::is_markdown(&self.path) {
-            let label = match self.preview {
-                true => fl!("note-edit"),
-                false => fl!("note-view"),
+            let (icon, label) = match self.preview {
+                true => ("text-editor-symbolic", fl!("note-edit")),
+                false => ("view-reveal-symbolic", fl!("note-view")),
             };
             if self.preview {
-                bar =
-                    bar.push(widget::button::standard(fl!("note-copy")).on_press(m(NoteMsg::Copy)));
+                bar = bar.push(tip_button(
+                    "edit-copy-symbolic",
+                    fl!("note-copy"),
+                    Some(m(NoteMsg::Copy)),
+                ));
             }
-            bar = bar.push(widget::button::standard(label).on_press(m(NoteMsg::Preview)));
+            bar = bar.push(tip_button(icon, label, Some(m(NoteMsg::Preview))));
         }
         let body: Element<'_, Message> = match self.preview {
             // iced's own editor: libcosmic's wrapper cannot take a highlighter.
@@ -222,6 +232,13 @@ impl NoteView {
                 .id(editor_id)
                 .on_action(move |a| m(NoteMsg::Look(a)))
                 .highlight_with::<Looks>(self.spans.clone(), look_format)
+                // A see-through selection: the coloured text (code, headings) stays readable.
+                .style(|theme, status| {
+                    use cosmic::iced::widget::text_editor::Catalog;
+                    let mut st = theme.style(&<cosmic::Theme as Catalog>::default(), status);
+                    st.selection.a = 0.3;
+                    st
+                })
                 .padding(8)
                 .height(Length::Fill)
                 .into(),

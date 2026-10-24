@@ -1768,12 +1768,16 @@ impl SftpView {
                 };
                 r = r.push(widget::container(state).width(Length::FillPortion(4)));
                 let action: Element<'_, Message> = match &j.state {
-                    State::Waiting | State::Running => widget::button::text(fl!("cancel"))
-                        .on_press(m(SftpMsg::Cancel(j.id)))
-                        .into(),
-                    State::Failed(_) | State::Cancelled => widget::button::text(fl!("sftp-retry"))
-                        .on_press(m(SftpMsg::Retry(j.id)))
-                        .into(),
+                    State::Waiting | State::Running => crate::toolbar::tip_button(
+                        "process-stop-symbolic",
+                        fl!("cancel"),
+                        Some(m(SftpMsg::Cancel(j.id))),
+                    ),
+                    State::Failed(_) | State::Cancelled => crate::toolbar::tip_button(
+                        "view-refresh-symbolic",
+                        fl!("sftp-retry"),
+                        Some(m(SftpMsg::Retry(j.id))),
+                    ),
                     _ => widget::Space::new().width(Length::Fixed(1.0)).into(),
                 };
                 r.push(action).into()
@@ -1782,9 +1786,11 @@ impl SftpView {
         let head = widget::row::with_children(vec![
             widget::text::heading(fl!("sftp-queue")).into(),
             widget::Space::new().width(Length::Fill).into(),
-            widget::button::text(fl!("sftp-clear-done"))
-                .on_press(m(SftpMsg::ClearDone))
-                .into(),
+            crate::toolbar::tip_button(
+                "edit-clear-all-symbolic",
+                fl!("sftp-clear-done"),
+                Some(m(SftpMsg::ClearDone)),
+            ),
         ])
         .align_y(Alignment::Center);
         widget::container(

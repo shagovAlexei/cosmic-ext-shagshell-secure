@@ -239,9 +239,11 @@ impl SchedWindow {
             right = right.push(widget::text::body(e.clone()).class(theme::Text::Accent));
         }
         let buttons = widget::row::with_children(vec![
-            widget::button::standard(fl!("sch-run-now"))
-                .on_press_maybe(self.selected.map(|_| m(SchMsg::RunNow)))
-                .into(),
+            crate::toolbar::tip_button(
+                "media-playback-start-symbolic",
+                fl!("sch-run-now"),
+                self.selected.map(|_| m(SchMsg::RunNow)),
+            ),
             widget::Space::new().width(Length::Fill).into(),
             widget::button::destructive(fl!("sm-delete"))
                 .on_press_maybe(self.selected.map(|_| m(SchMsg::Delete)))
@@ -294,10 +296,7 @@ impl SchedWindow {
             )
             .height(Length::Fill)
             .into(),
-            widget::button::standard(fl!("cw-add"))
-                .leading_icon(widget::icon::from_name("list-add-symbolic"))
-                .on_press(m(SchMsg::New))
-                .into(),
+            crate::toolbar::tip_button("list-add-symbolic", fl!("cw-add"), Some(m(SchMsg::New))),
         ])
         .spacing(8)
         .width(Length::Fixed(150.0));
