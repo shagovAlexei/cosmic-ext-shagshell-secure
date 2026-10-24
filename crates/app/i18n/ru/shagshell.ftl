@@ -520,3 +520,7 @@ rec-save-title = Сохранить записанный скрипт
 rec-saved = Скрипт сохранён: { $path }
 rec-failed = Не удалось сохранить скрипт: { $error }
 rec-empty = Ничего не записано
+
+menu-tab-window = Открыть в новом окне
+menu-reattach-all = Вернуть окна во вкладки
+tab-window-back = Вернуть в главное окно

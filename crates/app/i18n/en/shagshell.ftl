@@ -519,3 +519,7 @@ rec-save-title = Save the recorded script
 rec-saved = Script saved: { $path }
 rec-failed = Could not save the script: { $error }
 rec-empty = Nothing was recorded
+
+menu-tab-window = Open in a New Window
+menu-reattach-all = Bring the Windows Back into Tabs
+tab-window-back = Back to the main window

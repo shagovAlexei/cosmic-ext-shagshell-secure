@@ -22,6 +22,9 @@ pub enum Action {
     /// File → Log Session.
     ToggleLog,
     About,
+    /// Window → the active tab into a window of its own / every such tab back.
+    DetachTab,
+    ReattachAll,
     /// Script → Record Script (start / stop).
     ToggleRecording,
     /// Help → Check for Updates…
@@ -295,6 +298,9 @@ pub fn bar(
                 Divider,
                 tab(fl!("menu-next-tab"), Action::NextTab),
                 tab(fl!("menu-prev-tab"), Action::PrevTab),
+                Divider,
+                tab(fl!("menu-tab-window"), Action::DetachTab),
+                Button(fl!("menu-reattach-all"), None, Action::ReattachAll),
             ],
         ),
         (fl!("menu-help"), {

@@ -237,6 +237,16 @@ impl Application for App {
 
     fn update(&mut self, message: Message) -> Task<Message> {
         let mut task = self.handle(message);
+        // A tab went into a window of its own: titled.
+        for (window, title) in self.tabs.take_new_windows() {
+            task = Task::batch([
+                task,
+                cosmic::ApplicationExt::set_window_title(self, title, window),
+            ]);
+        }
+        if let Some(window) = self.tabs.take_raise() {
+            task = Task::batch([task, cosmic::iced::window::gain_focus(window)]);
+        }
         // The tab being recorded was closed: what was recorded is still offered.
         for (title, rec) in self.tabs.take_closed_recordings() {
             task = Task::batch([task, self.save_recording(&title, rec)]);
@@ -369,6 +379,12 @@ impl Application for App {
         }
         if self.scripts.win == Some(id)
             && let Some(v) = self.scripts.window_view(focused)
+        {
+            return v;
+        }
+        if let Some(v) = self
+            .tabs
+            .window_view(id, &self.config, focused, self.dialog().is_none())
         {
             return v;
         }
@@ -752,6 +768,13 @@ impl App {
                     return self.credentials(CwMsg::Close);
                 }
             }
+            // A tab's own window: what happens there is about that tab.
+            Message::Input(w, m) if self.tabs.tab_in(w).is_some() => {
+                self.tabs.front = self.tabs.tab_in(w);
+                let task = self.handle(*m);
+                self.tabs.front = None;
+                return task;
+            }
             // A script's dialog window: Enter (a message box) and Esc.
             Message::Input(w, m) if self.scripts.win == Some(w) => {
                 if is_escape(&m) {
@@ -762,6 +785,9 @@ impl App {
                 }
             }
             Message::Input(..) => {}
+            Message::CloseRequested(w) if self.tabs.tab_in(w).is_some() => {
+                return self.update(Message::Tabs(crate::tabs::TabsMsg::Reattach(w)));
+            }
             Message::CloseRequested(w) if self.scripts.win == Some(w) => {
                 return self.script(crate::script::ScMsg::Cancel);
             }
