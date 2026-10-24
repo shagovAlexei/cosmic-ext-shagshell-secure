@@ -1,7 +1,7 @@
 //! What runs in a session's tab: the system OpenSSH, with ControlMaster so SFTP and clones
 //! reuse the connection.
 
-use crate::session::Session;
+use crate::session::{ForwardKind, Session};
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -30,6 +30,16 @@ pub fn ssh_argv(s: &Session, control_dir: &Path, home: &Path) -> Result<Vec<Stri
     if let Some(k) = s.keepalive {
         opt("-o", format!("ServerAliveInterval={k}"));
     }
+    if !s.jump.is_empty() {
+        opt("-J", s.jump.clone());
+    }
+    for f in &s.forwards {
+        match f.kind {
+            ForwardKind::Local => opt("-L", forward_spec(f)),
+            ForwardKind::Remote => opt("-R", forward_spec(f)),
+            ForwardKind::Dynamic => opt("-D", f.listen.clone()),
+        }
+    }
     opt("-o", "ControlMaster=auto".into());
     opt("-o", format!("ControlPath={}/%C", control_dir.display()));
     opt("-o", "ControlPersist=60".into());
@@ -37,6 +47,15 @@ pub fn ssh_argv(s: &Session, control_dir: &Path, home: &Path) -> Result<Vec<Stri
     // `--`: a host like `-oProxyCommand=…` is a host, never an option.
     a.extend(["--".to_string(), s.host.clone()]);
     Ok(a)
+}
+
+/// `listen:host:port`; an IPv6 host goes in brackets.
+fn forward_spec(f: &crate::session::Forward) -> String {
+    let host = match f.host.contains(':') && !f.host.starts_with('[') {
+        true => format!("[{}]", f.host),
+        false => f.host.clone(),
+    };
+    format!("{}:{host}:{}", f.listen, f.port)
 }
 
 /// A terminal tab's ssh arguments (after `ssh`) for its SFTP tab: the same options and
@@ -211,6 +230,44 @@ mod tests {
         want.extend(CTL);
         want.extend(["-A", "-o", "Compression=yes", "--", "h"]);
         assert_eq!(argv(&x), want);
+    }
+
+    #[test]
+    fn argv_jump_and_forwards() {
+        use crate::session::Forward;
+        let fw = |kind, listen: &str, host: &str, port| Forward {
+            kind,
+            listen: listen.into(),
+            host: host.into(),
+            port,
+        };
+        let x = Session {
+            host: "h".into(),
+            jump: "u@bastion:2200,j2".into(),
+            forwards: vec![
+                fw(ForwardKind::Local, "8080", "db", 5432),
+                fw(ForwardKind::Remote, "127.0.0.1:9000", "localhost", 3000),
+                fw(ForwardKind::Dynamic, "1080", "", 0),
+            ],
+            ..Default::default()
+        };
+        let a = argv(&x).join(" ");
+        assert!(a.contains("-J u@bastion:2200,j2"), "{a}");
+        assert!(a.contains("-L 8080:db:5432"), "{a}");
+        assert!(a.contains("-R 127.0.0.1:9000:localhost:3000"), "{a}");
+        assert!(a.contains("-D 1080"), "{a}");
+        let v6 = Session {
+            forwards: vec![fw(ForwardKind::Local, "8080", "::1", 80)],
+            ..x.clone()
+        };
+        assert!(argv(&v6).join(" ").contains("-L 8080:[::1]:80"));
+        // the SFTP channel of that tab keeps the jump but not the forwards
+        let args = argv(&x)[1..].to_vec();
+        let s = sftp_args(&args).unwrap().join(" ");
+        assert!(
+            s.contains("-J u@bastion:2200,j2") && s.contains("ClearAllForwardings=yes"),
+            "{s}"
+        );
     }
 
     #[test]

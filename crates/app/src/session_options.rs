@@ -3,10 +3,11 @@
 
 use crate::app::Message;
 use crate::fl;
-use cosmic::iced::{Length, window};
+use cosmic::iced::{Alignment, Length, window};
 use cosmic::widget::{self, segmented_button};
 use cosmic::{Element, theme};
-use shagshell_core::session::form::{Form, FormError};
+use shagshell_core::session::ForwardKind;
+use shagshell_core::session::form::{Form, FormError, FwdRow};
 use shagshell_core::session::store::name_of;
 use shagshell_core::session::{Protocol, Session};
 
@@ -28,6 +29,7 @@ pub enum Target {
 enum Category {
     Connection,
     Ssh2,
+    Forward,
     Log,
 }
 
@@ -41,6 +43,9 @@ pub enum Field {
     Keepalive,
     Extra,
     LogFile,
+    Jump,
+    ReconnectDelay,
+    ReconnectTries,
 }
 
 #[derive(Clone, Debug)]
@@ -61,6 +66,13 @@ pub enum SoMsg {
     Bar(usize),
     LogAppend(bool),
     LogRaw(bool),
+    Reconnect(bool),
+    /// Port Forwarding: a row's kind (n-th of `ForwardKind::ALL`), a text (0 listen, 1 host,
+    /// 2 port), a row added / removed.
+    FwdKind(usize, usize),
+    FwdText(usize, u8, String),
+    FwdAdd,
+    FwdDel(usize),
     /// «Забыть»: the session's saved secrets removed.
     Forget,
     Ok,
@@ -82,6 +94,7 @@ pub struct SessionOptions {
     bars: Vec<String>,
     bar_labels: Vec<String>,
     protocols: Vec<String>,
+    fwd_kinds: Vec<String>,
     first_id: widget::Id,
 }
 
@@ -106,6 +119,7 @@ impl SessionOptions {
                     .activate()
             })
             .insert(|b| b.text(fl!("so-ssh2")).data(Category::Ssh2))
+            .insert(|b| b.text(fl!("so-forward")).data(Category::Forward))
             .insert(|b| b.text(fl!("so-log")).data(Category::Log))
             .build();
         let name = match &target {
@@ -124,6 +138,11 @@ impl SessionOptions {
             bars,
             bar_labels,
             protocols: vec![fl!("so-protocol-ssh2"), fl!("so-protocol-local")],
+            fwd_kinds: vec![
+                fl!("so-fwd-local"),
+                fl!("so-fwd-remote"),
+                fl!("so-fwd-dynamic"),
+            ],
             saved: false,
         }
     }
@@ -153,6 +172,12 @@ impl SessionOptions {
             FormError::Port => fl!("qc-bad-port"),
             FormError::Keepalive => fl!("so-bad-keepalive"),
             FormError::Extra => fl!("bad-extra"),
+            FormError::Jump => fl!("so-bad-jump"),
+            FormError::Forward(n) => {
+                let n = (*n + 1) as i64;
+                fl!("so-bad-forward", n = n)
+            }
+            FormError::Reconnect => fl!("so-bad-reconnect"),
         });
         r.ok()
     }
@@ -169,10 +194,34 @@ impl SessionOptions {
                 Field::Keepalive => f.keepalive = v,
                 Field::Extra => f.extra = v,
                 Field::LogFile => f.log_file = v,
+                Field::Jump => f.jump = v,
+                Field::ReconnectDelay => f.reconnect_delay = v,
+                Field::ReconnectTries => f.reconnect_tries = v,
             },
             SoMsg::Category(e) => self.categories.activate(e),
             SoMsg::Protocol(i) => f.protocol = Protocol::ALL.get(i).copied().unwrap_or_default(),
             SoMsg::Saved(w, saved) if w == self.window => self.saved = saved,
+            SoMsg::Reconnect(on) => f.reconnect = on,
+            SoMsg::FwdAdd => f.forwards.push(FwdRow::default()),
+            SoMsg::FwdDel(i) => {
+                if i < f.forwards.len() {
+                    f.forwards.remove(i);
+                }
+            }
+            SoMsg::FwdKind(i, k) => {
+                if let Some(r) = f.forwards.get_mut(i) {
+                    r.kind = ForwardKind::ALL.get(k).copied().unwrap_or_default();
+                }
+            }
+            SoMsg::FwdText(i, col, v) => {
+                if let Some(r) = f.forwards.get_mut(i) {
+                    match col {
+                        0 => r.listen = v,
+                        1 => r.host = v,
+                        _ => r.port = v,
+                    }
+                }
+            }
             SoMsg::LogAppend(on) => f.log_append = on,
             SoMsg::LogRaw(on) => f.log_raw = on,
             SoMsg::Bar(i) => {
@@ -213,6 +262,46 @@ impl SessionOptions {
         let f = &self.form;
         let local = f.protocol == Protocol::Local;
         let fields: Vec<Element<'_, Message>> = match category {
+            Some(Category::Forward) => {
+                let kinds = &self.fwd_kinds;
+                let mut rows: Vec<Element<'_, Message>> =
+                    vec![widget::text::caption(fl!("so-forward-hint")).into()];
+                for (i, r) in f.forwards.iter().enumerate() {
+                    let at = ForwardKind::ALL.iter().position(|k| *k == r.kind);
+                    let text = |v: &str, col: u8, w: f32, ph: String| {
+                        widget::text_input(ph, v.to_string())
+                            .on_input(move |t| m(SoMsg::FwdText(i, col, t)))
+                            .width(Length::Fixed(w))
+                    };
+                    let dynamic = r.kind == ForwardKind::Dynamic;
+                    let mut line = widget::row::with_capacity(6)
+                        .spacing(6)
+                        .align_y(Alignment::Center)
+                        .push(widget::dropdown(kinds, at, move |k| {
+                            m(SoMsg::FwdKind(i, k))
+                        }))
+                        .push(text(&r.listen, 0, 105.0, fl!("so-fwd-listen")));
+                    if !dynamic {
+                        line = line
+                            .push(widget::text::body("→"))
+                            .push(text(&r.host, 1, 105.0, fl!("so-fwd-host")))
+                            .push(text(&r.port, 2, 60.0, fl!("so-fwd-port")));
+                    }
+                    rows.push(
+                        line.push(
+                            widget::button::icon(widget::icon::from_name("edit-delete-symbolic"))
+                                .on_press(m(SoMsg::FwdDel(i))),
+                        )
+                        .into(),
+                    );
+                }
+                rows.push(
+                    widget::button::standard(fl!("so-fwd-add"))
+                        .on_press(m(SoMsg::FwdAdd))
+                        .into(),
+                );
+                rows
+            }
             Some(Category::Log) => vec![
                 field(fl!("so-log-file"), Field::LogFile, &f.log_file, false),
                 widget::text::caption(fl!("so-log-hint")).into(),
@@ -244,7 +333,25 @@ impl SessionOptions {
                 .spacing(2)
                 .into(),
                 field(fl!("so-keepalive"), Field::Keepalive, &f.keepalive, false),
+                field(fl!("so-jump"), Field::Jump, &f.jump, false),
+                widget::text::caption(fl!("so-jump-hint")).into(),
                 field(fl!("so-extra"), Field::Extra, &f.extra, false),
+                widget::checkbox(f.reconnect)
+                    .label(fl!("so-reconnect"))
+                    .on_toggle(move |v| m(SoMsg::Reconnect(v)))
+                    .into(),
+                field(
+                    fl!("so-reconnect-delay"),
+                    Field::ReconnectDelay,
+                    &f.reconnect_delay,
+                    false,
+                ),
+                field(
+                    fl!("so-reconnect-tries"),
+                    Field::ReconnectTries,
+                    &f.reconnect_tries,
+                    false,
+                ),
             ],
             _ => {
                 let mut v = Vec::new();

@@ -42,6 +42,13 @@ pub struct LogSpec {
     pub user: String,
 }
 
+/// A session that connects again by itself: after `delay` s, `tries` times in a row.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AutoReconnect {
+    pub delay: u32,
+    pub tries: u32,
+}
+
 /// What a tab runs (again on Reconnect).
 #[derive(Clone, Debug)]
 pub struct Launch {
@@ -56,6 +63,8 @@ pub struct Launch {
     pub sftp: bool,
     /// Logged from the start (the session says so).
     pub log: Option<LogSpec>,
+    /// Connects again by itself when the connection drops.
+    pub auto_reconnect: Option<AutoReconnect>,
 }
 
 impl Launch {
@@ -69,6 +78,7 @@ impl Launch {
             protocol: Protocol::Local,
             sftp: false,
             log: None,
+            auto_reconnect: None,
         }
     }
 
@@ -102,6 +112,11 @@ pub enum Body {
 }
 
 pub struct Tab {
+    /// When its program started (a drop after a while is a lost connection, not a failed start).
+    started: std::time::Instant,
+    /// Automatic reconnects since it last stayed up; `stopped`: the user ended it (Disconnect).
+    attempts: u32,
+    stopped: bool,
     pub body: Body,
     launch: Launch,
     /// «web-01 (2)»: ours, shown while the program sets none.
@@ -186,6 +201,8 @@ pub enum TabsMsg {
     Paste(Option<String>),
     /// Bytes to these tabs' programs; a pause sends the rest later.
     Send(Vec<TabId>, Vec<shagshell_core::macros::Piece>),
+    /// The wait before an automatic reconnect is over.
+    AutoReconnect(TabId),
 }
 
 #[derive(Default)]
@@ -416,6 +433,9 @@ impl Tabs {
         self.next_id += 1;
         let widget_id = widget::Id::unique();
         let tab = Tab {
+            started: std::time::Instant::now(),
+            attempts: 0,
+            stopped: false,
             body,
             launch,
             base,
@@ -570,9 +590,11 @@ impl Tabs {
                 t.get_mut().unwrap_or_else(|e| e.into_inner()).shutdown();
                 term::print(t, &format!("\r\n[{}]\r\n", fl!("term-disconnected")));
                 tab.alive = false;
+                tab.stopped = true;
             }
             Body::Sftp(v) => v.disconnect(),
-            Body::Terminal(_) => {}
+            // Already down, maybe waiting to reconnect by itself: that wait ends.
+            Body::Terminal(_) => tab.stopped = true,
         }
         self.retitle(id);
     }
@@ -611,6 +633,7 @@ impl Tabs {
             return Task::none();
         };
         (tab.body, tab.alive) = (terminal, true);
+        (tab.started, tab.stopped) = (std::time::Instant::now(), false);
         tab.program_title.clear();
         let widget_id = tab.widget_id.clone();
         self.tabs.insert(new_id, tab);
@@ -835,6 +858,33 @@ impl Tabs {
                     None => fl!("term-exited"),
                 };
                 term::print(terminal, &format!("\r\n[{line}]\r\n"));
+                // ssh says 255 when the connection is lost; after it had been up for a while
+                // (or while a series of retries goes on) the session connects by itself.
+                if let Some(r) = tab.launch.auto_reconnect
+                    && let Some(n) = shagshell_core::reconnect::next_attempt(
+                        &shagshell_core::reconnect::Ended {
+                            code,
+                            stopped: tab.stopped,
+                            uptime: tab.started.elapsed(),
+                            attempts: tab.attempts,
+                        },
+                        r.tries,
+                    )
+                {
+                    tab.attempts = n;
+                    let line = fl!(
+                        "term-reconnecting",
+                        seconds = i64::from(r.delay),
+                        n = i64::from(n),
+                        max = i64::from(r.tries)
+                    );
+                    term::print(terminal, &format!("[{line}]\r\n"));
+                    self.retitle(id);
+                    let wait = std::time::Duration::from_secs(u64::from(r.delay));
+                    return Task::perform(tokio::time::sleep(wait), move |()| {
+                        cosmic::Action::App(Message::Tabs(TabsMsg::AutoReconnect(id)))
+                    });
+                }
                 self.retitle(id);
             }
             Outcome::Exit(_) => {}
@@ -908,6 +958,12 @@ impl Tabs {
             }
             TabsMsg::Paste(None) => {}
             TabsMsg::Send(ids, pieces) => return self.send(ids, pieces),
+            TabsMsg::AutoReconnect(id) => {
+                // Still there, still down, not ended by the user meanwhile (Enter, Close).
+                if self.tabs.get(&id).is_some_and(|t| !t.alive && !t.stopped) {
+                    return self.restart(id, look);
+                }
+            }
         }
         Task::none()
     }

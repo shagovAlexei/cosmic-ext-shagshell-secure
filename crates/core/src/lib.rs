@@ -8,6 +8,7 @@ pub mod launch;
 pub mod logfile;
 pub mod macros;
 pub mod panel;
+pub mod reconnect;
 pub mod session;
 pub mod sftp;
 pub mod shell;

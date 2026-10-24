@@ -33,6 +33,8 @@ pub fn valid_name(name: &str, at_root: bool) -> Result<(), NameError> {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+// A tree of a few hundred sessions: boxing the session would only make every user of it deref.
+#[allow(clippy::large_enum_variant)]
 pub enum Node {
     Folder { name: String, children: Vec<Node> },
     Session { name: String, session: Session },

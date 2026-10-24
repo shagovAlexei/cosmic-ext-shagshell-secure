@@ -5,5 +5,5 @@ pub mod model;
 pub mod rows;
 pub mod store;
 
-pub use model::{Protocol, Session};
+pub use model::{Forward, ForwardKind, Protocol, Session};
 pub use store::{Node, Store};
