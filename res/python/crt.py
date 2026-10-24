@@ -15,6 +15,8 @@ Version = "1.1"
 # MessageBox buttons and results, as in SecureCRT.
 BUTTON_OK, BUTTON_OKCANCEL, BUTTON_ABORTRETRYIGNORE = 0, 1, 2
 BUTTON_YESNOCANCEL, BUTTON_YESNO, BUTTON_RETRYCANCEL = 3, 4, 5
+ICON_STOP, ICON_QUESTION, ICON_WARN, ICON_INFO = 16, 32, 48, 64
+DEFBUTTON1, DEFBUTTON2, DEFBUTTON3 = 0, 256, 512
 IDOK, IDCANCEL, IDABORT, IDRETRY, IDIGNORE, IDYES, IDNO = 1, 2, 3, 4, 5, 6, 7
 
 
@@ -179,10 +181,22 @@ class _Tab:
 
 class _Dialog:
     def MessageBox(self, text, title="", buttons=0):
-        if int(buttons) in (BUTTON_ABORTRETRYIGNORE, BUTTON_RETRYCANCEL):
-            raise ScriptError("MessageBox: only BUTTON_OK / OKCANCEL / YESNO / YESNOCANCEL")
         r = _call("Dialog.MessageBox", 0, str(text), str(title), int(buttons))
         return IDOK if r is None else r
+
+    def FileOpenDialog(self, title="", buttonLabel="", defaultFilename="", filter=""):
+        """The file chosen ("" when cancelled). filter: "Text (*.txt)|*.txt|All (*.*)|*.*"."""
+        r = _call("Dialog.FileOpen", 0, str(title), str(buttonLabel), str(defaultFilename), str(filter))
+        return "" if r is None else r
+
+    def FileSaveDialog(self, title="", buttonLabel="", defaultFilename="", filter=""):
+        """The file name chosen for saving ("" when cancelled)."""
+        r = _call("Dialog.FileSave", 0, str(title), str(buttonLabel), str(defaultFilename), str(filter))
+        return "" if r is None else r
+
+    def List(self, message, title="", items=(), default=0, multi=False):
+        """A list to choose from: the item (str), a list of items when `multi`, None if cancelled."""
+        return _call("Dialog.List", 0, str(message), str(title), [str(i) for i in items], int(default), bool(multi))
 
     def Prompt(self, message, title="", default="", bPassword=False):
         r = _call("Dialog.Prompt", 0, str(message), str(title), str(default), bool(bPassword))
@@ -272,7 +286,7 @@ def main():
     crt.Arguments = _Arguments(sys.argv[1:])
     builtins.crt = crt
     for k, v in list(globals().items()):  # BUTTON_YESNO, IDYES … as in SecureCRT
-        if k.startswith(("BUTTON_", "ID")) and k.isupper():
+        if k.startswith(("BUTTON_", "ICON_", "DEFBUTTON", "ID")) and k.isupper():
             setattr(builtins, k, v)
     code = 0
     try:

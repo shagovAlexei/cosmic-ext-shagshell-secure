@@ -361,6 +361,10 @@ sftp-go = Перейти
 
 ## Скрипты
 script-title = Скрипт
+script-retry = Повторить
+script-abort = Прервать
+script-ignore = Пропустить
+script-list-filter = Фильтр
 script-pick = Запустить скрипт
 script-running = Скрипт выполняется: { $name }
 script-done = Скрипт завершён: { $name }

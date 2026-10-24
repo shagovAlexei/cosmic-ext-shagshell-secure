@@ -173,6 +173,120 @@ pub fn slice(rows: &[String], r1: i64, c1: i64, r2: i64, c2: i64) -> String {
     lines.join("\n")
 }
 
+/// SecureCRT's `MessageBox` results.
+pub const ID_OK: i64 = 1;
+pub const ID_CANCEL: i64 = 2;
+pub const ID_ABORT: i64 = 3;
+pub const ID_RETRY: i64 = 4;
+pub const ID_IGNORE: i64 = 5;
+pub const ID_YES: i64 = 6;
+pub const ID_NO: i64 = 7;
+
+/// The `flags` of `MessageBox`: `BUTTON_*` (0–5) | `ICON_*` (16 stop, 32 question, 48 warning,
+/// 64 information) | `DEFBUTTON1/2/3` (0, 256, 512).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Flags {
+    pub buttons: i64,
+    pub icon: Icon,
+    /// Index into `Flags::ids()`.
+    pub default: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Icon {
+    None,
+    Stop,
+    Question,
+    Warning,
+    Info,
+}
+
+impl Flags {
+    pub fn parse(n: i64) -> Self {
+        Self {
+            buttons: n & 0xF,
+            icon: match n & 0xF0 {
+                16 => Icon::Stop,
+                32 => Icon::Question,
+                48 => Icon::Warning,
+                64 => Icon::Info,
+                _ => Icon::None,
+            },
+            default: usize::try_from((n >> 8) & 3).unwrap_or(0),
+        }
+    }
+
+    /// The buttons, left to right, as result ids.
+    pub fn ids(&self) -> Vec<i64> {
+        match self.buttons {
+            1 => vec![ID_OK, ID_CANCEL],
+            2 => vec![ID_ABORT, ID_RETRY, ID_IGNORE],
+            3 => vec![ID_YES, ID_NO, ID_CANCEL],
+            4 => vec![ID_YES, ID_NO],
+            5 => vec![ID_RETRY, ID_CANCEL],
+            _ => vec![ID_OK],
+        }
+    }
+
+    /// Enter: the default button (the first when `default` is beyond the buttons).
+    pub fn enter(&self) -> i64 {
+        let ids = self.ids();
+        ids.get(self.default).copied().unwrap_or(ids[0])
+    }
+
+    /// Esc, or the window closed: Cancel when there is one, else No / Ignore / OK.
+    pub fn escape(&self) -> i64 {
+        let ids = self.ids();
+        [ID_CANCEL, ID_NO, ID_IGNORE]
+            .into_iter()
+            .find(|i| ids.contains(i))
+            .unwrap_or(ids[0])
+    }
+}
+
+/// A SecureCRT file filter, `"Text (*.txt)|*.txt|All (*.*)|*.*"`, as (description, extensions);
+/// a pattern for any file gives no extensions.
+pub fn file_filters(spec: &str) -> Vec<(String, Vec<String>)> {
+    let parts: Vec<&str> = spec.split('|').collect();
+    parts
+        .chunks(2)
+        .filter(|c| c.len() == 2 && !c[0].trim().is_empty())
+        .map(|c| {
+            let exts = c[1]
+                .split(';')
+                .filter_map(|p| p.trim().strip_prefix("*."))
+                .filter(|e| !e.is_empty() && *e != "*")
+                .map(str::to_string)
+                .collect();
+            (c[0].trim().to_string(), exts)
+        })
+        .collect()
+}
+
+/// What a List dialog gives for OK: the picked rows that the filter still shows, in order.
+/// `None`: nothing to give (the dialog stays).
+pub fn list_picked(
+    items: &[String],
+    picked: &std::collections::BTreeSet<usize>,
+    filter: &str,
+) -> Option<Vec<String>> {
+    let shown = list_matches(items, filter);
+    let rows: Vec<String> = picked
+        .iter()
+        .filter(|i| shown.contains(i))
+        .filter_map(|&i| items.get(i).cloned())
+        .collect();
+    (!rows.is_empty()).then_some(rows)
+}
+
+/// The items of a List dialog that contain `filter` (any case), as indexes into `items`.
+pub fn list_matches(items: &[String], filter: &str) -> Vec<usize> {
+    let f = filter.to_lowercase();
+    (0..items.len())
+        .filter(|&i| items[i].to_lowercase().contains(&f))
+        .collect()
+}
+
 /// `~/x` as the home folder's `x`; any other path as it is.
 pub fn expand_home(path: &std::path::Path) -> std::path::PathBuf {
     match (path.strip_prefix("~"), std::env::home_dir()) {
@@ -345,6 +459,73 @@ pub fn command(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn message_box_flags() {
+        let f = Flags::parse(4 | 32 | 256); // YESNO | QUESTION | DEFBUTTON2
+        assert_eq!(
+            (f.icon, f.ids(), f.enter(), f.escape()),
+            (Icon::Question, vec![ID_YES, ID_NO], ID_NO, ID_NO)
+        );
+        let f = Flags::parse(3 | 48); // YESNOCANCEL | WARN
+        assert_eq!(
+            (f.icon, f.enter(), f.escape()),
+            (Icon::Warning, ID_YES, ID_CANCEL)
+        );
+        let f = Flags::parse(5); // RETRYCANCEL
+        assert_eq!(
+            (f.ids(), f.enter(), f.escape()),
+            (vec![ID_RETRY, ID_CANCEL], ID_RETRY, ID_CANCEL)
+        );
+        let f = Flags::parse(2 | 512); // ABORTRETRYIGNORE, DEFBUTTON3
+        assert_eq!((f.enter(), f.escape()), (ID_IGNORE, ID_IGNORE));
+        let f = Flags::parse(512); // OK only: the default is beyond the buttons
+        assert_eq!(
+            (f.ids(), f.enter(), f.escape()),
+            (vec![ID_OK], ID_OK, ID_OK)
+        );
+    }
+
+    #[test]
+    fn file_filter_spec() {
+        let f = file_filters("Text (*.txt;*.log)|*.txt;*.log|All Files (*.*)|*.*");
+        assert_eq!(
+            f,
+            vec![
+                (
+                    "Text (*.txt;*.log)".to_string(),
+                    vec!["txt".to_string(), "log".to_string()]
+                ),
+                ("All Files (*.*)".to_string(), vec![]),
+            ]
+        );
+        assert!(file_filters("").is_empty());
+        assert!(file_filters("broken").is_empty());
+    }
+
+    #[test]
+    fn list_gives_only_what_the_filter_shows() {
+        let items: Vec<String> = ["web-01", "db-01", "web-02"].map(String::from).to_vec();
+        let picked: std::collections::BTreeSet<usize> = [0, 1].into();
+        assert_eq!(
+            list_picked(&items, &picked, ""),
+            Some(vec!["web-01".into(), "db-01".into()])
+        );
+        assert_eq!(
+            list_picked(&items, &picked, "db"),
+            Some(vec!["db-01".into()])
+        );
+        assert_eq!(list_picked(&items, &picked, "web-02"), None); // picked rows hidden: nothing
+        assert_eq!(list_picked(&items, &Default::default(), ""), None);
+        assert_eq!(list_picked(&items, &[9].into(), ""), None); // a row that does not exist
+    }
+
+    #[test]
+    fn list_filter_is_case_blind() {
+        let items: Vec<String> = ["Web-01", "db-01", "WEB-02"].map(String::from).to_vec();
+        assert_eq!(list_matches(&items, "web"), vec![0, 2]);
+        assert_eq!(list_matches(&items, ""), vec![0, 1, 2]);
+    }
+
     #[test]
     fn slice_takes_a_block_clamped_to_the_screen() {
         let rows: Vec<String> = ["abcde", "fghij", "klmno"].map(String::from).to_vec();

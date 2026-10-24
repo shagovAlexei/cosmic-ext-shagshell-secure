@@ -22,6 +22,7 @@
 - [x] 15. ~~Command Manager (панель справа, импорт из SecureCRT)~~
 - [x] 16. ~~Перенос вкладок между группами (меню и перетаскивание)~~
 - [x] 17. ~~Шрифт и его размер в Global Options~~
+- [x] 19. ~~Диалоги `crt` как в SecureCRT: отдельные окна, значки и кнопки MessageBox, List, FileOpen/SaveDialog~~
 - [x] 18. ~~Примеры скриптов (`Example/`) и дополнения `crt` (Clipboard, Screen.Get, Session.Log, MessageBox с кнопками)~~
 
 ## Бэклог

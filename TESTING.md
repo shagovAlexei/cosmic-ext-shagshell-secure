@@ -216,6 +216,13 @@
 - [ ] `crt.Dialog.MessageBox(.., BUTTON_YESNO / YESNOCANCEL / OKCANCEL)`: кнопки, результат `IDYES / IDNO / IDCANCEL`; Enter = первая кнопка, Esc = Cancel / No
 - [ ] После `just install` примеры лежат в `/usr/share/shagshell/examples/`
 
+### Диалоги `crt` (окна)
+
+- [ ] `Example/12_dialogs_gallery.py`: каждый диалог — отдельное окно с заголовком; значок (info / вопрос / предупреждение); кнопка по умолчанию (`DEFBUTTON2`) подсвечена и берёт Enter; Esc и крестик = Cancel / No
+- [ ] Prompt с паролем скрывает ввод; List: клик выбирает, фильтр сужает список, Enter берёт выбранное; multi выбирает несколько
+- [ ] `FileOpenDialog` / `FileSaveDialog` показывают системный выбор файла, фильтр `Text (*.txt)|*.txt|All (*.*)|*.*` работает, отмена возвращает `""` (в headless нет портала: проверяется вручную)
+- [ ] Несколько диалогов подряд идут в одном окне; Script → Cancel закрывает окно диалога
+
 ### Шрифт терминала
 
 - [ ] Options → Global Options → Terminal: «Размер шрифта» 20 → открытые и новые терминалы сразу крупнее; 3 и 500 держатся в пределах 6–48; пусто / не число → 14
