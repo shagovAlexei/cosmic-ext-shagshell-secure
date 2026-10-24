@@ -88,6 +88,19 @@ impl Schedule {
         }
     }
 
+    /// Two jobs of one name get "(2)", "(3)"…: the app tells jobs apart by name.
+    pub fn unique_names(&mut self) {
+        let mut seen = std::collections::HashSet::new();
+        for j in &mut self.jobs {
+            let base = j.name.clone();
+            let mut n = 1;
+            while !seen.insert(j.name.clone()) {
+                n += 1;
+                j.name = format!("{base} ({n})");
+            }
+        }
+    }
+
     pub fn save(&self, path: &Path) -> io::Result<()> {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
@@ -162,6 +175,20 @@ mod tests {
                 minute: 59
             }
         );
+    }
+
+    #[test]
+    fn regression_same_name_jobs_are_told_apart() {
+        let mut s = Schedule {
+            jobs: vec![
+                job(Every::default()),
+                job(Every::default()),
+                job(Every::default()),
+            ],
+        };
+        s.unique_names();
+        let names: Vec<_> = s.jobs.iter().map(|j| j.name.as_str()).collect();
+        assert_eq!(names, ["j", "j (2)", "j (3)"]);
     }
 
     #[test]

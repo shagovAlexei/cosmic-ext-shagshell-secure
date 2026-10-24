@@ -249,15 +249,17 @@ impl Application for App {
             sched_state: Default::default(),
             sched_win: None,
         };
+        let mut sched_error = None;
         match shagshell_core::schedule::Schedule::load(
             &shagshell_core::schedule::Schedule::default_path(),
         ) {
-            Ok(s) => app.schedule = s,
+            Ok(mut s) => {
+                s.unique_names();
+                app.schedule = s;
+            }
             Err(e) => {
                 app.schedule_broken = true;
-                app.sessions
-                    .notice
-                    .get_or_insert(format!("schedule.toml: {e}"));
+                sched_error = Some(format!("schedule.toml: {e}"));
             }
         }
         // Counting starts now: what passed while the app was closed is not made up for.
@@ -268,7 +270,8 @@ impl Application for App {
         // A broken buttonbars.toml is said, and left alone.
         app.sessions.notice = (app.buttons.broken().map(String::from))
             .or(hl_error)
-            .or(keys_error);
+            .or(keys_error)
+            .or(sched_error);
         app.tabs.set_looks(&app.config, &app.hl, &look(&app.config));
         app.startup = startup.or_else(|| {
             let p = shagshell_core::script::expand_home(std::path::Path::new(
@@ -2001,18 +2004,20 @@ impl App {
             w.error = Some(fl!("sch-name-taken"));
             return;
         }
-        let keep = match at {
+        let now = shagshell_core::schedule::local_minutes();
+        // Counting goes on when only the name / script / arguments changed.
+        let (last, running) = match at {
             Some(i) => {
                 let old = std::mem::replace(&mut self.schedule.jobs[i], job.clone());
-                self.sched_state.remove(&old.name).and_then(|s| s.1)
+                let (last, running) = self.sched_state.remove(&old.name).unwrap_or((now, None));
+                (if old.every == job.every { last } else { now }, running)
             }
             None => {
                 self.schedule.jobs.push(job.clone());
-                None
+                (now, None)
             }
         };
-        let now = shagshell_core::schedule::local_minutes();
-        self.sched_state.insert(job.name.clone(), (now, keep));
+        self.sched_state.insert(job.name.clone(), (last, running));
         self.sched_write();
         let i = at.unwrap_or(self.schedule.jobs.len() - 1);
         if let Some(w) = &mut self.sched_win {
@@ -2077,11 +2082,11 @@ impl App {
         };
         match self.sched_state.get(&job.name) {
             Some((_, Some(_))) => fl!("sch-running"),
-            Some((m, _)) => {
+            Some((m, _)) if job.enabled => {
                 let ago = shagshell_core::schedule::local_minutes() - m;
                 fl!("sch-counted", min = ago)
             }
-            None => String::new(),
+            _ => String::new(),
         }
     }
 
