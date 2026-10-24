@@ -310,7 +310,18 @@ sm-sftp = Open SFTP
 sftp-connecting = Connecting…
 sftp-disconnected = Not connected: { $why }
 sftp-not-connected = Not connected
-sftp-keys = Tab panel · Enter open · Backspace up · Insert mark · F5 copy · F6 move · Shift+F6 rename · F7 folder · F8 delete · F4 edit · Ctrl+D bookmarks · Ctrl+Y sync · Alt+Enter rights · Ctrl+H hidden · Ctrl+R refresh
+sftp-fk-switch = Tab panel
+sftp-fk-edit = F4 Edit
+sftp-fk-copy = F5 Copy
+sftp-fk-move = F6 Move
+sftp-fk-rename = ⇧F6 Rename
+sftp-fk-mkdir = F7 Folder
+sftp-fk-delete = F8 Delete
+sftp-fk-rights = Alt+↵ Rights
+sftp-fk-bookmarks = ^D Bookmarks
+sftp-fk-sync = ^Y Sync
+sftp-fk-hidden = ^H Hidden
+sftp-fk-refresh = ^R Refresh
 sftp-n-items = { $count ->
     [one] { $count } item
    *[other] { $count } items

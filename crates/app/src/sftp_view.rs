@@ -1537,12 +1537,50 @@ impl SftpView {
             .align_y(Alignment::Center)
             .into(),
             (Some(s), _) => widget::text::caption(s.clone()).into(),
-            (None, _) => widget::text::caption(fl!("sftp-keys")).into(),
+            (None, _) => widget::Space::new().into(),
         };
         col = col.push(widget::container(status).padding([2, 4]));
+        col = col.push(self.fkeys());
         widget::mouse_area(col.spacing(4).padding(4))
             .on_release(m(SftpMsg::Release(None)))
             .into()
+    }
+
+    /// The commander's keys as buttons (a click is the key).
+    fn fkeys(&self) -> Element<'_, Message> {
+        let keys = [
+            (fl!("sftp-fk-switch"), Key::Switch),
+            (fl!("sftp-fk-edit"), Key::Edit),
+            (fl!("sftp-fk-copy"), Key::Copy),
+            (fl!("sftp-fk-move"), Key::Move),
+            (fl!("sftp-fk-rename"), Key::Rename),
+            (fl!("sftp-fk-mkdir"), Key::Mkdir),
+            (fl!("sftp-fk-delete"), Key::Delete),
+            (fl!("sftp-fk-rights"), Key::Chmod),
+            (fl!("sftp-fk-bookmarks"), Key::Bookmarks),
+            (fl!("sftp-fk-sync"), Key::Sync),
+            (fl!("sftp-fk-hidden"), Key::Hidden),
+            (fl!("sftp-fk-refresh"), Key::Refresh),
+        ];
+        let id = self.id;
+        widget::row::with_children(
+            keys.into_iter()
+                .map(|(label, k)| {
+                    widget::button::custom(
+                        widget::text::caption(label)
+                            .wrapping(cosmic::iced::widget::text::Wrapping::None)
+                            .width(Length::Fill)
+                            .align_x(cosmic::iced::alignment::Horizontal::Center),
+                    )
+                    .padding([6, 4])
+                    .width(Length::Fill)
+                    .on_press(Message::Sftp(id, SftpMsg::Key(k)))
+                    .into()
+                })
+                .collect::<Vec<Element<Message>>>(),
+        )
+        .spacing(3)
+        .into()
     }
 
     fn panel(&self, side: usize) -> Element<'_, Message> {
