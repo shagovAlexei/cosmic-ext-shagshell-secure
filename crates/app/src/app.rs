@@ -237,13 +237,17 @@ impl Application for App {
 
     fn update(&mut self, message: Message) -> Task<Message> {
         let mut task = self.handle(message);
-        // The tab being recorded was closed: what was recorded is still offered.
-        if let Some((window, title)) = self.tabs.take_new_window() {
+        // A tab went into a window of its own: titled.
+        for (window, title) in self.tabs.take_new_windows() {
             task = Task::batch([
                 task,
                 cosmic::ApplicationExt::set_window_title(self, title, window),
             ]);
         }
+        if let Some(window) = self.tabs.take_raise() {
+            task = Task::batch([task, cosmic::iced::window::gain_focus(window)]);
+        }
+        // The tab being recorded was closed: what was recorded is still offered.
         for (title, rec) in self.tabs.take_closed_recordings() {
             task = Task::batch([task, self.save_recording(&title, rec)]);
         }

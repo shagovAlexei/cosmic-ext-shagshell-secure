@@ -321,7 +321,9 @@ pub enum TabsMsg {
 pub struct Tabs {
     /// Tabs in windows of their own (window, tab), and the window just opened (to be titled).
     detached: Vec<(iced::window::Id, TabId)>,
-    new_window: Option<(iced::window::Id, String)>,
+    new_windows: Vec<(iced::window::Id, String)>,
+    /// A tab's window to bring to the front (an askpass dialog is about its tab).
+    raise: Option<iced::window::Id>,
     /// While an event of a tab's own window is handled: that tab is the active one.
     pub front: Option<TabId>,
     /// A recording whose tab was closed: to be saved.
@@ -387,6 +389,7 @@ impl Tabs {
             SendTo::Current => self.active_id().into_iter().collect(),
             SendTo::Visible => (self.grid.iter().flat_map(|g| g.iter()))
                 .filter_map(|(_, group)| group.active_id())
+                .chain(self.detached.iter().map(|(_, id)| *id))
                 .collect(),
             SendTo::All => self.tabs.keys().copied().collect(),
         };
@@ -506,6 +509,10 @@ impl Tabs {
 
     /// Bring tab `id` to the front of its group: an askpass dialog is about it.
     pub fn show(&mut self, id: TabId) {
+        if let Some(w) = self.window_of(id) {
+            self.raise = Some(w);
+            return;
+        }
         let Some(grid) = self.grid.as_mut() else {
             return;
         };
@@ -882,6 +889,10 @@ impl Tabs {
                 group.model.data_set(e, new_id);
             }
         }
+        // The tab of a window of its own keeps its window.
+        for (_, tab_id) in self.detached.iter_mut().filter(|(_, t)| *t == id) {
+            *tab_id = new_id;
+        }
         self.retitle(new_id);
         focus(widget_id)
     }
@@ -941,15 +952,21 @@ impl Tabs {
         });
         self.detached.push((window, id));
         let tab = self.tabs.get(&id);
-        self.new_window = Some((window, tab.map(Tab::title).unwrap_or_default()));
+        self.new_windows
+            .push((window, tab.map(Tab::title).unwrap_or_default()));
         let widget_id = tab.map(|t| t.widget_id.clone());
         let focus = widget_id.map_or_else(Task::none, focus);
         Task::batch([open.then(|_| Task::none()), focus])
     }
 
-    /// The window just opened for a tab and its title, once.
-    pub fn take_new_window(&mut self) -> Option<(iced::window::Id, String)> {
-        self.new_window.take()
+    /// The windows just opened for tabs and their titles, once.
+    pub fn take_new_windows(&mut self) -> Vec<(iced::window::Id, String)> {
+        std::mem::take(&mut self.new_windows)
+    }
+
+    /// A tab's window that is to come to the front, once.
+    pub fn take_raise(&mut self) -> Option<iced::window::Id> {
+        self.raise.take()
     }
 
     /// The tab of `window`, back into the focused group; the window closes.
@@ -1097,9 +1114,7 @@ impl Tabs {
 
     /// The terminal tabs in the order they are shown (groups as laid out, tabs left to right).
     pub fn order(&self) -> Vec<TabId> {
-        let empty = pane_grid::State::new(Group::default()).0;
-        let grid = self.grid.as_ref().unwrap_or(&empty);
-        let ids = grid.iter().flat_map(|(_, g)| {
+        let ids = self.grid.iter().flat_map(|g| g.iter()).flat_map(|(_, g)| {
             g.model
                 .iter()
                 .filter_map(|e| g.model.data::<TabId>(e).copied())
@@ -1333,6 +1348,9 @@ impl Tabs {
                 let windows: Vec<_> = self.detached.iter().map(|(w, _)| *w).collect();
                 Task::batch(windows.into_iter().map(|w| self.reattach(w)))
             }
+            Action::NextTab | Action::PrevTab | Action::SelectTab(_) if self.front.is_some() => {
+                Task::none() // a tab's own window has no tabs to go through
+            }
             Action::NextTab | Action::PrevTab => {
                 if let Some(group) = self.focused_group_mut() {
                     let len = group.model.len();
@@ -1362,11 +1380,11 @@ impl Tabs {
                     None => Task::none(),
                 }
             }
-            Action::Paste => {
-                let id = self.active_id().unwrap_or_default();
-                cosmic::iced::clipboard::read()
-                    .map(move |t| cosmic::Action::App(Message::Tabs(TabsMsg::Paste(id, t))))
-            }
+            Action::Paste => match self.active_id() {
+                Some(id) => cosmic::iced::clipboard::read()
+                    .map(move |t| cosmic::Action::App(Message::Tabs(TabsMsg::Paste(id, t)))),
+                None => Task::none(),
+            },
             Action::SelectAll => {
                 if let Some(id) = self.active_id()
                     && let Some(t) = self.terminal(id)
