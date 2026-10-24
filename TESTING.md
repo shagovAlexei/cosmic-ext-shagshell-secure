@@ -383,3 +383,5 @@
 - [ ] Закрыть остальные при нескольких группах: остаётся только выбранная вкладка, пустые группы исчезают
 - [ ] Options → Global Options: «При запуске открывать сессии, бывшие в прошлый раз» (включено по умолчанию): перезапуск открывает сохранённые сессии, бывшие во вкладках (Quick Connect и SFTP-вкладки — нет); выключено — пустое окно
 - [ ] Закрыть все → выход → запуск: сессий нет (запоминается последнее состояние)
+- [ ] v0.45.1: a note shows one frame only (the tab's), in edit and view mode
+- [ ] v0.45.1: opening a note puts it in the right-hand group (a new group at the right if there is only one); notes restored at start go there too

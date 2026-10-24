@@ -1537,6 +1537,32 @@ impl Tabs {
         Task::none()
     }
 
+    /// A note as a tab in the group at the right (a new one beside the focused when there is only
+    /// one), where the Script Console lives too; the note is shown and takes the focus.
+    pub fn open_note_right(&mut self, launch: Launch, look: &Look) -> Task<Message> {
+        let note = launch.note.clone();
+        if let (Some(grid), Some(mut p)) = (&self.grid, self.focus) {
+            while let Some(next) = grid.adjacent(p, pane_grid::Direction::Right) {
+                p = next;
+            }
+            self.focus = Some(p);
+        }
+        let alone_group = self.grid.as_ref().is_some_and(|g| g.len() == 1);
+        let task = self.open(launch, look);
+        let id = note.and_then(|n| self.note_tab(&n));
+        let at = id.and_then(|id| {
+            self.grid.as_ref().and_then(|g| {
+                g.iter()
+                    .find_map(|(pane, group)| entity_of(&group.model, id).map(|e| (*pane, e, id)))
+            })
+        });
+        let split = match at {
+            Some(at) if alone_group => self.split(at, pane_grid::Axis::Vertical),
+            _ => Task::none(),
+        };
+        Task::batch([task, split])
+    }
+
     /// That tab into a new group beside its own; refused when it is alone in its group.
     fn split(
         &mut self,
