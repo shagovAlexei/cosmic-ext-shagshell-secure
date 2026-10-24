@@ -147,7 +147,17 @@ pub fn bar(
     };
     let tab = |label: String, a| on(tabs, label, a);
     // File transfer in a terminal needs a terminal tab and lrzsz.
-    let xfer = |label: String, a| on(tabs && has_lrzsz(), label, a);
+    let xfer = |label: String, a: Action| {
+        let tool = match a {
+            Action::Transfer(Proto::Zmodem, true) => "sz",
+            Action::Transfer(Proto::Ymodem, true) => "sb",
+            Action::Transfer(Proto::Xmodem, true) => "sx",
+            Action::Transfer(Proto::Ymodem, false) => "rb",
+            Action::Transfer(Proto::Xmodem, false) => "rx",
+            _ => "sz",
+        };
+        on(tabs && has_tool(tool), label, a)
+    };
     use shagshell_core::zmodem::Proto;
     let roots = [
         (
@@ -282,13 +292,12 @@ pub fn bar(
         .into()
 }
 
-/// lrzsz is installed (`sz`, `rz`…): the transfer items are usable. Looked for once.
-pub fn has_lrzsz() -> bool {
-    static FOUND: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *FOUND.get_or_init(|| {
+/// This lrzsz program is installed. Looked for once (after installing lrzsz, restart).
+pub fn has_tool(name: &str) -> bool {
+    static FOUND: std::sync::OnceLock<Vec<(String, bool)>> = std::sync::OnceLock::new();
+    let found = FOUND.get_or_init(|| {
         let path = std::env::var_os("PATH");
         shagshell_core::check::probe(&shagshell_core::zmodem::programs(), path.as_deref())
-            .iter()
-            .all(|(_, ok)| *ok)
-    })
+    });
+    found.iter().any(|(n, ok)| n == name && *ok)
 }

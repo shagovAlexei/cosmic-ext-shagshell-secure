@@ -464,3 +464,5 @@ zm-pick-send = Файлы для отправки
 zm-pick-receive = Сохранить принятый файл как
 options-download-dir = Папка для Zmodem (пусто: ~/Downloads)
 options-zmodem = Передача файлов в терминале
+zm-cancelled = Передача отменена (отменяет её и Ctrl+C во вкладке)
+options-zmodem-auto = Сразу принимать файлы, которые сервер шлёт по Zmodem

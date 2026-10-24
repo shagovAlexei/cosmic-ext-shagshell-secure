@@ -113,6 +113,8 @@ pub struct Config {
     pub log_template: String,
     /// Where Zmodem downloads go ("" = `~/Downloads`).
     pub download_dir: String,
+    /// A Zmodem send from the server is received without asking (needs lrzsz).
+    pub zmodem_auto: bool,
     /// SFTP tabs open with dot files shown (Ctrl+H flips it in a tab).
     pub sftp_show_hidden: bool,
     /// SFTP: the target is already there.
@@ -165,6 +167,7 @@ impl Default for Config {
             highlight_enabled: true,
             log_dir: String::new(),
             download_dir: String::new(),
+            zmodem_auto: true,
             log_template: "%S_%Y-%M-%D_%h%m%s.log".into(),
             sftp_show_hidden: true,
             sftp_overwrite: ExistsRule::Ask,

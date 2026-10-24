@@ -18,11 +18,23 @@ impl Detector {
     /// `true`: `bytes` (with what came before) hold the start. The whole chunk belongs to the
     /// transfer then.
     pub fn feed(&mut self, bytes: &[u8]) -> bool {
-        self.tail.extend_from_slice(bytes);
-        let hit = self.tail.windows(START.len()).any(|w| w == START);
+        let has = |b: &[u8]| b.windows(START.len()).any(|w| w == START);
+        let n = START.len() - 1;
+        // Inside the new bytes, or across the join with the end of the earlier ones.
+        let hit = has(bytes) || {
+            let mut join = self.tail.clone();
+            join.extend_from_slice(&bytes[..bytes.len().min(n)]);
+            has(&join)
+        };
         // Only the end that could still grow into the start is kept.
-        let keep = self.tail.len().saturating_sub(START.len() - 1);
-        self.tail.drain(..keep);
+        match bytes.len() >= n {
+            true => self.tail = bytes[bytes.len() - n..].to_vec(),
+            false => {
+                self.tail.extend_from_slice(bytes);
+                let keep = self.tail.len().saturating_sub(n);
+                self.tail.drain(..keep);
+            }
+        }
         if hit {
             self.tail.clear();
         }

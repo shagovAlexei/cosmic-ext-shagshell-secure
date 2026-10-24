@@ -208,6 +208,10 @@ pub fn view<'a>(
     let zmodem = settings::section()
         .title(fl!("options-zmodem"))
         .add(settings::item(
+            fl!("options-zmodem-auto"),
+            widget::toggler(config.zmodem_auto).on_toggle(set(|c, on| c.zmodem_auto = on)),
+        ))
+        .add(settings::item(
             fl!("options-download-dir"),
             text(&config.download_dir, |c, v| c.download_dir = v),
         ));

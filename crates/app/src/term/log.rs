@@ -33,7 +33,9 @@ pub struct Tap {
     /// Scripts (`crt.Screen.WaitForString`): the output as text, while one runs.
     script: Arc<Buffer>,
     /// A file transfer (lrzsz) is running: the output goes to its stdin, not to the terminal.
-    xfer: Arc<Mutex<Option<ChildStdin>>>,
+    xfer: Arc<Mutex<Option<(u64, ChildStdin)>>>,
+    /// The last transfer that was cancelled (its end is then said as such).
+    cancelled: Arc<std::sync::atomic::AtomicU64>,
     /// Where a Zmodem send from the server is received (none: not noticed).
     auto: Arc<Mutex<Option<PathBuf>>>,
     detector: Arc<Mutex<Detector>>,
@@ -122,7 +124,9 @@ impl Tap {
                 (Some(i), Some(o), Some(e)) => (i, o, e),
                 _ => return Err(io::Error::other("pipes")),
             };
-        *slot = Some(stdin);
+        static GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let gen_id = GEN.fetch_add(1, Ordering::Relaxed);
+        *slot = Some((gen_id, stdin));
         drop(slot);
         let me = self.clone();
         let out = std::thread::spawn(move || {
@@ -142,7 +146,10 @@ impl Tap {
                     break;
                 }
                 s.push_str(&String::from_utf8_lossy(&buf[..n]));
-                let keep = s.len().saturating_sub(4000);
+                let mut keep = s.len().saturating_sub(4000);
+                while !s.is_char_boundary(keep) {
+                    keep += 1;
+                }
                 s.drain(..keep);
             }
             s
@@ -153,9 +160,16 @@ impl Tap {
             let status = child.wait();
             let _ = out.join();
             let said = err.join().unwrap_or_default();
-            *me.xfer.lock().unwrap_or_else(|e| e.into_inner()) = None;
+            // Only its own: a newer transfer may have begun since it was cancelled.
+            {
+                let mut slot = me.xfer.lock().unwrap_or_else(|e| e.into_inner());
+                if slot.as_ref().is_some_and(|(g, _)| *g == gen_id) {
+                    *slot = None;
+                }
+            }
             let line = zmodem::last_line(&said).unwrap_or_default();
             me.fail(match status {
+                _ if me.cancelled.load(Ordering::SeqCst) == gen_id => fl!("zm-cancelled"),
                 Ok(s) if s.success() => fl!("zm-done", what = line),
                 Ok(s) => fl!(
                     "zm-failed",
@@ -170,7 +184,8 @@ impl Tap {
     /// Stop the transfer: the server is told (CAN), the program's input ends.
     pub fn cancel_transfer(&self) {
         let sink = self.xfer.lock().unwrap_or_else(|e| e.into_inner()).take();
-        if sink.is_some() {
+        if let Some((g, _)) = sink {
+            self.cancelled.store(g, Ordering::SeqCst);
             self.input(zmodem::CANCEL.to_vec());
         }
     }
@@ -206,10 +221,14 @@ impl Tap {
     /// `true`: a transfer is running and has the bytes.
     fn feed_transfer(&self, bytes: &[u8]) -> bool {
         let mut g = self.xfer.lock().unwrap_or_else(|e| e.into_inner());
-        let Some(w) = g.as_mut() else { return false };
+        let Some((_, w)) = g.as_mut() else {
+            return false;
+        };
         if w.write_all(bytes).and_then(|()| w.flush()).is_err() {
-            // The program is gone (it ends the transfer itself); what is left is its.
+            // The program is gone: this is already the terminal's again (a prompt after the
+            // last handshake).
             *g = None;
+            return false;
         }
         true
     }

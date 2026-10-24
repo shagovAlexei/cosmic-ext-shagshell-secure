@@ -113,7 +113,7 @@ pub enum Message {
     SecureCrt(crate::securecrt_import::ScMsg),
     Script(crate::script::ScMsg),
     /// A transfer picked in the Transfer menu, ready to run.
-    Transfer(shagshell_core::zmodem::Command),
+    Transfer(crate::term::TabId, shagshell_core::zmodem::Command),
     QuickConnect(QcMsg),
     KeyGen(crate::keygen::KgMsg),
     KeyMap(crate::keymap_editor::KmMsg),
@@ -573,9 +573,9 @@ impl App {
                 }
             }
             Message::Script(m) => return self.script(m),
-            Message::Transfer(cmd) => {
+            Message::Transfer(tab, cmd) => {
                 // Started: nothing to say (the result is said when it ends).
-                if let Err(e) = self.tabs.start_transfer(&cmd) {
+                if let Err(e) = self.tabs.start_transfer(tab, &cmd) {
                     self.sessions.notice = Some(e);
                 }
                 return self.tabs.focus_active();
@@ -959,10 +959,18 @@ impl App {
             Action::CancelTransfer => self.tabs.cancel_transfer(),
             Action::Transfer(proto, send) => {
                 let dir = self.config.download_dir();
-                return Task::perform(crate::transfer_pick::pick(proto, send, dir), |c| match c {
-                    Some(c) => cosmic::Action::App(Message::Transfer(c)),
-                    None => cosmic::Action::None,
-                });
+                // The tab it was asked in, not the one in front when the chooser is closed.
+                let Some(tab) = self.tabs.active_terminal() else {
+                    self.sessions.notice = Some(fl!("zm-no-tab"));
+                    return Task::none();
+                };
+                return Task::perform(
+                    crate::transfer_pick::pick(proto, send, dir),
+                    move |c| match c {
+                        Some(c) => cosmic::Action::App(Message::Transfer(tab, c)),
+                        None => cosmic::Action::None,
+                    },
+                );
             }
             Action::About => self.toggle_drawer(Drawer::About),
             Action::GlobalOptions => {

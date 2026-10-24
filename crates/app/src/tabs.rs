@@ -625,7 +625,8 @@ impl Tabs {
 
     pub fn set_log_prefs(&mut self, config: &Config) {
         self.log_prefs = (config.log_dir(), config.log_template.clone());
-        self.download = crate::menu::has_lrzsz().then(|| config.download_dir());
+        self.download =
+            (config.zmodem_auto && crate::menu::has_tool("rz")).then(|| config.download_dir());
         for tap in self.taps.lock().unwrap_or_else(|e| e.into_inner()).values() {
             tap.set_auto_receive(self.download.clone());
         }
@@ -803,8 +804,11 @@ impl Tabs {
     }
 
     /// Transfer → …: lrzsz's `cmd` on the active terminal's connection.
-    pub fn start_transfer(&self, cmd: &shagshell_core::zmodem::Command) -> Result<(), String> {
-        let id = self.active_terminal().ok_or_else(|| fl!("zm-no-tab"))?;
+    pub fn start_transfer(
+        &self,
+        id: TabId,
+        cmd: &shagshell_core::zmodem::Command,
+    ) -> Result<(), String> {
         let tap = (self.taps.lock().unwrap_or_else(|e| e.into_inner()))
             .get(&id)
             .cloned()
