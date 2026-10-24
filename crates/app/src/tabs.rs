@@ -1399,6 +1399,10 @@ impl Tabs {
             }
             self.focus = Some(p);
         }
+        // What the target group shows now: an automatic open must not hide it.
+        let shown = (self.grid.as_ref().zip(self.focus))
+            .and_then(|(g, p)| g.get(p))
+            .map(|g| (self.focus, g.model.active()));
         let mut launch = Launch::local_shell();
         launch.title = fl!("console-title");
         launch.console = true;
@@ -1416,10 +1420,18 @@ impl Tabs {
             Some(at) if alone_group => self.split(at, pane_grid::Axis::Vertical),
             _ => Task::none(),
         };
-        if !raise {
-            self.focus = back.filter(|p| self.grid.as_ref().is_some_and(|g| g.get(*p).is_some()));
+        if raise {
+            return Task::batch([task, split]);
         }
-        Task::batch([task, split])
+        if let (Some((Some(p), e)), Some(grid)) = (shown, self.grid.as_mut())
+            && !alone_group
+            && let Some(g) = grid.get_mut(p)
+        {
+            g.model.activate(e);
+        }
+        self.focus = back.filter(|p| self.grid.as_ref().is_some_and(|g| g.get(*p).is_some()));
+        // Not `task` / `split`: their focus would take the keyboard from the terminal.
+        Task::none()
     }
 
     /// That tab into a new group beside its own; refused when it is alone in its group.
