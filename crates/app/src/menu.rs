@@ -71,6 +71,8 @@ pub enum Action {
     RunScript,
     /// Script → Cancel.
     CancelScript,
+    /// Script → Console.
+    ScriptConsole,
     // Shown, not working yet (later phases).
     Disconnect,
     ConnectSftp,
@@ -272,6 +274,7 @@ pub fn bar(
             vec![
                 Button(fl!("menu-script-run"), None, Action::RunScript),
                 Button(fl!("menu-script-cancel"), None, Action::CancelScript),
+                Button(fl!("menu-script-console"), None, Action::ScriptConsole),
                 Divider,
                 CheckBox(
                     fl!("menu-script-record"),

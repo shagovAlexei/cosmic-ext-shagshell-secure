@@ -138,6 +138,10 @@ pub struct Config {
     pub session_manager_side: Side,
     /// Options → Command Manager side.
     pub command_manager_side: Side,
+    /// Script Console: every `crt` call is traced into it.
+    pub script_debug: bool,
+    /// Script Console: opens by itself when a script writes something.
+    pub script_console_auto: bool,
     /// Both managers on one side: the Command Manager is the upper one.
     pub commands_above: bool,
     /// Only the header of the pane shows.
@@ -230,6 +234,8 @@ impl Default for Config {
             paste_on_middle_click: true,
             session_manager_side: Side::Left,
             command_manager_side: Side::Right,
+            script_debug: false,
+            script_console_auto: true,
             commands_above: false,
             session_manager_collapsed: false,
             command_manager_collapsed: false,

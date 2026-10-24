@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use shagshell_core::script::{self, Host};
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::hash::{Hash, Hasher};
-use std::io::{Read, Seek, SeekFrom};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
@@ -82,6 +82,15 @@ pub enum ScMsg {
     Clip(Reply, String),
     Ok,
     Cancel,
+    /// A script wrote to the console (once until the window has looked).
+    Output(u64),
+    /// The Script Console's buttons.
+    ConsoleStop,
+    ConsoleClear,
+    ConsoleCopy,
+    ConsoleDebug(bool),
+    ConsoleClose,
+    ConsoleDrag,
 }
 
 struct Run {
@@ -162,6 +171,14 @@ pub struct Scripts {
     /// The size the window was last given (a different kind of dialog resizes it).
     pub win_size: cosmic::iced::Size,
     dir: PathBuf,
+    console: Arc<Mutex<script::Console>>,
+    /// Set when `Output` is queued, cleared when the window has taken it.
+    dirty: Arc<AtomicBool>,
+    pub debug: Arc<AtomicBool>,
+    /// The Script Console's window.
+    pub console_win: Option<cosmic::iced::window::Id>,
+    /// The newest run the console opened for by itself (a closed console stays closed).
+    shown_run: u64,
     tx: tokio::sync::mpsc::UnboundedSender<ScMsg>,
     rx: Arc<Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<ScMsg>>>>,
 }
@@ -180,6 +197,10 @@ pub struct Outcome {
     pub clip: Vec<(Option<String>, Reply)>,
     /// `FileOpenDialog` / `FileSaveDialog`: the chooser to show.
     pub files: Vec<(Call, bool)>,
+    /// A script wrote (run id): the console opens when wanted.
+    pub output: Option<u64>,
+    /// The console's text for the clipboard.
+    pub copy: Option<String>,
 }
 
 impl Scripts {
@@ -194,6 +215,11 @@ impl Scripts {
             win: None,
             win_size: cosmic::iced::Size::ZERO,
             dir,
+            console: Arc::default(),
+            dirty: Arc::default(),
+            debug: Arc::default(),
+            console_win: None,
+            shown_run: 0,
             tx,
             rx: Arc::new(Mutex::new(Some(rx))),
         }
@@ -236,19 +262,14 @@ impl Scripts {
         let l = std::os::unix::net::UnixListener::bind(&sock)
             .and_then(|l| l.set_nonblocking(true).map(|()| l))
             .map_err(|e| format!("{}: {e}", sock.display()))?;
-        let (log, from) = open_log();
+        let log = Arc::new(Mutex::new(open_log()));
         let (prog, args, env) = script::command(script, args, &sock, tab, &script::python_dir());
-        let out = |f: &Option<std::fs::File>| {
-            f.as_ref()
-                .and_then(|f| f.try_clone().ok())
-                .map_or_else(std::process::Stdio::null, std::process::Stdio::from)
-        };
-        let child = std::process::Command::new(&prog)
+        let mut child = std::process::Command::new(&prog)
             .args(&args)
             .envs(env)
             .stdin(std::process::Stdio::null())
-            .stdout(out(&log))
-            .stderr(out(&log))
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
             .spawn()
             .map_err(|e| {
                 let _ = std::fs::remove_file(&sock);
@@ -264,9 +285,7 @@ impl Scripts {
         }
         self.next += 1;
         let cancel = Arc::new(AtomicBool::new(false));
-        let name = script
-            .file_name()
-            .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+        let name = name_of(script);
         self.runs.insert(
             n,
             Run {
@@ -274,19 +293,57 @@ impl Scripts {
                 cancel: cancel.clone(),
             },
         );
+        let sink = Sink {
+            run: n,
+            console: self.console.clone(),
+            dirty: self.dirty.clone(),
+            tx: self.tx.clone(),
+        };
+        let time = shagshell_core::logfile::now().strftime("%H:%M:%S");
+        sink.push(
+            script::Kind::Mark,
+            format!("── {} · {time} ──", name_of(script)),
+        );
+        let streams: [(Option<Box<dyn Read + Send>>, script::Kind); 2] = [
+            (
+                child.stdout.take().map(|r| Box::new(r) as _),
+                script::Kind::Out,
+            ),
+            (
+                child.stderr.take().map(|r| Box::new(r) as _),
+                script::Kind::Err,
+            ),
+        ];
+        let pumps: Vec<_> = streams
+            .into_iter()
+            .filter_map(|(r, kind)| {
+                let (r, sink, log) = (r?, sink.clone(), log.clone());
+                Some(std::thread::spawn(move || pump(r, kind, &sink, &log)))
+            })
+            .collect();
         let host = Arc::new(RunHost {
             run: n,
             taps: self.taps.clone(),
-            tx: self.tx.clone(),
+            sink: sink.clone(),
+            debug: self.debug.clone(),
             cancel: cancel.clone(),
         });
-        let (tx, log_path) = (self.tx.clone(), log_path());
+        let tx = self.tx.clone();
         std::thread::spawn(move || {
-            let end = supervise(child, l, host, &cancel, log_path.as_deref(), from);
+            let end = supervise(child, l, host, &cancel, pumps, &sink);
             let _ = std::fs::remove_file(&sock);
             let _ = tx.send(ScMsg::Ended(n, end));
         });
         Ok(())
+    }
+
+    fn sink(&self, run: u64) -> Sink {
+        Sink {
+            run,
+            console: self.console.clone(),
+            dirty: self.dirty.clone(),
+            tx: self.tx.clone(),
+        }
     }
 
     /// Script → Cancel: every run stops (the one on the active tab is the usual).
@@ -370,12 +427,45 @@ impl Scripts {
                         tap.script_buffer().disarm();
                     }
                 }
-                out.notice = Some(match end {
+                let failed = matches!(end, End::Failed(_));
+                let notice = match end {
                     End::Done => fl!("script-done", name = name),
                     End::Cancelled => fl!("script-stopped", name = name),
                     End::Failed(e) => fl!("script-failed", name = name, error = e),
-                });
+                };
+                let kind = match failed {
+                    true => script::Kind::Err,
+                    false => script::Kind::Mark,
+                };
+                self.sink(n).push(kind, format!("── {notice} ──"));
+                out.notice = Some(notice);
             }
+            ScMsg::Output(run) => {
+                self.dirty.store(false, Ordering::SeqCst);
+                // Once per run: a console closed by hand stays closed for it.
+                if run > self.shown_run && self.console_win.is_none() {
+                    self.shown_run = run;
+                    out.output = Some(run);
+                }
+            }
+            ScMsg::ConsoleStop => {
+                self.cancel();
+            }
+            ScMsg::ConsoleClear => self
+                .console
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clear(),
+            ScMsg::ConsoleCopy => {
+                out.copy = Some(
+                    self.console
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .text(),
+                );
+            }
+            ScMsg::ConsoleDebug(on) => self.debug.store(on, Ordering::SeqCst),
+            ScMsg::ConsoleClose | ScMsg::ConsoleDrag => {}
             ScMsg::Picked(_) | ScMsg::Start(..) | ScMsg::StartOn(..) | ScMsg::Drag => {}
             ScMsg::Input(v) => {
                 if let Some(a) = self.asks.front_mut() {
@@ -551,6 +641,76 @@ impl Scripts {
         )
     }
 
+    /// The Script Console window.
+    pub fn console_view(&self, focused: bool) -> Element<'_, Message> {
+        use cosmic::iced::{Color, Length};
+        use script::Kind;
+        let m = Message::Script;
+        let lines = self
+            .console
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .last(500);
+        let body: Element<'_, Message> = match lines.is_empty() {
+            true => widget::container(widget::text::caption(fl!("console-empty")))
+                .padding(16)
+                .into(),
+            false => {
+                let rows = lines.into_iter().map(|l| {
+                    let t = widget::text(l.text).font(cosmic::font::mono()).size(13);
+                    match l.kind {
+                        Kind::Err => t.class(cosmic::theme::Text::Color(Color::from_rgb(
+                            0.95, 0.35, 0.35,
+                        ))),
+                        Kind::Debug => t.class(cosmic::theme::Text::Accent),
+                        Kind::Mark => t.font(cosmic::font::semibold()),
+                        Kind::Out => t,
+                    }
+                    .into()
+                });
+                widget::scrollable(
+                    widget::column::with_children(rows.collect::<Vec<Element<'_, Message>>>())
+                        .padding([8, 12]),
+                )
+                .anchor_bottom()
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+            }
+        };
+        let tools = widget::row::with_capacity(5)
+            .spacing(8)
+            .align_y(cosmic::iced::Alignment::Center)
+            .padding([8, 12])
+            .push(
+                widget::button::destructive(fl!("console-stop"))
+                    .on_press_maybe((!self.runs.is_empty()).then(|| m(ScMsg::ConsoleStop))),
+            )
+            .push(widget::button::standard(fl!("console-clear")).on_press(m(ScMsg::ConsoleClear)))
+            .push(widget::button::standard(fl!("console-copy")).on_press(m(ScMsg::ConsoleCopy)))
+            .push(widget::Space::new().width(Length::Fill))
+            .push(widget::text::body(fl!("console-debug")))
+            .push(
+                widget::toggler(self.debug.load(Ordering::SeqCst))
+                    .on_toggle(move |on| m(ScMsg::ConsoleDebug(on))),
+            );
+        let content = widget::column::with_children(vec![
+            widget::header_bar()
+                .title(fl!("console-title"))
+                .on_close(m(ScMsg::ConsoleClose))
+                .on_drag(m(ScMsg::ConsoleDrag))
+                .focused(focused)
+                .into(),
+            tools.into(),
+            body,
+        ]);
+        widget::container(content)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .class(cosmic::theme::Container::WindowBackground)
+            .into()
+    }
+
     /// A script's file chooser (`FileOpenDialog` / `FileSaveDialog`): the path, or `None`.
     pub async fn choose(args: Vec<Value>, save: bool) -> Option<String> {
         use cosmic::dialog::file_chooser::{FileFilter, open, save as sv};
@@ -693,8 +853,8 @@ fn supervise(
     l: std::os::unix::net::UnixListener,
     host: Arc<RunHost>,
     cancel: &Arc<AtomicBool>,
-    log: Option<&Path>,
-    log_from: u64,
+    pumps: Vec<std::thread::JoinHandle<()>>,
+    sink: &Sink,
 ) -> End {
     let mut served = false;
     let status = loop {
@@ -721,24 +881,75 @@ fn supervise(
     };
     // Waits of a script that is gone stop.
     let user = cancel.swap(true, Ordering::SeqCst);
+    // What it wrote last is in the console before the end is told.
+    for p in pumps {
+        let _ = p.join();
+    }
     match status {
         Ok(st) if st.success() => End::Done,
         _ if user => End::Cancelled,
-        Ok(st) => End::Failed(last_line(log, log_from).unwrap_or_else(|| st.to_string())),
+        Ok(st) => End::Failed(sink.last_error().unwrap_or_else(|| st.to_string())),
         Err(e) => End::Failed(e.to_string()),
     }
 }
 
-/// The last non-empty line of the script log written since `from`.
-fn last_line(log: Option<&Path>, from: u64) -> Option<String> {
-    let mut f = std::fs::File::open(log?).ok()?;
-    f.seek(SeekFrom::Start(from)).ok()?;
-    let mut s = String::new();
-    f.read_to_string(&mut s).ok()?;
-    s.lines()
-        .rev()
-        .find(|l| !l.trim().is_empty())
-        .map(|l| l.trim().to_string())
+fn name_of(script: &Path) -> String {
+    script
+        .file_name()
+        .map_or_else(String::new, |n| n.to_string_lossy().into_owned())
+}
+
+/// Where a run's lines go: the console, and the window is told once.
+#[derive(Clone)]
+struct Sink {
+    run: u64,
+    console: Arc<Mutex<script::Console>>,
+    dirty: Arc<AtomicBool>,
+    tx: tokio::sync::mpsc::UnboundedSender<ScMsg>,
+}
+
+impl Sink {
+    fn push(&self, kind: script::Kind, text: String) {
+        self.console
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(self.run, kind, text);
+        if !self.dirty.swap(true, Ordering::SeqCst) {
+            let _ = self.tx.send(ScMsg::Output(self.run));
+        }
+    }
+
+    /// The last line this run wrote to stderr (a Python error ends with its message).
+    fn last_error(&self) -> Option<String> {
+        let c = self.console.lock().unwrap_or_else(|e| e.into_inner());
+        c.last(usize::MAX)
+            .into_iter()
+            .rev()
+            .find(|l| l.run == self.run && l.kind == script::Kind::Err && !l.text.trim().is_empty())
+            .map(|l| l.text.trim().to_string())
+    }
+}
+
+/// Copies a script's stdout / stderr, line by line, into the console and the log file.
+fn pump(
+    r: Box<dyn Read + Send>,
+    kind: script::Kind,
+    sink: &Sink,
+    log: &Mutex<Option<std::fs::File>>,
+) {
+    use std::io::{BufRead, Write};
+    let mut r = std::io::BufReader::new(r);
+    let mut buf = Vec::new();
+    while matches!(r.read_until(b'\n', &mut buf), Ok(n) if n > 0) {
+        let text = String::from_utf8_lossy(&buf)
+            .trim_end_matches(['\r', '\n'])
+            .to_string();
+        buf.clear();
+        if let Some(f) = log.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+            let _ = writeln!(f, "{text}");
+        }
+        sink.push(kind, text);
+    }
 }
 
 fn log_path() -> Option<PathBuf> {
@@ -749,12 +960,10 @@ fn log_path() -> Option<PathBuf> {
     Some(base.join("shagshell/script.log"))
 }
 
-/// The script log opened for appending (0600), and how long it already is.
-fn open_log() -> (Option<std::fs::File>, u64) {
+/// The script log opened for appending (0600).
+fn open_log() -> Option<std::fs::File> {
     use std::os::unix::fs::OpenOptionsExt;
-    let Some(path) = log_path() else {
-        return (None, 0);
-    };
+    let path = log_path()?;
     if let Some(d) = path.parent() {
         let _ = std::fs::create_dir_all(d);
     }
@@ -770,18 +979,15 @@ fn open_log() -> (Option<std::fs::File>, u64) {
     if big && let Some(f) = &f {
         let _ = f.set_len(0);
     }
-    let len = f
-        .as_ref()
-        .and_then(|f| f.metadata().ok())
-        .map_or(0, |m| m.len());
-    (f, len)
+    f
 }
 
 /// What one run's server thread uses.
 struct RunHost {
     run: u64,
     taps: Taps,
-    tx: tokio::sync::mpsc::UnboundedSender<ScMsg>,
+    sink: Sink,
+    debug: Arc<AtomicBool>,
     cancel: Arc<AtomicBool>,
 }
 
@@ -796,6 +1002,14 @@ impl RunHost {
 }
 
 impl Host for RunHost {
+    fn debug(&self) -> bool {
+        self.debug.load(Ordering::SeqCst)
+    }
+
+    fn trace(&self, line: String) {
+        self.sink.push(script::Kind::Debug, line);
+    }
+
     fn buffer(&self, tab: u64) -> Option<Arc<script::Buffer>> {
         let b = self.tap(tab)?.script_buffer();
         b.arm_once();
@@ -821,7 +1035,8 @@ impl Host for RunHost {
             args: args.to_vec(),
             reply: Reply(Arc::new(Mutex::new(Some(tx)))),
         };
-        self.tx
+        self.sink
+            .tx
             .send(ScMsg::Call(c))
             .map_err(|_| "cancelled".to_string())?;
         loop {

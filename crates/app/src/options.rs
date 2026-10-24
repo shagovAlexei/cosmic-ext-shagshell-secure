@@ -75,6 +75,11 @@ pub fn view<'a>(
             ),
         ))
         .add(settings::item(
+            fl!("options-console-auto"),
+            widget::toggler(config.script_console_auto)
+                .on_toggle(set(|c, on| c.script_console_auto = on)),
+        ))
+        .add(settings::item(
             fl!("options-theme"),
             widget::dropdown(themes, theme, {
                 let c = config.clone();

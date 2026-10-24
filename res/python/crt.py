@@ -295,8 +295,13 @@ def main():
         code = e.code or 0
     except SystemExit as e:
         code = e.code if isinstance(e.code, int) else (0 if e.code is None else 1)
-    except BaseException:
-        traceback.print_exc()
+    except BaseException as e:
+        # Only the script's own frames: runpy's and ours say nothing to the author.
+        tb = e.__traceback__
+        mine = os.path.abspath(path)
+        while tb is not None and os.path.abspath(tb.tb_frame.f_code.co_filename) != mine:
+            tb = tb.tb_next
+        traceback.print_exception(type(e), e, tb or e.__traceback__)
         code = 1
     sys.stdout.flush()
     os._exit(code)
