@@ -48,9 +48,43 @@ pub fn parse(text: &str) -> Vec<Piece> {
     out
 }
 
+/// A multi-line `text` (Command Window) as the pieces to send: every non-empty line parsed and
+/// ended with Enter, in order. Nothing but blank lines is a bare Enter.
+pub fn lines(text: &str) -> Vec<Piece> {
+    let mut out = Vec::new();
+    for line in text.lines().filter(|l| !l.trim().is_empty()) {
+        out.extend(parse(line));
+        match out.last_mut() {
+            Some(Piece::Bytes(b)) => b.push(b'\r'),
+            _ => out.push(Piece::Bytes(b"\r".to_vec())),
+        }
+    }
+    if out.is_empty() {
+        out.push(Piece::Bytes(b"\r".to_vec()));
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lines_ends_each_with_enter_and_skips_blanks() {
+        assert_eq!(lines(""), [bytes(b"\r")]);
+        assert_eq!(lines("  \n\n"), [bytes(b"\r")]);
+        assert_eq!(lines("ls"), [bytes(b"ls\r")]);
+        assert_eq!(lines("a\r\n\nb\n"), [bytes(b"a\r"), bytes(b"b\r")]);
+        // a pause stays inside its line, Enter after it
+        assert_eq!(
+            lines("x\\p"),
+            [
+                bytes(b"x"),
+                Piece::Pause(Duration::from_secs(1)),
+                bytes(b"\r")
+            ]
+        );
+    }
 
     fn bytes(b: &[u8]) -> Piece {
         Piece::Bytes(b.to_vec())

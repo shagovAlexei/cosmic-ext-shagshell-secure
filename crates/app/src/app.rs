@@ -594,8 +594,14 @@ impl App {
             }
             Message::EditTick => self.tabs.edit_tick(),
             Message::CommandWindow(m) => {
-                if matches!(m, crate::command_window::CwMsg::Focus) {
-                    return widget::text_input::focus(self.command.input_id.clone());
+                // A click takes the keys from the terminal (it takes them from every widget).
+                if matches!(
+                    m,
+                    crate::command_window::CwMsg::Edit(widget::text_editor::Action::Click(_))
+                ) {
+                    let focus = widget::text_input::focus(self.command.input_id.clone());
+                    self.command.update(m);
+                    return focus;
                 }
                 if let Some((to, pieces)) = self.command.update(m) {
                     let ids = self.tabs.send_targets(to);
