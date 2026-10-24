@@ -223,9 +223,13 @@ pub fn view<'a>(
         ))
         .add(settings::item(
             fl!("options-font-size"),
-            text(&config.font_size.to_string(), |c, v| {
-                c.font_size = v.trim().parse().unwrap_or(0)
-            }),
+            text(
+                &match config.font_size {
+                    0 => String::new(),
+                    n => n.to_string(),
+                },
+                |c, v| c.font_size = v.trim().parse::<u32>().map_or(0, |n| n.min(48) as u16),
+            ),
         ))
         .add(settings::item(
             fl!("options-copy-on-select"),

@@ -119,7 +119,7 @@ pub struct Config {
     pub zmodem_auto: bool,
     /// Terminal font family ("" = the system's monospace).
     pub font_family: String,
-    /// Terminal font size, pt (0 = 14); read through `font_px`.
+    /// Terminal font size, px (0 = 14); read through `font_px`.
     pub font_size: u16,
     /// SFTP tabs open with dot files shown (Ctrl+H flips it in a tab).
     pub sftp_show_hidden: bool,

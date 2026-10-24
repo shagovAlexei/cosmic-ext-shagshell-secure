@@ -3,7 +3,7 @@
 //! fixed but for the size (the panel font's), named as there so the adapted code reads the same.
 
 use cosmic_text::{Family, Metrics, Stretch, Weight};
-use std::{collections::HashSet, sync::Mutex};
+use std::{collections::HashMap, sync::Mutex};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Style {
@@ -30,24 +30,32 @@ impl Default for Style {
 }
 
 impl Style {
-    /// The family for `Attrs<'static>`: a name is leaked once (a handful at most, as typed in Options).
+    /// The family for `Attrs<'static>`: the system's monospace when empty or not installed (cosmic-text
+    /// would otherwise pick any face, maybe a proportional one). An installed name is leaked once.
     pub fn family(&self) -> Family<'static> {
-        static NAMES: Mutex<Option<HashSet<&'static str>>> = Mutex::new(None);
+        static NAMES: Mutex<Option<HashMap<String, Option<&'static str>>>> = Mutex::new(None);
         let name = self.font_family.trim();
         if name.is_empty() {
             return Family::Monospace;
         }
         let mut names = NAMES.lock().unwrap_or_else(|e| e.into_inner());
-        let names = names.get_or_insert_default();
-        let leaked = match names.get(name) {
-            Some(n) => *n,
-            None => {
-                let n: &'static str = Box::leak(name.to_string().into_boxed_str());
-                names.insert(n);
-                n
-            }
-        };
-        Family::Name(leaked)
+        let known = names.get_or_insert_default().get(name).copied();
+        let found = known.unwrap_or_else(|| {
+            let mut fs = cosmic::iced::advanced::graphics::text::font_system()
+                .write()
+                .unwrap();
+            let installed = fs
+                .raw()
+                .db()
+                .faces()
+                .any(|f| f.families.iter().any(|(n, _)| n.eq_ignore_ascii_case(name)));
+            let leaked = installed.then(|| &*Box::leak(name.to_string().into_boxed_str()));
+            names
+                .get_or_insert_default()
+                .insert(name.to_string(), leaked);
+            leaked
+        });
+        found.map_or(Family::Monospace, Family::Name)
     }
 
     pub fn typed_font_stretch(&self) -> Stretch {
@@ -66,10 +74,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn family_is_monospace_when_empty_and_named_otherwise() {
+    fn family_is_monospace_when_empty_or_not_installed() {
         let mut s = Style::default();
         assert_eq!(s.family(), Family::Monospace);
-        s.font_family = " Fira Code ".into();
-        assert_eq!(s.family(), Family::Name("Fira Code"));
+        s.font_family = "No Such Font 123".into();
+        assert_eq!(s.family(), Family::Monospace);
     }
 }
