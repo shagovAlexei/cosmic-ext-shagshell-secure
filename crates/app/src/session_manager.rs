@@ -592,6 +592,16 @@ impl SessionManager {
         })
     }
 
+    /// The strip at the pane's inner edge that resizes it.
+    pub fn splitter(&self) -> Element<'_, Message> {
+        widget::mouse_area(widget::container(
+            widget::Space::new().width(6.0).height(Length::Fill),
+        ))
+        .interaction(mouse::Interaction::ResizingHorizontally)
+        .on_press(Message::Sessions(SmMsg::SplitStart))
+        .into()
+    }
+
     pub fn view(&self, window: iced::window::Id) -> Element<'_, Message> {
         let m = |x| Message::Sessions(x);
         let tool =
@@ -652,30 +662,14 @@ impl SessionManager {
                 .height(Length::Fill),
         )
         .on_enter(m(SmMsg::Hover(None)));
-        let body = widget::column::with_children(vec![
-            widget::text::heading(fl!("menu-session-manager")).into(),
-            toolbar.into(),
-            filter.into(),
-            list,
-            rest.into(),
-        ])
-        .spacing(6)
-        .padding(8);
+        let body =
+            widget::column::with_children(vec![toolbar.into(), filter.into(), list, rest.into()])
+                .spacing(6)
+                .padding(8);
         let pane = widget::container(body)
-            .width(self.width)
-            .height(Length::Fill)
-            .class(cosmic::theme::Container::Card);
-        let splitter = widget::mouse_area(widget::container(
-            widget::Space::new().width(6.0).height(Length::Fill),
-        ))
-        .interaction(mouse::Interaction::ResizingHorizontally)
-        .on_press(m(SmMsg::SplitStart));
-        let pane = widget::mouse_area(pane).on_exit(m(SmMsg::Leave));
-        let mut parts: Vec<Element<'_, Message>> = vec![pane.into(), splitter.into()];
-        if self.right {
-            parts.reverse();
-        }
-        widget::row::with_children(parts).into()
+            .width(Length::Fill)
+            .height(Length::Fill);
+        widget::mouse_area(pane).on_exit(m(SmMsg::Leave)).into()
     }
 
     fn row(&self, r: &Row, window: iced::window::Id) -> Element<'_, Message> {

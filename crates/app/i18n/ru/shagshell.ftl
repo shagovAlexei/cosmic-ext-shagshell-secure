@@ -528,3 +528,7 @@ rec-empty = Ничего не записано
 menu-tab-window = Открыть в новом окне
 menu-reattach-all = Вернуть окна во вкладки
 tab-window-back = Вернуть в главное окно
+panel-up = Выше
+panel-down = Ниже
+panel-collapse = Свернуть
+panel-expand = Развернуть

@@ -527,3 +527,7 @@ rec-empty = Nothing was recorded
 menu-tab-window = Open in a New Window
 menu-reattach-all = Bring the Windows Back into Tabs
 tab-window-back = Back to the main window
+panel-up = Move up
+panel-down = Move down
+panel-collapse = Collapse
+panel-expand = Expand

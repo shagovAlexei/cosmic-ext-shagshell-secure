@@ -46,18 +46,28 @@ pub enum Panel {
     Commands,
 }
 
-/// The panes left and right of the terminals, in the order they are drawn (left to right). On one
-/// side the Session Manager is the outer one, at the window's edge.
-pub fn panels(sessions: (Side, bool), commands: (Side, bool)) -> (Vec<Panel>, Vec<Panel>) {
-    let (mut left, mut right) = (Vec::new(), Vec::new());
-    for (panel, (side, shown)) in [(Panel::Sessions, sessions), (Panel::Commands, commands)] {
-        match (shown, side) {
-            (false, _) => {}
-            (true, Side::Left) => left.push(panel),
-            (true, Side::Right) => right.insert(0, panel),
-        }
+/// The panes of the left and of the right column, top to bottom. On one side they are stacked:
+/// the Session Manager above, unless `commands_above`.
+pub fn panels(
+    sessions: (Side, bool),
+    commands: (Side, bool),
+    commands_above: bool,
+) -> (Vec<Panel>, Vec<Panel>) {
+    let mut order = [Panel::Sessions, Panel::Commands];
+    if commands_above {
+        order.reverse();
     }
-    (left, right)
+    let on = |side| {
+        order
+            .iter()
+            .copied()
+            .filter(|p| match p {
+                Panel::Sessions => sessions == (side, true),
+                Panel::Commands => commands == (side, true),
+            })
+            .collect::<Vec<_>>()
+    };
+    (on(Side::Left), on(Side::Right))
 }
 
 fn pinned(t: cosmic::Theme, dark: bool) -> cosmic::Theme {
@@ -128,6 +138,11 @@ pub struct Config {
     pub session_manager_side: Side,
     /// Options → Command Manager side.
     pub command_manager_side: Side,
+    /// Both managers on one side: the Command Manager is the upper one.
+    pub commands_above: bool,
+    /// Only the header of the pane shows.
+    pub session_manager_collapsed: bool,
+    pub command_manager_collapsed: bool,
     /// Session Manager width, px (dragged).
     pub session_manager_width: u16,
     /// Open folders of the session tree (ids).
@@ -215,6 +230,9 @@ impl Default for Config {
             paste_on_middle_click: true,
             session_manager_side: Side::Left,
             command_manager_side: Side::Right,
+            commands_above: false,
+            session_manager_collapsed: false,
+            command_manager_collapsed: false,
             session_manager_width: 240,
             expanded: Vec::new(),
             language: String::new(),
@@ -263,19 +281,29 @@ mod tests {
     fn panels_by_side() {
         use Panel::*;
         use Side::*;
-        let p = |a, b, c, d| panels((a, b), (c, d));
-        assert_eq!(p(Left, true, Right, true), (vec![Sessions], vec![Commands]));
-        assert_eq!(p(Right, true, Left, true), (vec![Commands], vec![Sessions]));
+        let p = |a, b, c, d, up| panels((a, b), (c, d), up);
         assert_eq!(
-            p(Left, true, Left, true),
+            p(Left, true, Right, true, false),
+            (vec![Sessions], vec![Commands])
+        );
+        assert_eq!(
+            p(Right, true, Left, true, false),
+            (vec![Commands], vec![Sessions])
+        );
+        // stacked: the Session Manager on top, or the other way round
+        assert_eq!(
+            p(Left, true, Left, true, false),
             (vec![Sessions, Commands], vec![])
         );
         assert_eq!(
-            p(Right, true, Right, true),
+            p(Right, true, Right, true, true),
             (vec![], vec![Commands, Sessions])
         );
-        assert_eq!(p(Right, false, Right, true), (vec![], vec![Commands]));
-        assert_eq!(p(Left, false, Left, false), (vec![], vec![]));
+        assert_eq!(
+            p(Right, false, Right, true, false),
+            (vec![], vec![Commands])
+        );
+        assert_eq!(p(Left, false, Left, false, false), (vec![], vec![]));
     }
 
     use super::*;
