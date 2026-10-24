@@ -639,7 +639,7 @@ impl SessionManager {
                 .height(Length::Fill),
         )
         .on_enter(m(SmMsg::Hover(None)));
-        let mut body = widget::column::with_children(vec![
+        let body = widget::column::with_children(vec![
             widget::text::heading(fl!("menu-session-manager")).into(),
             toolbar.into(),
             filter.into(),
@@ -648,9 +648,6 @@ impl SessionManager {
         ])
         .spacing(6)
         .padding(8);
-        if let Some(n) = &self.notice {
-            body = body.push(widget::text::caption(n.clone()));
-        }
         let pane = widget::container(body)
             .width(self.width)
             .height(Length::Fill)
@@ -753,7 +750,7 @@ fn unfocus() -> Task<Message> {
     widget::text_input::focus(widget::Id::unique())
 }
 
-fn parent(id: &str) -> &str {
+pub fn parent(id: &str) -> &str {
     id.rsplit_once('/').map_or("", |(p, _)| p)
 }
 

@@ -210,6 +210,20 @@ impl SftpView {
         self.browse = Some(self.worker());
     }
 
+    /// Disconnect: both workers go (a running copy is cancelled, for a Retry).
+    pub fn disconnect(&mut self) {
+        if let Some(id) = self.queue.running().map(|j| j.id) {
+            self.queue.cancel(id);
+        }
+        if matches!(self.dialog, Some(Dialog::Conflict { .. })) {
+            self.dialog = None;
+        }
+        (self.browse, self.transfer, self.started) = (None, None, None);
+        self.connected = false;
+        self.paused = false;
+        self.status = Some(fl!("sftp-not-connected"));
+    }
+
     fn list_local(&mut self, path: PathBuf, focus: Option<OsString>) {
         match read_local(&path) {
             Ok(entries) => {
@@ -1015,6 +1029,8 @@ fn row(
         (true, _) => format!("[{name}]"),
         (false, _) => name,
     };
+    // Marked: also a bullet, so it shows under the cursor too.
+    let name = if marked { format!("● {name}") } else { name };
     let size = match e.dir {
         true => String::new(),
         false => size_text(e.size),
@@ -1022,7 +1038,8 @@ fn row(
     let date = e.mtime.map(time_text).unwrap_or_default();
     let text = |s: String| {
         let t = widget::text::body(s);
-        match marked {
+        // Accent text on the accent cursor would vanish: there the cursor's own colour.
+        match marked && !focused {
             true => t.class(theme::Text::Accent),
             false => t,
         }

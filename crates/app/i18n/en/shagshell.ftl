@@ -41,6 +41,7 @@ menu-about = About
 sessions-empty = No sessions
 no-sessions = No open sessions
 no-sessions-hint = Use Quick Connect (Alt+Q) or Ctrl+Shift+T for a local shell
+sftp-needs-ssh = SFTP needs an SSH session: select one in the tree or open its tab
 status-disconnected = Not connected
 
 menu-new-local-shell = New Local Shell
@@ -55,9 +56,16 @@ close = Close
 cancel = Cancel
 status-connected = Connected
 status-ended = Disconnected
+options-interface = Interface
+options-language = Language
+options-theme = Theme
+options-system = System
+options-light = Light
+options-dark = Dark
 options-terminal = Terminal
 options-copy-on-select = Copy on select
 options-paste-on-middle = Paste with the middle mouse button
+term-disconnected = Disconnected — press Enter to reconnect
 term-exited = Process exited — press Enter to restart
 term-exited-code = Process exited with code { $code } — press Enter to restart
 menu-import-ssh-config = Import from ~/.ssh/config
@@ -148,6 +156,10 @@ cw-delete-confirm = { $count ->
     [one] Used in one session: it keeps the username and will ask for the password
    *[other] Used in { $count } sessions: they keep the username and will ask for the password
 }
+so-protocol = Protocol
+so-protocol-ssh2 = SSH2
+so-protocol-local = Local Shell
+so-ssh-only = Applies to SSH2 sessions only.
 so-credential = Credential
 so-credential-none = (none)
 options-passwords = Passwords

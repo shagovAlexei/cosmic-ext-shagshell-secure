@@ -41,6 +41,7 @@ menu-about = О программе
 sessions-empty = Нет сессий
 no-sessions = Нет открытых сессий
 no-sessions-hint = Используйте быстрое подключение (Alt+Q) или Ctrl+Shift+T — локальный shell
+sftp-needs-ssh = SFTP нужна ssh-сессия: выдели её в дереве или открой её вкладку
 status-disconnected = Не подключено
 
 menu-new-local-shell = Новый локальный shell
@@ -55,9 +56,16 @@ close = Закрыть
 cancel = Отмена
 status-connected = Подключено
 status-ended = Отключено
+options-interface = Интерфейс
+options-language = Язык
+options-theme = Тема
+options-system = Системная
+options-light = Светлая
+options-dark = Тёмная
 options-terminal = Терминал
 options-copy-on-select = Копировать при выделении
 options-paste-on-middle = Вставлять средней кнопкой мыши
+term-disconnected = Отключено — Enter, чтобы подключиться заново
 term-exited = Процесс завершился — Enter, чтобы запустить заново
 term-exited-code = Процесс завершился с кодом { $code } — Enter, чтобы запустить заново
 menu-import-ssh-config = Импорт из ~/.ssh/config
@@ -148,6 +156,10 @@ cw-delete-confirm = { $count ->
     [one] Используется в { $count } сессии: она сохранит логин и будет спрашивать пароль
    *[other] Используется в { $count } сессиях: они сохранят логин и будут спрашивать пароль
 }
+so-protocol = Протокол
+so-protocol-ssh2 = SSH2
+so-protocol-local = Локальный shell
+so-ssh-only = Относится только к сессиям SSH2.
 so-credential = Учётные данные
 so-credential-none = (нет)
 options-passwords = Пароли

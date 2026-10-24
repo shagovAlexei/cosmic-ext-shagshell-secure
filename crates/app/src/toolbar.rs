@@ -18,8 +18,16 @@ pub fn view() -> Element<'static, Message> {
             fl!("menu-quick-connect"),
             Some(Action::QuickConnect),
         ),
-        ("view-refresh-symbolic", fl!("menu-reconnect"), None),
-        ("process-stop-symbolic", fl!("menu-disconnect"), None),
+        (
+            "view-refresh-symbolic",
+            fl!("menu-reconnect"),
+            Some(Action::Reconnect),
+        ),
+        (
+            "process-stop-symbolic",
+            fl!("menu-disconnect"),
+            Some(Action::Disconnect),
+        ),
         (
             "folder-remote-symbolic",
             fl!("menu-connect-sftp"),

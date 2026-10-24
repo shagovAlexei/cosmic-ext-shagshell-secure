@@ -64,6 +64,10 @@ pub enum Message {
     /// Enter while the active tab's program has ended.
     EnterKey,
     Surface(cosmic::surface::Action),
+    /// The theme was switched in Global Options: terminals take its colors.
+    Restyle,
+    /// Anything else a widget speaking `cosmic::Action` says (the tab bar): to the runtime.
+    Cosmic(Box<cosmic::Action<Message>>),
     Sessions(SmMsg),
     QuickConnect(QcMsg),
     SessionOptions(SoMsg),
@@ -97,9 +101,15 @@ impl Application for App {
     }
 
     fn init(mut core: Core, _: ()) -> (Self, Task<Message>) {
-        core.window.header_title = fl!("app-title");
         let config_handler = config::handler();
         let config: Config = config::read(config_handler.as_ref());
+        // The language is chosen in main() from the system; a configured one replaces it.
+        if !config.language.is_empty() {
+            crate::i18n::init(&config::languages(&config.language, Vec::new()));
+        }
+        core.window.header_title = fl!("app-title");
+        let theme = (config.app_theme != config::AppTheme::System)
+            .then(|| cosmic::command::set_theme(config.app_theme.theme()));
         let control_dir = shagshell_core::launch::ensure_control_dir()
             .inspect_err(|e| log::warn!("ssh control dir: {e}"))
             .unwrap_or_else(|_| shagshell_core::launch::control_dir());
@@ -122,7 +132,7 @@ impl Application for App {
             control_dir,
             asks,
         };
-        (app, Task::none())
+        (app, theme.unwrap_or_else(Task::none))
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
@@ -130,8 +140,28 @@ impl Application for App {
             Message::Action(a) => return self.act(a),
             Message::Config(c) => self.config = c,
             Message::SetConfig(c) => {
+                let (lang, theme) = (
+                    c.language != self.config.language,
+                    c.app_theme != self.config.app_theme,
+                );
                 self.config = c;
                 self.save_config();
+                let mut tasks = Vec::new();
+                if lang {
+                    crate::i18n::init(&config::languages(
+                        &self.config.language,
+                        i18n_embed::DesktopLanguageRequester::requested_languages(),
+                    ));
+                    self.core.window.header_title = fl!("app-title");
+                    self.about = about::about();
+                }
+                if theme {
+                    tasks.push(
+                        cosmic::command::set_theme(self.config.app_theme.theme())
+                            .chain(cosmic::task::message(Message::Restyle)),
+                    );
+                }
+                return Task::batch(tasks);
             }
             Message::OpenUrl(url) => {
                 match std::process::Command::new("xdg-open").arg(url).spawn() {
@@ -185,6 +215,8 @@ impl Application for App {
                     cosmic::app::Action::Surface(a),
                 ));
             }
+            Message::Restyle => self.tabs.restyle(&look()),
+            Message::Cosmic(a) => return cosmic::task::message(*a),
             Message::Sessions(m) => {
                 let out = self.sessions.update(m);
                 if out.save {
@@ -230,13 +262,13 @@ impl Application for App {
             }
             // Esc in Session Options (no field took it): Cancel, as SecureCRT's dialogs.
             Message::Input(w, m) if self.options.as_ref().is_some_and(|o| o.window == w) => {
-                if let Message::Sessions(SmMsg::Key(TreeKey::Clear)) = *m {
+                if is_escape(&m) {
                     return self.session_options(SoMsg::Cancel);
                 }
             }
             // Esc in the Credentials Manager: Close.
             Message::Input(w, m) if self.creds_win.as_ref().is_some_and(|c| c.window == w) => {
-                if let Message::Sessions(SmMsg::Key(TreeKey::Clear)) = *m {
+                if is_escape(&m) {
                     return self.credentials(CwMsg::Close);
                 }
             }
@@ -252,6 +284,20 @@ impl Application for App {
             Message::CloseRequested(_) => {}
             Message::Credentials(m) => return self.credentials(m),
             Message::Key(k, m) => {
+                // «Close tab?»: Enter is Close, Esc Cancel.
+                if self.tabs.confirming()
+                    && !self.asks.active()
+                    && m.is_empty()
+                    && let Physical::Code(code) = k
+                {
+                    match code {
+                        Code::Enter | Code::NumpadEnter => {
+                            return self.tabs.update(TabsMsg::CloseConfirmed, &look());
+                        }
+                        Code::Escape => return self.tabs.update(TabsMsg::CloseCancelled, &look()),
+                        _ => {}
+                    }
+                }
                 // An SFTP dialog with no field (delete, overwrite): Enter is its OK, Esc Cancel.
                 if let Some(id) = self.tabs.sftp_dialog()
                     && !self.asks.active()
@@ -454,7 +500,7 @@ impl Application for App {
         widget::column::with_children(vec![
             toolbar::view(),
             middle.push(center).height(Length::Fill).into(),
-            status_bar::view(self.tabs.status()),
+            status_bar::view(self.tabs.status(), self.sessions.notice.as_deref()),
         ])
         .into()
     }
@@ -462,6 +508,16 @@ impl Application for App {
 
 impl App {
     fn act(&mut self, action: Action) -> Task<Message> {
+        // SFTP: the active ssh tab's connection, else the session selected in the tree.
+        if action == Action::ConnectSftp && !self.tabs.can_sftp() {
+            return match self.sessions.one_session() {
+                Some(id) => self.open_sftp(&id),
+                None => {
+                    self.sessions.notice = Some(fl!("sftp-needs-ssh"));
+                    Task::none()
+                }
+            };
+        }
         if let Some(task) = self.tabs.act(action, &look()) {
             return task;
         }
@@ -518,6 +574,14 @@ impl App {
             match self.sessions.store.get(id) {
                 Ok(s) => {
                     let name = shagshell_core::session::store::name_of(id).to_string();
+                    if s.protocol == shagshell_core::session::Protocol::Local {
+                        let l = tabs::Launch {
+                            title: name,
+                            ..tabs::Launch::local_shell()
+                        };
+                        tasks.push(self.tabs.open(l, &look()));
+                        continue;
+                    }
                     match ssh_launch(&self.control_dir, creds.as_ref(), &s, name, Some(id)) {
                         Ok(l) => tasks.push(self.tabs.open(l, &look())),
                         Err(e) => self.sessions.notice = Some(e),
@@ -539,6 +603,10 @@ impl App {
                 return Task::none();
             }
         };
+        if s.protocol == shagshell_core::session::Protocol::Local {
+            self.sessions.notice = Some(fl!("sftp-needs-ssh"));
+            return Task::none();
+        }
         let name = shagshell_core::session::store::name_of(id).to_string();
         let creds = load_credentials();
         match ssh_launch(&self.control_dir, creds.as_ref(), &s, name, Some(id)) {
@@ -929,9 +997,27 @@ impl App {
                 };
                 let (w, id) = (o.window, id.clone());
                 let forget = shagshell_core::keyring::Owner::Session(id.clone());
+                // ssh keeps a login open for a minute (ControlPersist): the next one would
+                // not ask. «stop»: no new logins through it, open tabs go on.
+                let stop = (self.sessions.store.get(&id).ok())
+                    .map(|s| load_credentials().unwrap_or_default().resolve(&s))
+                    .and_then(|s| {
+                        let home = std::env::home_dir().unwrap_or_default();
+                        shagshell_core::launch::ssh_argv(&s, &self.control_dir, &home).ok()
+                    });
                 return Task::batch([
                     keyring_task(move || {
                         use shagshell_core::keyring::{Secret, delete};
+                        if let Some(mut argv) = stop {
+                            let at = argv.len() - 2; // before `-- host`
+                            argv.splice(at..at, ["-O".into(), "stop".into()]);
+                            let _ = std::process::Command::new(argv.remove(0))
+                                .args(argv)
+                                .stdin(std::process::Stdio::null())
+                                .stdout(std::process::Stdio::null())
+                                .stderr(std::process::Stdio::null())
+                                .status();
+                        }
                         delete(&forget, Secret::Password)?;
                         delete(&forget, Secret::Passphrase)
                     }),
@@ -973,13 +1059,15 @@ impl App {
                 {
                     s.credential = base.credential.clone();
                 }
-                if let Err(e) = self.save_options(&s) {
-                    if let Some(o) = &mut self.options {
-                        o.error = Some(e);
+                return match self.save_options(&s) {
+                    Ok(task) => Task::batch([task, self.session_options(SoMsg::Cancel)]),
+                    Err(e) => {
+                        if let Some(o) = &mut self.options {
+                            o.error = Some(e);
+                        }
+                        Task::none()
                     }
-                    return Task::none();
-                }
-                return self.session_options(SoMsg::Cancel);
+                };
             }
             m => o.update(m),
         }
@@ -987,9 +1075,12 @@ impl App {
     }
 
     /// OK: the session written where the window's target says.
-    fn save_options(&mut self, s: &shagshell_core::session::Session) -> Result<(), String> {
+    fn save_options(
+        &mut self,
+        s: &shagshell_core::session::Session,
+    ) -> Result<Task<Message>, String> {
         let Some(o) = &self.options else {
-            return Ok(());
+            return Ok(Task::none());
         };
         let store = &self.sessions.store;
         let io = |e: std::io::Error| crate::session_manager::io_text(&e);
@@ -1003,14 +1094,31 @@ impl App {
                 self.save_config();
             }
             Target::Edit { id } => {
-                let id = id.clone();
+                let (id, name) = (id.clone(), o.name());
+                let renamed = name != shagshell_core::session::store::name_of(&id);
+                if renamed {
+                    crate::session_manager::check(
+                        &name,
+                        crate::session_manager::parent(&id).is_empty(),
+                    )?;
+                }
                 store.save(&id, s).map_err(io)?;
+                let new = match renamed {
+                    true => store.rename(&id, &name).map_err(io)?,
+                    false => id.clone(),
+                };
                 self.sessions.reload();
-                self.sessions_changed(&id, &id);
+                self.sessions_changed(&id, &new);
+                if renamed {
+                    self.sessions.select(&new);
+                    return Ok(keyring_task(move || {
+                        shagshell_core::keyring::retarget(&id, &new)
+                    }));
+                }
             }
             Target::Default => store.save(DEFAULT, s).map_err(io)?,
         }
-        Ok(())
+        Ok(Task::none())
     }
 
     fn import_ssh_config(&mut self) {
@@ -1179,6 +1287,11 @@ fn over_fields(a: Action) -> bool {
     )
 }
 
+/// An Esc no widget took (`Message::Key`, as the subscription tags it).
+fn is_escape(m: &Message) -> bool {
+    matches!(m, Message::Key(Physical::Code(Code::Escape), mods) if mods.is_empty())
+}
+
 /// Keys no widget took, other than the app's (`key_action`): Enter connects from the tree or
 /// restarts an ended tab; the tree's own keys.
 fn route_key(key: &Physical, mods: Modifiers) -> Option<Message> {
@@ -1238,6 +1351,16 @@ pub fn key_action(key: &Physical, mods: Modifiers) -> Option<Action> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn regression_escape_in_a_secondary_window_is_seen() {
+        let esc = Message::Key(Physical::Code(Code::Escape), Modifiers::empty());
+        assert!(is_escape(&esc));
+        assert!(!is_escape(&Message::Key(
+            Physical::Code(Code::Escape),
+            Modifiers::CTRL
+        )));
+    }
+
     use super::*;
 
     #[test]

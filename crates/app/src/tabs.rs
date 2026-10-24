@@ -141,6 +141,7 @@ pub type Look = (term::style::Style, bool, u32);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TabCmd {
     Reconnect,
+    Disconnect,
     Clone,
     /// «Connect SFTP Tab»: an SFTP tab over this ssh tab's connection.
     Sftp,
@@ -149,10 +150,11 @@ pub enum TabCmd {
     Close,
 }
 
+/// `cosmic::Action`: the tab bar's menu is a popup of its own (see `Tabs::view`).
 impl menu::Action for TabCmd {
-    type Message = Message;
-    fn message(&self) -> Message {
-        Message::Tabs(TabsMsg::Cmd(*self))
+    type Message = cosmic::Action<Message>;
+    fn message(&self) -> Self::Message {
+        cosmic::Action::App(Message::Tabs(TabsMsg::Cmd(*self)))
     }
 }
 
@@ -283,11 +285,11 @@ impl Tabs {
         let Some((pane, _, id)) = self.active() else {
             return (false, false, false);
         };
-        let ended = self.tabs.get(&id).is_some_and(|t| !t.live());
+        let live = self.tabs.get(&id).is_some_and(Tab::live);
         let many = (self.grid.as_ref())
             .and_then(|g| g.get(pane))
             .is_some_and(|g| g.model.len() > 1);
-        (true, ended, many)
+        (true, live, many)
     }
 
     fn tab_at(&self, pane: pane_grid::Pane, e: Entity) -> Option<(pane_grid::Pane, Entity, TabId)> {
@@ -372,6 +374,29 @@ impl Tabs {
 
     /// Start the program again in a tab whose program ended (SecureCRT's Reconnect / Enter).
     /// Under a new id: the old program's late events (Exit after ChildExit) find no tab.
+    /// Disconnect: the program (or the SFTP connection) ends, the tab stays (✗, Enter restarts).
+    fn disconnect(&mut self, id: TabId) {
+        let Some(tab) = self.tabs.get_mut(&id) else {
+            return;
+        };
+        match &mut tab.body {
+            Body::Terminal(t) if tab.alive => {
+                t.get_mut().unwrap_or_else(|e| e.into_inner()).shutdown();
+                term::print(t, &format!("\r\n[{}]\r\n", fl!("term-disconnected")));
+                tab.alive = false;
+            }
+            Body::Sftp(v) => v.disconnect(),
+            Body::Terminal(_) => {}
+        }
+        self.retitle(id);
+    }
+
+    /// Reconnect: a live tab is disconnected first.
+    fn reconnect(&mut self, id: TabId, look: &Look) -> Task<Message> {
+        self.disconnect(id);
+        self.restart(id, look)
+    }
+
     fn restart(&mut self, id: TabId, look: &Look) -> Task<Message> {
         if self.tabs.get(&id).is_none_or(|t| t.live()) {
             return Task::none();
@@ -491,7 +516,11 @@ impl Tabs {
         look: &Look,
     ) -> Task<Message> {
         match cmd {
-            TabCmd::Reconnect => self.restart(t.2, look),
+            TabCmd::Reconnect => self.reconnect(t.2, look),
+            TabCmd::Disconnect => {
+                self.disconnect(t.2);
+                Task::none()
+            }
             TabCmd::Clone => {
                 self.focus = Some(t.0); // its group
                 match self.tabs.get(&t.2).map(|tab| tab.launch.clone()) {
@@ -522,6 +551,7 @@ impl Tabs {
             Action::NewLocalShell => self.open(Launch::local_shell(), look),
             Action::CloseTab => on_active(self, TabCmd::Close),
             Action::Reconnect => on_active(self, TabCmd::Reconnect),
+            Action::Disconnect => on_active(self, TabCmd::Disconnect),
             Action::ConnectSftp => on_active(self, TabCmd::Sftp),
             Action::NextTab | Action::PrevTab => {
                 if let Some(group) = self.focused_group_mut() {
@@ -573,6 +603,18 @@ impl Tabs {
     }
 
     /// Enter on a tab whose program ended: start it again. `false`: not such a tab.
+    /// A «Close tab?» dialog is up.
+    pub fn confirming(&self) -> bool {
+        self.confirm.is_some()
+    }
+
+    /// The active tab is an ssh one: an SFTP tab can use its connection.
+    pub fn can_sftp(&self) -> bool {
+        (self.active())
+            .and_then(|(_, _, id)| self.tabs.get(&id))
+            .is_some_and(|t| t.launch.sftp().is_some())
+    }
+
     pub fn enter_on_dead(&self) -> bool {
         self.active()
             .and_then(|(_, _, id)| self.tabs.get(&id))
@@ -719,8 +761,13 @@ impl Tabs {
         let copy = config.copy_on_select;
         let middle = config.paste_on_middle_click;
         let pg = pane_grid::PaneGrid::new(grid, move |pane, group, _| {
-            let m =
-                move |f: fn(pane_grid::Pane, Entity) -> TabsMsg| move |e| Message::Tabs(f(pane, e));
+            // The tab bar speaks `cosmic::Action`: at this libcosmic rev it boxes its menu popup's
+            // view as `Element<its Message>`, and the runtime only shows one of
+            // `Element<Action<Message>>` («Invalid view for subsurface view», no menu).
+            let app = |m: Message| cosmic::Action::App(m);
+            let m = move |f: fn(pane_grid::Pane, Entity) -> TabsMsg| {
+                move |e| app(Message::Tabs(f(pane, e)))
+            };
             let bar = tab_bar::horizontal(&group.model)
                 .on_activate(m(TabsMsg::Activate))
                 .on_close(m(TabsMsg::Close))
@@ -728,9 +775,13 @@ impl Tabs {
                 .on_context(m(TabsMsg::Context))
                 .context_menu(Some(tab_menu(&group.model, &self.tabs)))
                 .window_id(window)
-                .on_surface_action(Message::Surface)
+                .on_surface_action(move |a| app(Message::Surface(a)))
                 .enable_tab_drag(TAB_MIME.to_string())
-                .on_reorder(move |ev| Message::Tabs(TabsMsg::Reorder(pane, ev)));
+                .on_reorder(move |ev| app(Message::Tabs(TabsMsg::Reorder(pane, ev))));
+            let bar = Element::from(bar).map(|a| match a {
+                cosmic::Action::App(m) => m,
+                other => Message::Cosmic(Box::new(other)),
+            });
             let body: Element<'_, Message> =
                 match group.active_id().and_then(|id| self.tabs.get(&id)) {
                     Some(Tab {
@@ -757,7 +808,7 @@ impl Tabs {
                         .into(),
                 };
             let active = many && focus == Some(pane);
-            let content = widget::container(widget::column::with_children(vec![bar.into(), body]))
+            let content = widget::container(widget::column::with_children(vec![bar, body]))
                 .padding(1)
                 .class(cosmic::theme::Container::custom(move |theme| {
                     let mut s = widget::container::Style::default();
@@ -803,7 +854,10 @@ fn detach(model: &mut SingleSelectModel, e: Entity) -> bool {
 
 /// Right click on a tab: about that tab (`TabsMsg::Context` came first). libcosmic wants one
 /// root whose children are the tabs' menus, one per tab in order.
-fn tab_menu(model: &SingleSelectModel, tabs: &HashMap<TabId, Tab>) -> Vec<menu::Tree<Message>> {
+fn tab_menu(
+    model: &SingleSelectModel,
+    tabs: &HashMap<TabId, Tab>,
+) -> Vec<menu::Tree<cosmic::Action<Message>>> {
     use menu::Item::{Button, ButtonDisabled, Divider};
     let can_split = model.len() > 1;
     let on = |yes: bool, label: String, cmd| match yes {
@@ -812,10 +866,11 @@ fn tab_menu(model: &SingleSelectModel, tabs: &HashMap<TabId, Tab>) -> Vec<menu::
     };
     let one = |e: Entity| {
         let tab = model.data::<TabId>(e).and_then(|id| tabs.get(id));
-        let ended = tab.is_some_and(|t| !t.live());
+        let live = tab.is_some_and(Tab::live);
         let sftp = tab.is_some_and(|t| t.launch.sftp().is_some());
         let items = vec![
-            on(ended, fl!("menu-reconnect"), TabCmd::Reconnect),
+            Button(fl!("menu-reconnect"), None, TabCmd::Reconnect),
+            on(live, fl!("menu-disconnect"), TabCmd::Disconnect),
             Button(fl!("menu-clone"), None, TabCmd::Clone),
             on(sftp, fl!("menu-connect-sftp"), TabCmd::Sftp),
             Divider,
@@ -838,4 +893,19 @@ fn tab_menu(model: &SingleSelectModel, tabs: &HashMap<TabId, Tab>) -> Vec<menu::
 /// key, any layout). Everything else, every Ctrl+letter and Alt+letter, is the terminal's.
 pub fn is_app_key(mods: Modifiers, _: &Key, key: &Physical) -> bool {
     crate::app::key_action(key, mods).is_some()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cosmic::widget::menu::Action as _;
+
+    /// The tab menu is a popup: libcosmic shows it only if its items speak `cosmic::Action`.
+    #[test]
+    fn regression_tab_menu_items_are_cosmic_actions() {
+        assert!(matches!(
+            TabCmd::Clone.message(),
+            cosmic::Action::App(Message::Tabs(TabsMsg::Cmd(TabCmd::Clone)))
+        ));
+    }
 }

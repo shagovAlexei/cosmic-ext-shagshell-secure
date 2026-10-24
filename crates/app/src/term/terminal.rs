@@ -1167,6 +1167,13 @@ impl<'a, T> Iterator for HintPostProcessor<'a, T> {
     }
 }
 
+impl Terminal {
+    /// End the program (its PTY closes); the tab marks itself ended.
+    pub fn shutdown(&self) {
+        let _ = self.notifier.0.send(Msg::Shutdown);
+    }
+}
+
 impl Drop for Terminal {
     fn drop(&mut self) {
         // Ensure shutdown on terminal drop

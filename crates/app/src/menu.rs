@@ -70,11 +70,11 @@ fn key_binds() -> HashMap<KeyBind, Action> {
     ])
 }
 
-/// `(tabs, ended, splittable)`: any tab open; the active one's program ended; its group has
+/// `(tabs, live, splittable)`: any tab open; the active one connected; its group has
 /// more than one tab (`Tabs::menu_state`).
 pub fn bar(
     session_manager: bool,
-    (tabs, ended, split): (bool, bool, bool),
+    (tabs, live, split): (bool, bool, bool),
 ) -> Element<'static, Message> {
     use menu::Item::{Button, ButtonDisabled, CheckBox, Divider};
     let off = |label: String| ButtonDisabled(label, None, Action::Pending);
@@ -90,8 +90,8 @@ pub fn bar(
                 Button(fl!("menu-connect"), None, Action::Connect),
                 Button(fl!("menu-quick-connect"), None, Action::QuickConnect),
                 Button(fl!("menu-new-local-shell"), None, Action::NewLocalShell),
-                on(ended, fl!("menu-reconnect"), Action::Reconnect),
-                ButtonDisabled(fl!("menu-disconnect"), None, Action::Disconnect),
+                tab(fl!("menu-reconnect"), Action::Reconnect),
+                on(live, fl!("menu-disconnect"), Action::Disconnect),
                 tab(fl!("menu-close-tab"), Action::CloseTab),
                 Divider,
                 Button(fl!("menu-import-ssh-config"), None, Action::ImportSshConfig),

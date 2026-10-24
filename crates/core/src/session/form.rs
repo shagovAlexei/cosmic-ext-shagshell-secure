@@ -1,10 +1,11 @@
 //! Session Options' fields as typed, and back into a `Session` (checked).
 
-use crate::session::Session;
+use crate::session::{Protocol, Session};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Form {
     pub name: String,
+    pub protocol: Protocol,
     pub host: String,
     pub port: String,
     pub user: String,
@@ -33,6 +34,7 @@ impl Form {
         let text = |v: &Option<String>| v.clone().unwrap_or_default();
         Self {
             name: name.to_string(),
+            protocol: s.protocol,
             host: s.host.clone(),
             port: s.port.map(|p| p.to_string()).unwrap_or_default(),
             user: text(&s.user),
@@ -48,6 +50,8 @@ impl Form {
     pub fn apply(&self, base: &Session, need_host: bool) -> Result<Session, FormError> {
         let opt = |v: &str| Some(v.trim().to_string()).filter(|v| !v.is_empty());
         let host = self.host.trim();
+        // A local shell has no host.
+        let need_host = need_host && self.protocol == Protocol::Ssh2;
         if (need_host || !host.is_empty()) && !valid_host(host) {
             return Err(FormError::Host);
         }
@@ -62,6 +66,7 @@ impl Form {
         let extra = self.extra.trim().to_string();
         shlex::split(&extra).ok_or(FormError::Extra)?;
         Ok(Session {
+            protocol: self.protocol,
             host: host.to_string(),
             port,
             user: opt(&self.user),
@@ -123,6 +128,27 @@ mod tests {
         let mut base = Session::default();
         base.rest.insert("jump".into(), "bastion".into());
         assert_eq!(form("h").apply(&base, true).unwrap().rest, base.rest);
+    }
+
+    #[test]
+    fn local_shell_needs_no_host() {
+        let f = Form {
+            protocol: Protocol::Local,
+            ..Default::default()
+        };
+        let s = f.apply(&Session::default(), true).unwrap();
+        assert_eq!(s.protocol, Protocol::Local);
+        assert_eq!(
+            Form::default().apply(&Session::default(), true),
+            Err(FormError::Host)
+        );
+        let text = toml::to_string(&s).unwrap();
+        assert!(text.contains("protocol = \"local\""), "{text}");
+        assert!(
+            !toml::to_string(&Session::default())
+                .unwrap()
+                .contains("protocol")
+        );
     }
 
     #[test]

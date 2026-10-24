@@ -1,7 +1,7 @@
 //! Options → Global Options, in the context drawer. Each change is written at once.
 
 use crate::app::Message;
-use crate::config::Config;
+use crate::config::{AppTheme, Config, LANGUAGES};
 use crate::fl;
 use cosmic::app::context_drawer::{self, ContextDrawer};
 use cosmic::widget::{self, settings};
@@ -16,6 +16,43 @@ pub fn view(config: &Config, separate: Option<bool>) -> ContextDrawer<'_, Messag
             Message::SetConfig(c)
         }
     };
+    let language = LANGUAGES
+        .iter()
+        .position(|l| *l == config.language)
+        .map_or(0, |i| i + 1);
+    let languages = vec![fl!("options-system"), "English".into(), "Русский".into()];
+    let themes = vec![
+        fl!("options-system"),
+        fl!("options-light"),
+        fl!("options-dark"),
+    ];
+    let theme = AppTheme::ALL.iter().position(|t| *t == config.app_theme);
+    let interface = settings::section()
+        .title(fl!("options-interface"))
+        .add(settings::item(
+            fl!("options-language"),
+            widget::dropdown(languages, Some(language), {
+                let c = config.clone();
+                move |i| {
+                    let mut c = c.clone();
+                    c.language = i
+                        .checked_sub(1)
+                        .map_or(String::new(), |i| LANGUAGES[i].into());
+                    Message::SetConfig(c)
+                }
+            }),
+        ))
+        .add(settings::item(
+            fl!("options-theme"),
+            widget::dropdown(themes, theme, {
+                let c = config.clone();
+                move |i| {
+                    let mut c = c.clone();
+                    c.app_theme = AppTheme::ALL[i];
+                    Message::SetConfig(c)
+                }
+            }),
+        ));
     let terminal = settings::section()
         .title(fl!("options-terminal"))
         .add(settings::item(
@@ -48,6 +85,7 @@ pub fn view(config: &Config, separate: Option<bool>) -> ContextDrawer<'_, Messag
                 .on_press(Message::Action(crate::menu::Action::Credentials)),
         ));
     let content =
-        widget::column::with_children(vec![terminal.into(), passwords.into()]).spacing(16);
+        widget::column::with_children(vec![interface.into(), terminal.into(), passwords.into()])
+            .spacing(16);
     context_drawer::context_drawer(content, Message::CloseDrawer).title(fl!("menu-global-options"))
 }
