@@ -170,6 +170,8 @@ impl Metadata {
 }
 
 pub struct Terminal {
+    /// `crt.Session.Lock`: what the user types or pastes is dropped (a script's input is not).
+    locked: bool,
     pub metadata_set: IndexSet<Metadata>,
     pub needs_update: bool,
     pub term: Arc<FairMutex<Term<EventProxy>>>,
@@ -325,6 +327,7 @@ impl Terminal {
             term,
             use_bright_bold,
             zoom_adj: Default::default(),
+            locked: false,
             is_focused: true,
         })
     }
@@ -433,7 +436,18 @@ impl Terminal {
             }
             return;
         }
+        if self.locked {
+            return;
+        }
         self.notifier.notify(input);
+    }
+
+    pub fn set_locked(&mut self, on: bool) {
+        self.locked = on;
+    }
+
+    pub fn locked(&self) -> bool {
+        self.locked
     }
 
     /// What the user typed: to the program, and to a script being recorded.

@@ -1493,6 +1493,7 @@ impl App {
         // After the run's own notice: that the session was not opened is what matters.
         let mut pre_task = Task::none();
         if let Some((run, _)) = out.ended {
+            self.tabs.unlock_run(run);
             for st in self.sched_state.values_mut().filter(|s| s.1 == Some(run)) {
                 st.1 = None;
             }

@@ -37,7 +37,7 @@
 - [x] 27. ~~Меню Script со списком скриптов, «Недавние», папка скриптов, скрипт при запуске~~
 - [x] 28. ~~Pre-script сессии (до подключения, с отменой)~~
 - [x] 29. ~~Расширение `crt`: Screen.Clear / SendKeys / MatchIndex, Session.SetStatusText / Create, crt.Window (spec 29)~~
-- [ ] 29b. `crt.FileTransfer.Upload/Download`, `Session.Lock`
+- [x] 29b. ~~`crt.FileTransfer.Upload/Download`, `Session.Lock` (spec 32)~~
 - [x] 30. ~~Планировщик скриптов (spec 30)~~
 - [x] 31. ~~Заметки (Note): вкладка с текстовым / `.md` файлом, предпросмотр, автосохранение, шпаргалка (spec 31)~~
 
