@@ -121,6 +121,10 @@ pub struct Config {
     pub font_family: String,
     /// Terminal font size, px (0 = 14); read through `font_px`.
     pub font_size: u16,
+    /// Ask GitHub for a newer release when the app starts.
+    pub update_check: bool,
+    /// The release the user chose to skip (its tag), "" = none.
+    pub skipped_version: String,
     /// SFTP tabs open with dot files shown (Ctrl+H flips it in a tab).
     pub sftp_show_hidden: bool,
     /// SFTP: the target is already there.
@@ -188,6 +192,8 @@ impl Default for Config {
             log_template: "%S_%Y-%M-%D_%h%m%s.log".into(),
             font_family: String::new(),
             font_size: 14,
+            update_check: true,
+            skipped_version: String::new(),
             sftp_show_hidden: true,
             sftp_overwrite: ExistsRule::Ask,
         }

@@ -22,6 +22,10 @@ pub enum Action {
     /// File → Log Session.
     ToggleLog,
     About,
+    /// Help → Check for Updates…
+    CheckUpdates,
+    /// Help → Support the Project.
+    Donate,
     GlobalOptions,
     NewLocalShell,
     CloseTab,
@@ -282,10 +286,19 @@ pub fn bar(
                 tab(fl!("menu-prev-tab"), Action::PrevTab),
             ],
         ),
-        (
-            fl!("menu-help"),
-            vec![Button(fl!("menu-about"), None, Action::About)],
-        ),
+        (fl!("menu-help"), {
+            let mut help = vec![Button(
+                fl!("menu-check-updates"),
+                None,
+                Action::CheckUpdates,
+            )];
+            if crate::updates::DONATE_URL.is_some() {
+                help.push(Button(fl!("menu-donate"), None, Action::Donate));
+            }
+            help.push(Divider);
+            help.push(Button(fl!("menu-about"), None, Action::About));
+            help
+        }),
     ];
     let binds = key_binds();
     let roots = roots

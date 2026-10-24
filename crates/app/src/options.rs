@@ -205,6 +205,12 @@ pub fn view<'a>(
             text(&config.log_template, |c, v| c.log_template = v),
         ))
         .add(widget::text::caption(fl!("options-log-hint")));
+    let updates = settings::section()
+        .title(fl!("options-updates"))
+        .add(settings::item(
+            fl!("options-update-check"),
+            widget::toggler(config.update_check).on_toggle(set(|c, on| c.update_check = on)),
+        ));
     let zmodem = settings::section()
         .title(fl!("options-zmodem"))
         .add(settings::item(
@@ -266,6 +272,7 @@ pub fn view<'a>(
         colours.into(),
         logging.into(),
         zmodem.into(),
+        updates.into(),
         sftp.into(),
         passwords.into(),
     ])

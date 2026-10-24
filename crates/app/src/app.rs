@@ -68,6 +68,8 @@ pub struct App {
     hl_broken: bool,
     /// Script → Run…: the scripts running and their dialogs.
     scripts: crate::script::Scripts,
+    /// A newer release (its tag) the window is about.
+    update: Option<String>,
     /// `--script`: runs once the terminals can start (their event channel is up).
     startup: Option<(std::path::PathBuf, Vec<String>)>,
 }
@@ -114,6 +116,7 @@ pub enum Message {
     SetRules(shagshell_core::highlight::Rules),
     SecureCrt(crate::securecrt_import::ScMsg),
     Script(crate::script::ScMsg),
+    Update(crate::updates::UpMsg),
     /// A transfer picked in the Transfer menu, ready to run.
     Transfer(crate::term::TabId, shagshell_core::zmodem::Command),
     QuickConnect(QcMsg),
@@ -214,6 +217,7 @@ impl Application for App {
             hl,
             hl_broken,
             scripts,
+            update: None,
             startup: None,
         };
         // A broken buttonbars.toml is said, and left alone.
@@ -222,7 +226,11 @@ impl Application for App {
             .or(keys_error);
         app.tabs.set_looks(&app.config, &app.hl, &look(&app.config));
         app.startup = startup;
-        (app, theme.unwrap_or_else(Task::none))
+        let check = match app.config.update_check {
+            true => check_updates(false),
+            false => Task::none(),
+        };
+        (app, Task::batch([theme.unwrap_or_else(Task::none), check]))
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
@@ -378,6 +386,8 @@ impl Application for App {
             .or_else(|| self.tabs.dialog())
             .or_else(|| self.quick.as_ref().map(QuickConnect::view))
             .or_else(|| self.sessions.dialog())
+            // Last: a check that ends while another dialog is up does not push it away.
+            .or_else(|| self.update.as_deref().map(crate::updates::dialog))
     }
 
     fn header_start(&self) -> Vec<Element<'_, Message>> {
@@ -523,6 +533,9 @@ impl App {
             Message::Sessions(SmMsg::Key(TreeKey::Clear)) if self.asks.active() => {
                 return self.update(Message::Ask(crate::askpass::AskMsg::Cancel));
             }
+            Message::Sessions(SmMsg::Key(TreeKey::Clear)) if self.update.is_some() => {
+                return self.updates(crate::updates::UpMsg::Later);
+            }
             Message::Sessions(SmMsg::Key(TreeKey::Clear)) if self.keys.is_some() => {
                 return self.key_dialog(crate::keygen::KgMsg::Close);
             }
@@ -588,6 +601,7 @@ impl App {
                 }
             }
             Message::Script(m) => return self.script(m),
+            Message::Update(m) => return self.updates(m),
             Message::Transfer(tab, cmd) => {
                 // Started: nothing to say (the result is said when it ends).
                 if let Err(e) = self.tabs.start_transfer(tab, &cmd) {
@@ -1030,6 +1044,12 @@ impl App {
                 );
             }
             Action::About => self.toggle_drawer(Drawer::About),
+            Action::CheckUpdates => return check_updates(true),
+            Action::Donate => {
+                if let Some(url) = crate::updates::DONATE_URL {
+                    return self.update(Message::OpenUrl(url.into()));
+                }
+            }
             Action::GlobalOptions => {
                 self.toggle_drawer(Drawer::Options);
                 if self.drawer == Some(Drawer::Options) {
@@ -1153,6 +1173,42 @@ impl App {
             }
             _ => Task::none(),
         }
+    }
+
+    /// The update window and the answers of the release check.
+    fn updates(&mut self, m: crate::updates::UpMsg) -> Task<Message> {
+        use crate::updates::UpMsg;
+        use shagshell_core::update::Status;
+        match m {
+            UpMsg::Checked(Status::Available(tag), manual) => {
+                if manual || self.config.skipped_version != tag {
+                    self.update = Some(tag);
+                }
+            }
+            UpMsg::Checked(Status::Latest, true) => self.sessions.notice = Some(fl!("up-latest")),
+            UpMsg::Checked(Status::Failed(error), true) => {
+                self.sessions.notice = Some(fl!("up-failed", error = error));
+            }
+            UpMsg::Checked(..) => {}
+            UpMsg::Update => {
+                if let Some(tag) = self.update.take() {
+                    return self.update(Message::OpenUrl(crate::updates::release_url(&tag)));
+                }
+            }
+            UpMsg::Skip => {
+                if let Some(tag) = self.update.take() {
+                    self.config.skipped_version = tag;
+                    self.save_config();
+                }
+            }
+            UpMsg::Later => self.update = None,
+            UpMsg::Donate => {
+                if let Some(url) = crate::updates::DONATE_URL {
+                    return self.update(Message::OpenUrl(url.into()));
+                }
+            }
+        }
+        Task::none()
     }
 
     /// Tools → Keymap Editor…: the editor's messages; a change is saved and put in force.
@@ -1979,6 +2035,14 @@ impl App {
 /// This instance's askpass socket (`core::askpass::socket_path`).
 fn askpass_sock(control_dir: &std::path::Path) -> std::path::PathBuf {
     shagshell_core::askpass::socket_path(control_dir, std::process::id())
+}
+
+/// Asks GitHub for the latest release; `manual`: from the Help menu.
+fn check_updates(manual: bool) -> Task<Message> {
+    off_ui(
+        || shagshell_core::update::check(env!("CARGO_PKG_VERSION")),
+        move |s| Message::Update(crate::updates::UpMsg::Checked(s, manual)),
+    )
 }
 
 /// `f` on a blocking thread (D-Bus, files), its result as a message.

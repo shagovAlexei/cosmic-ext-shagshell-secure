@@ -20,6 +20,7 @@ pub enum Kind {
     Bookmark,
     Folder,
     Edit,
+    Heart,
 }
 
 impl Kind {
@@ -39,6 +40,7 @@ impl Kind {
             Kind::Bookmark => include_bytes!("../../../res/icons/dialog/bookmark.svg"),
             Kind::Folder => include_bytes!("../../../res/icons/dialog/folder.svg"),
             Kind::Edit => include_bytes!("../../../res/icons/dialog/edit.svg"),
+            Kind::Heart => include_bytes!("../../../res/icons/dialog/heart.svg"),
         };
         icon::from_svg_bytes(svg)
     }
