@@ -250,6 +250,8 @@ pub enum TabCmd {
     SplitDown,
     /// Into the neighbouring group on this side.
     MoveTo(Side),
+    /// Into a window of its own.
+    Detach,
     Close,
 }
 
@@ -304,7 +306,11 @@ pub enum TabsMsg {
     Drop(pane_grid::Pane),
     PaneClicked(pane_grid::Pane),
     Resized(pane_grid::ResizeEvent),
-    Paste(Option<String>),
+    /// What the clipboard gave, for this tab.
+    Paste(TabId, Option<String>),
+    /// A tab's window: bring the tab back / drag the window.
+    Reattach(iced::window::Id),
+    DragWindow(iced::window::Id),
     /// Bytes to these tabs' programs; a pause sends the rest later.
     Send(Vec<TabId>, Vec<shagshell_core::macros::Piece>),
     /// The wait before an automatic reconnect is over.
@@ -313,6 +319,11 @@ pub enum TabsMsg {
 
 #[derive(Default)]
 pub struct Tabs {
+    /// Tabs in windows of their own (window, tab), and the window just opened (to be titled).
+    detached: Vec<(iced::window::Id, TabId)>,
+    new_window: Option<(iced::window::Id, String)>,
+    /// While an event of a tab's own window is handled: that tab is the active one.
+    pub front: Option<TabId>,
     /// A recording whose tab was closed: to be saved.
     closed_recordings: Vec<(String, shagshell_core::recorder::Recorder)>,
     grid: Option<pane_grid::State<Group>>,
@@ -373,7 +384,7 @@ impl Tabs {
                 .is_some_and(|t| t.terminal().is_some() && t.alive)
         };
         let ids: Vec<TabId> = match to {
-            SendTo::Current => self.active().map(|(_, _, id)| id).into_iter().collect(),
+            SendTo::Current => self.active_id().into_iter().collect(),
             SendTo::Visible => (self.grid.iter().flat_map(|g| g.iter()))
                 .filter_map(|(_, group)| group.active_id())
                 .collect(),
@@ -434,7 +445,7 @@ impl Tabs {
 
     /// Active tab: (connected, protocol label, cols × rows of a terminal).
     pub fn status(&self) -> Option<crate::status_bar::Status> {
-        let tab = self.tabs.get(&self.active()?.2)?;
+        let tab = self.tabs.get(&self.active_id()?)?;
         let label = tab.launch.label();
         let size = tab.terminal().map(|t| {
             let t = t.lock().unwrap_or_else(|e| e.into_inner());
@@ -452,7 +463,7 @@ impl Tabs {
 
     /// The active tab, if it is an SFTP one (its keys are routed to it).
     pub fn active_sftp(&self) -> Option<TabId> {
-        let id = self.active()?.2;
+        let id = self.active_id()?;
         matches!(self.tabs.get(&id)?.body, Body::Sftp(_)).then_some(id)
     }
 
@@ -510,7 +521,7 @@ impl Tabs {
 
     /// The saved session the active tab was opened from.
     pub fn active_session(&self) -> Option<String> {
-        self.session_of(self.active()?.2)
+        self.session_of(self.active_id()?)
     }
 
     /// Focused group, its active entity and that tab's id.
@@ -518,6 +529,12 @@ impl Tabs {
         let pane = self.focus?;
         let group = self.grid.as_ref()?.get(pane)?;
         Some((pane, group.model.active(), group.active_id()?))
+    }
+
+    /// The tab the user is working with: the one whose own window an event came from, else the
+    /// active one of the focused group.
+    pub fn active_id(&self) -> Option<TabId> {
+        self.front.or_else(|| self.active().map(|(_, _, id)| id))
     }
 
     /// For the menu bar: (any tab, the active one ended, its group can be split).
@@ -677,7 +694,7 @@ impl Tabs {
     /// Log Session: the active tab's log on / off (a started one by the session's own template,
     /// else the one of Global Options). `Err`: why it could not start.
     pub fn toggle_log(&mut self) -> Result<(), String> {
-        let Some((_, _, id)) = self.active() else {
+        let Some(id) = self.active_id() else {
             return Ok(());
         };
         let Some(tab) = self.tabs.get(&id) else {
@@ -748,15 +765,15 @@ impl Tabs {
 
     /// The active tab is being recorded as a script.
     fn recording(&self) -> bool {
-        self.active()
-            .and_then(|(_, _, id)| self.tap_of(id))
+        self.active_id()
+            .and_then(|id| self.tap_of(id))
             .is_some_and(|t| t.recording())
     }
 
     /// Script → Start / Stop Recording on the active terminal. Stopping gives the script text
     /// and the tab's name.
     pub fn toggle_recording(&mut self) -> Option<(String, shagshell_core::recorder::Recorder)> {
-        let (_, _, id) = self.active()?;
+        let id = self.active_id()?;
         let tap = self.tap_of(id)?;
         let title = self
             .tabs
@@ -782,8 +799,8 @@ impl Tabs {
 
     /// The active tab is being logged.
     fn logging(&self) -> bool {
-        self.active()
-            .and_then(|(_, _, id)| self.terminal(id))
+        self.active_id()
+            .and_then(|id| self.terminal(id))
             .is_some_and(|t| t.lock().unwrap_or_else(|e| e.into_inner()).log.active())
     }
 
@@ -899,6 +916,178 @@ impl Tabs {
         self.focus = Some(dst);
     }
 
+    /// The tab into a window of its own: it leaves its group, the program goes on.
+    fn detach(&mut self, (pane, e, id): (pane_grid::Pane, Entity, TabId)) -> Task<Message> {
+        let Some(grid) = self.grid.as_mut() else {
+            return Task::none();
+        };
+        let emptied = grid.get_mut(pane).is_some_and(|g| detach(&mut g.model, e));
+        if emptied {
+            match grid.len() > 1 {
+                true => {
+                    if let Some((_, sibling)) = grid.close(pane) {
+                        self.focus = Some(sibling);
+                    }
+                }
+                false => (self.grid, self.focus) = (None, None),
+            }
+        }
+        let (window, open) = iced::window::open(iced::window::Settings {
+            size: iced::Size::new(900.0, 600.0),
+            min_size: Some(iced::Size::new(400.0, 240.0)),
+            decorations: false,
+            exit_on_close_request: false,
+            ..Default::default()
+        });
+        self.detached.push((window, id));
+        let tab = self.tabs.get(&id);
+        self.new_window = Some((window, tab.map(Tab::title).unwrap_or_default()));
+        let widget_id = tab.map(|t| t.widget_id.clone());
+        let focus = widget_id.map_or_else(Task::none, focus);
+        Task::batch([open.then(|_| Task::none()), focus])
+    }
+
+    /// The window just opened for a tab and its title, once.
+    pub fn take_new_window(&mut self) -> Option<(iced::window::Id, String)> {
+        self.new_window.take()
+    }
+
+    /// The tab of `window`, back into the focused group; the window closes.
+    fn reattach(&mut self, window: iced::window::Id) -> Task<Message> {
+        let Some(i) = self.detached.iter().position(|(w, _)| *w == window) else {
+            return Task::none();
+        };
+        let (_, id) = self.detached.remove(i);
+        let title = self.tabs.get(&id).map(Tab::title).unwrap_or_default();
+        let pane = match (&mut self.grid, self.focus) {
+            (Some(_), Some(p)) => p,
+            _ => {
+                let (grid, pane) = pane_grid::State::new(Group::default());
+                (self.grid, self.focus) = (Some(grid), Some(pane));
+                pane
+            }
+        };
+        if let Some(group) = self.grid.as_mut().and_then(|g| g.get_mut(pane)) {
+            group
+                .model
+                .insert()
+                .text(title)
+                .data(id)
+                .closable()
+                .activate();
+        }
+        Task::batch([iced::window::close(window), self.focus_active()])
+    }
+
+    /// A tab command about a tab in a window of its own (no group: splitting, moving and
+    /// closing mean bringing it back).
+    fn cmd_in_window(&mut self, cmd: TabCmd, id: TabId, look: &Look) -> Task<Message> {
+        match cmd {
+            TabCmd::Reconnect => self.reconnect(id, look),
+            TabCmd::Disconnect => {
+                self.disconnect(id);
+                Task::none()
+            }
+            TabCmd::Clone => match self.tabs.get(&id).map(|tab| tab.launch.clone()) {
+                Some(launch) => self.open(launch, look),
+                None => Task::none(),
+            },
+            TabCmd::Sftp => match self.tabs.get(&id).and_then(|tab| tab.launch.sftp()) {
+                Some(launch) => self.open(launch, look),
+                None => Task::none(),
+            },
+            TabCmd::Close | TabCmd::Detach => match self.window_of(id) {
+                Some(w) => self.reattach(w),
+                None => Task::none(),
+            },
+            TabCmd::SplitRight | TabCmd::SplitDown | TabCmd::MoveTo(_) => Task::none(),
+        }
+    }
+
+    fn window_of(&self, id: TabId) -> Option<iced::window::Id> {
+        self.detached
+            .iter()
+            .find(|(_, t)| *t == id)
+            .map(|(w, _)| *w)
+    }
+
+    /// The tab shown in `window`, if it is one of ours.
+    pub fn tab_in(&self, window: iced::window::Id) -> Option<TabId> {
+        self.detached
+            .iter()
+            .find(|(w, _)| *w == window)
+            .map(|(_, t)| *t)
+    }
+
+    /// A tab's own window: a title bar with «back» and the tab.
+    pub fn window_view(
+        &self,
+        window: iced::window::Id,
+        config: &Config,
+        focused: bool,
+        keys: bool,
+    ) -> Option<Element<'_, Message>> {
+        let id = self.tab_in(window)?;
+        let tab = self.tabs.get(&id)?;
+        let m = |x| Message::Tabs(x);
+        let bar = widget::header_bar()
+            .title(tab.title())
+            .start(
+                widget::button::text(fl!("tab-window-back")).on_press(m(TabsMsg::Reattach(window))),
+            )
+            .on_close(m(TabsMsg::Reattach(window)))
+            .on_drag(m(TabsMsg::DragWindow(window)))
+            .focused(focused);
+        let body = self.body(
+            Some(id),
+            config.copy_on_select,
+            config.paste_on_middle_click,
+            keys,
+        );
+        let content = widget::column::with_children(vec![bar.into(), body]);
+        Some(
+            widget::container(content)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .class(cosmic::theme::Container::WindowBackground)
+                .into(),
+        )
+    }
+
+    /// What a tab shows: its terminal or its SFTP view (empty: no tab).
+    fn body(
+        &self,
+        id: Option<TabId>,
+        copy: bool,
+        middle: bool,
+        keys: bool,
+    ) -> Element<'_, Message> {
+        match id.and_then(|id| self.tabs.get(&id)) {
+            Some(Tab {
+                body: Body::Sftp(v),
+                ..
+            }) => v.view(),
+            Some(
+                tab @ Tab {
+                    body: Body::Terminal(terminal),
+                    ..
+                },
+            ) => term::terminal_box::terminal_box(terminal, is_app_key)
+                .id(tab.widget_id.clone())
+                .copy_on_select(copy)
+                .paste_on_middle(middle)
+                // An ended program takes no keys (its PTY is gone): Enter reaches the app.
+                // Nor does any while a dialog is up.
+                .ended(!tab.alive || !keys)
+                .padding(4)
+                .into(),
+            None => widget::Space::new()
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into(),
+        }
+    }
+
     fn forget_tap(&self, id: TabId) {
         self.taps
             .lock()
@@ -908,20 +1097,22 @@ impl Tabs {
 
     /// The terminal tabs in the order they are shown (groups as laid out, tabs left to right).
     pub fn order(&self) -> Vec<TabId> {
-        let Some(grid) = self.grid.as_ref() else {
-            return Vec::new();
-        };
+        let empty = pane_grid::State::new(Group::default()).0;
+        let grid = self.grid.as_ref().unwrap_or(&empty);
         let ids = grid.iter().flat_map(|(_, g)| {
             g.model
                 .iter()
                 .filter_map(|e| g.model.data::<TabId>(e).copied())
         });
-        ids.filter(|id| self.terminal(*id).is_some()).collect()
+        let detached = self.detached.iter().map(|(_, id)| *id);
+        ids.chain(detached)
+            .filter(|id| self.terminal(*id).is_some())
+            .collect()
     }
 
     /// The active tab's id, if it is a terminal.
     pub fn active_terminal(&self) -> Option<TabId> {
-        let id = self.active()?.2;
+        let id = self.active_id()?;
         self.terminal(id).map(|_| id)
     }
 
@@ -1033,7 +1224,7 @@ impl Tabs {
     }
 
     pub fn focus_active(&self) -> Task<Message> {
-        match self.active().and_then(|(_, _, id)| self.tabs.get(&id)) {
+        match self.active_id().and_then(|id| self.tabs.get(&id)) {
             Some(t) => focus(t.widget_id.clone()),
             None => Task::none(),
         }
@@ -1109,15 +1300,21 @@ impl Tabs {
                 }
                 self.focus_active()
             }
+            TabCmd::Detach => self.detach(t),
             TabCmd::Close => self.update(TabsMsg::Close(t.0, t.1), look),
         }
     }
 
     /// Actions about tabs from keys and the menu bar: on the active tab. `None`: not ours.
     pub fn act(&mut self, action: Action, look: &Look) -> Option<Task<Message>> {
-        let on_active = |this: &mut Self, cmd| match this.active() {
-            Some(t) => this.cmd(cmd, t, look),
-            None => Task::none(),
+        let on_active = |this: &mut Self, cmd| {
+            if let Some(id) = this.front {
+                return this.cmd_in_window(cmd, id, look);
+            }
+            match this.active() {
+                Some(t) => this.cmd(cmd, t, look),
+                None => Task::none(),
+            }
         };
         let task = match action {
             Action::NewLocalShell => self.open(Launch::local_shell(), look),
@@ -1131,6 +1328,11 @@ impl Tabs {
                 Task::none()
             }
             Action::ConnectSftp => on_active(self, TabCmd::Sftp),
+            Action::DetachTab => on_active(self, TabCmd::Detach),
+            Action::ReattachAll => {
+                let windows: Vec<_> = self.detached.iter().map(|(w, _)| *w).collect();
+                Task::batch(windows.into_iter().map(|w| self.reattach(w)))
+            }
             Action::NextTab | Action::PrevTab => {
                 if let Some(group) = self.focused_group_mut() {
                     let len = group.model.len();
@@ -1151,7 +1353,7 @@ impl Tabs {
             Action::SplitRight => on_active(self, TabCmd::SplitRight),
             Action::SplitDown => on_active(self, TabCmd::SplitDown),
             Action::Copy => {
-                let text = self.active().and_then(|(_, _, id)| {
+                let text = self.active_id().and_then(|id| {
                     let t = self.terminal(id)?.lock().unwrap_or_else(|e| e.into_inner());
                     t.term.lock().selection_to_string()
                 });
@@ -1160,10 +1362,13 @@ impl Tabs {
                     None => Task::none(),
                 }
             }
-            Action::Paste => cosmic::iced::clipboard::read()
-                .map(|t| cosmic::Action::App(Message::Tabs(TabsMsg::Paste(t)))),
+            Action::Paste => {
+                let id = self.active_id().unwrap_or_default();
+                cosmic::iced::clipboard::read()
+                    .map(move |t| cosmic::Action::App(Message::Tabs(TabsMsg::Paste(id, t))))
+            }
             Action::SelectAll => {
-                if let Some((_, _, id)) = self.active()
+                if let Some(id) = self.active_id()
                     && let Some(t) = self.terminal(id)
                 {
                     t.lock().unwrap_or_else(|e| e.into_inner()).select_all();
@@ -1188,14 +1393,14 @@ impl Tabs {
 
     /// The active tab is an ssh one: an SFTP tab can use its connection.
     pub fn can_sftp(&self) -> bool {
-        (self.active())
-            .and_then(|(_, _, id)| self.tabs.get(&id))
+        (self.active_id())
+            .and_then(|id| self.tabs.get(&id))
             .is_some_and(|t| t.launch.sftp().is_some())
     }
 
     pub fn enter_on_dead(&self) -> bool {
-        self.active()
-            .and_then(|(_, _, id)| self.tabs.get(&id))
+        self.active_id()
+            .and_then(|id| self.tabs.get(&id))
             .is_some_and(|t| !t.live() && t.terminal().is_some())
     }
 
@@ -1354,14 +1559,14 @@ impl Tabs {
                     grid.resize(ev.split, ev.ratio);
                 }
             }
-            TabsMsg::Paste(Some(text)) => {
-                if let Some((_, _, id)) = self.active()
-                    && let Some(t) = self.terminal(id)
-                {
+            TabsMsg::Paste(id, Some(text)) => {
+                if let Some(t) = self.terminal(id) {
                     t.lock().unwrap_or_else(|e| e.into_inner()).paste(text);
                 }
             }
-            TabsMsg::Paste(None) => {}
+            TabsMsg::Paste(_, None) => {}
+            TabsMsg::Reattach(w) => return self.reattach(w),
+            TabsMsg::DragWindow(w) => return iced::window::drag(w),
             TabsMsg::Send(ids, pieces) => return self.send(ids, pieces),
             TabsMsg::AutoReconnect(id) => {
                 // Still there, still down, not ended by the user meanwhile (Enter, Close).
@@ -1440,31 +1645,7 @@ impl Tabs {
                 cosmic::Action::App(m) => m,
                 other => Message::Cosmic(Box::new(other)),
             });
-            let body: Element<'_, Message> =
-                match group.active_id().and_then(|id| self.tabs.get(&id)) {
-                    Some(Tab {
-                        body: Body::Sftp(v),
-                        ..
-                    }) => v.view(),
-                    Some(
-                        tab @ Tab {
-                            body: Body::Terminal(terminal),
-                            ..
-                        },
-                    ) => term::terminal_box::terminal_box(terminal, is_app_key)
-                        .id(tab.widget_id.clone())
-                        .copy_on_select(copy)
-                        .paste_on_middle(middle)
-                        // An ended program takes no keys (its PTY is gone): Enter reaches the app.
-                        // Nor does any while a dialog is up.
-                        .ended(!tab.alive || !keys)
-                        .padding(4)
-                        .into(),
-                    None => widget::Space::new()
-                        .width(Length::Fill)
-                        .height(Length::Fill)
-                        .into(),
-                };
+            let body = self.body(group.active_id(), copy, middle, keys);
             // A tab dropped on the body comes here too.
             let body: Element<'_, Message> =
                 cosmic::widget::dnd_destination::DndDestination::for_data::<TabDrop>(
@@ -1549,6 +1730,7 @@ fn tab_menu(
                 items.push(Button(side.label(), None, TabCmd::MoveTo(side)));
             }
         }
+        items.push(Button(fl!("menu-tab-window"), None, TabCmd::Detach));
         items.extend([Divider, Button(fl!("menu-close-tab"), None, TabCmd::Close)]);
         let blank = Element::from(widget::Space::new());
         menu::Tree::with_children(blank, menu::items(&HashMap::new(), items))
