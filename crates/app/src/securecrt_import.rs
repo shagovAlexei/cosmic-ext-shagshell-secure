@@ -16,6 +16,7 @@ pub enum ScMsg {
     Browsed(Option<String>),
     Sessions(bool),
     Bars(bool),
+    Commands(bool),
     Run,
     /// The import is over: the report, or why not.
     Done(Result<ReportView, String>),
@@ -27,6 +28,8 @@ pub enum ScMsg {
 pub struct ReportView {
     pub text: String,
     pub bars: Vec<shagshell_core::buttonbar::Bar>,
+    /// The Command Manager's folders found (merged by the app).
+    pub commands: shagshell_core::commands::Folder,
 }
 
 impl ReportView {
@@ -38,7 +41,8 @@ impl ReportView {
             r.sessions_skipped as i64,
         );
         let (bars, run) = (r.bars.len() as i64, r.buttons_skipped as i64);
-        let text = fl!(
+        let found = r.commands.count() as i64;
+        let mut text = fl!(
             "sc-report",
             sessions = added,
             existing = existing,
@@ -47,7 +51,19 @@ impl ReportView {
             buttons = buttons,
             run = run
         );
-        Self { text, bars: r.bars }
+        if found > 0 || r.commands_skipped > 0 {
+            text.push(' ');
+            text.push_str(&fl!(
+                "sc-report-commands",
+                found = found,
+                skipped = i64::try_from(r.commands_skipped).unwrap_or(0)
+            ));
+        }
+        Self {
+            text,
+            bars: r.bars,
+            commands: r.commands,
+        }
     }
 }
 
@@ -55,6 +71,7 @@ pub struct ScImport {
     pub path: String,
     sessions: bool,
     bars: bool,
+    commands: bool,
     busy: bool,
     /// What happened last: the report or the error.
     result: Option<(bool, String)>,
@@ -71,6 +88,7 @@ impl ScImport {
             path,
             sessions: true,
             bars: true,
+            commands: true,
             busy: false,
             result: None,
             input_id: widget::Id::unique(),
@@ -81,8 +99,8 @@ impl ScImport {
         std::path::PathBuf::from(self.path.trim())
     }
 
-    pub fn wants(&self) -> (bool, bool) {
-        (self.sessions, self.bars)
+    pub fn wants(&self) -> (bool, bool, bool) {
+        (self.sessions, self.bars, self.commands)
     }
 
     /// `true`: start the import.
@@ -92,11 +110,13 @@ impl ScImport {
             ScMsg::Browsed(Some(p)) => self.path = p,
             ScMsg::Sessions(on) => self.sessions = on,
             ScMsg::Bars(on) => self.bars = on,
+            ScMsg::Commands(on) => self.commands = on,
             ScMsg::Run => {
-                let ok = !self.busy && (self.sessions || self.bars) && self.path().is_dir();
+                let any = self.sessions || self.bars || self.commands;
+                let ok = !self.busy && any && self.path().is_dir();
                 if !self.path().is_dir() {
                     self.result = Some((false, fl!("sc-no-folder")));
-                } else if !self.sessions && !self.bars {
+                } else if !any {
                     self.result = Some((false, fl!("sc-nothing")));
                 } else if ok {
                     self.busy = true;
@@ -145,6 +165,11 @@ impl ScImport {
                 widget::checkbox(self.bars)
                     .label(fl!("sc-bars"))
                     .on_toggle(move |v| m(ScMsg::Bars(v))),
+            )
+            .push(
+                widget::checkbox(self.commands)
+                    .label(fl!("sc-commands"))
+                    .on_toggle(move |v| m(ScMsg::Commands(v))),
             );
         if self.busy {
             col = col.push(widget::text::body(fl!("sc-working")));

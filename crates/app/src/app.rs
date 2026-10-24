@@ -39,6 +39,8 @@ pub struct App {
     quick: Option<QuickConnect>,
     /// Tools → Create / Upload Public Key…, while its dialog is open.
     keys: Option<Keys>,
+    /// View → Command Manager.
+    commands: crate::command_manager::CommandManager,
     /// Tools → Keymap Editor…, while its dialog is open.
     keymap: Option<crate::keymap_editor::Editor>,
     /// The user's keys (`keymap.toml`); a file that could not be read is never written over.
@@ -116,6 +118,7 @@ pub enum Message {
     Transfer(crate::term::TabId, shagshell_core::zmodem::Command),
     QuickConnect(QcMsg),
     KeyGen(crate::keygen::KgMsg),
+    CommandManager(crate::command_manager::CmMsg),
     KeyMap(crate::keymap_editor::KmMsg),
     SessionOptions(SoMsg),
     /// Keys and the pointer: acted on only when from the main window (not Session Options).
@@ -196,6 +199,7 @@ impl Application for App {
             sessions,
             quick: None,
             keys: None,
+            commands: crate::command_manager::CommandManager::new(),
             keymap: None,
             user_keys,
             user_keys_broken,
@@ -359,6 +363,7 @@ impl Application for App {
         (self.asks.dialog(|t| self.tabs.title(t)))
             .or_else(|| self.scripts.dialog())
             .or_else(|| self.keys.as_ref().map(Keys::view))
+            .or_else(|| self.commands.dialog())
             .or_else(|| self.keymap.as_ref().map(crate::keymap_editor::Editor::view))
             .or_else(|| {
                 self.sc_import
@@ -377,6 +382,7 @@ impl Application for App {
                 self.config.session_manager_visible,
                 self.config.command_window_visible,
                 self.config.button_bar_visible,
+                self.config.command_manager_visible,
             ),
             self.tabs.menu_state(),
         )]
@@ -404,9 +410,13 @@ impl Application for App {
         if self.config.session_manager_visible {
             middle = middle.push(self.sessions.view(window));
         }
+        let mut middle = middle.push(center);
+        if self.config.command_manager_visible {
+            middle = middle.push(self.commands.view());
+        }
         let mut col = widget::column::with_capacity(4)
             .push(toolbar::view())
-            .push(middle.push(center).height(Length::Fill));
+            .push(middle.height(Length::Fill));
         if self.config.command_window_visible {
             col = col.push(self.command.view());
         }
@@ -520,6 +530,14 @@ impl App {
                     false => crate::keymap_editor::KmMsg::Close,
                 });
             }
+            Message::Sessions(SmMsg::Key(TreeKey::Clear))
+                if self.commands.has_dialog()
+                    && !self.asks.active()
+                    && !self.scripts.active()
+                    && self.keys.is_none() =>
+            {
+                return self.command_manager(crate::command_manager::CmMsg::Cancel);
+            }
             Message::Sessions(SmMsg::Key(TreeKey::Clear)) if self.scripts.active() => {
                 return self.script(crate::script::ScMsg::Cancel);
             }
@@ -600,6 +618,16 @@ impl App {
                         if notice.is_some() {
                             self.sessions.notice = notice;
                         }
+                        let added = self.commands.merge(v.commands.clone());
+                        if added > 0
+                            && self.commands.broken.is_none()
+                            && let Err(e) = self
+                                .commands
+                                .tree
+                                .save(&shagshell_core::commands::Folder::default_path())
+                        {
+                            self.sessions.notice = Some(format!("commands.toml: {e}"));
+                        }
                         self.sessions.reload();
                     }
                     ScMsg::Done(Err(_)) => self.sessions.reload(),
@@ -609,15 +637,17 @@ impl App {
                     return Task::none();
                 };
                 if d.update(m) {
-                    let (root, (sessions, bars)) = (d.path(), d.wants());
+                    let (root, (sessions, bars, commands)) = (d.path(), d.wants());
                     let store_root = shagshell_core::session::store::default_root();
                     let have = self.buttons.names();
                     return off_ui(
                         move || {
                             let store = shagshell_core::session::Store::new(store_root);
-                            shagshell_core::securecrt::import(&root, &store, &have, sessions, bars)
-                                .map(ReportView::of)
-                                .map_err(|e| e.to_string())
+                            shagshell_core::securecrt::import(
+                                &root, &store, &have, sessions, bars, commands,
+                            )
+                            .map(ReportView::of)
+                            .map_err(|e| e.to_string())
                         },
                         |r| Message::SecureCrt(ScMsg::Done(r)),
                     );
@@ -672,6 +702,7 @@ impl App {
                 return Task::batch(tasks);
             }
             Message::KeyGen(m) => return self.key_dialog(m),
+            Message::CommandManager(m) => return self.command_manager(m),
             Message::KeyMap(m) => return self.keymap_dialog(m),
             Message::QuickConnect(QcMsg::Cancel) => self.quick = None,
             Message::QuickConnect(m) => {
@@ -886,6 +917,14 @@ impl App {
                 }
                 return self.tabs.focus_active();
             }
+            Action::ToggleCommandManager => {
+                self.config.command_manager_visible = !self.config.command_manager_visible;
+                self.save_config();
+                if self.config.command_manager_visible {
+                    return widget::text_input::focus(self.commands.filter_id());
+                }
+                return self.tabs.focus_active();
+            }
             Action::ToggleSessionManager => {
                 self.config.session_manager_visible = !self.config.session_manager_visible;
                 self.save_config();
@@ -1073,6 +1112,42 @@ impl App {
             true => widget::text_input::focus(widget::Id::unique()),
             false => Task::none(),
         }
+    }
+
+    /// The Command Manager's messages: a command is sent, a change is saved.
+    fn command_manager(&mut self, m: crate::command_manager::CmMsg) -> Task<Message> {
+        let out = self.commands.update(m);
+        let mut tasks = Vec::new();
+        if let Some(c) = out.send {
+            let to = match c.target {
+                shagshell_core::buttonbar::Target::Current => {
+                    crate::command_window::SendTo::Current
+                }
+                shagshell_core::buttonbar::Target::All => crate::command_window::SendTo::All,
+            };
+            let ids = self.tabs.send_targets(to);
+            tasks.push(self.tabs.send(ids, c.to_send()));
+            // The keys go back to the terminal that got it.
+            tasks.push(self.tabs.focus_active());
+        }
+        if out.save {
+            match &self.commands.broken {
+                Some(_) => self.sessions.notice = Some(fl!("cm-broken")),
+                None => {
+                    if let Err(e) = self
+                        .commands
+                        .tree
+                        .save(&shagshell_core::commands::Folder::default_path())
+                    {
+                        self.sessions.notice = Some(format!("commands.toml: {e}"));
+                    }
+                }
+            }
+        }
+        if let Some(id) = out.focus {
+            tasks.push(widget::text_input::focus(id));
+        }
+        Task::batch(tasks)
     }
 
     /// Create / Upload Public Key: what the dialogs ask for.

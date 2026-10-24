@@ -17,7 +17,7 @@ Column **Phase** = ROADMAP phase where we implement it (— = not planned).
 | Tab groups / tiling | Split tab area horizontally/vertically into groups, each with its own strip; drag tabs between; resize dividers; Window > Tile/Cascade | 2 |
 | Command Window | Pane under the terminal: compose a line, send to current / all / visible tabs; history; send as line or char-by-char | 6 |
 | Button Bar | Several named bars; button = send string (`\r` escapes), run script, menu function, launch app; bar tied to a session | 6 |
-| Command Manager | Dockable tree of saved commands, double-click sends | backlog |
+| Command Manager | Dockable tree of saved commands, double-click sends | 15 |
 | Status bar | State, protocol, cipher, cursor row/col, rows×cols, emulation, CAP/NUM | 2–3 |
 
 ## 2. Session storage

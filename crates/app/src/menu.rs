@@ -16,6 +16,7 @@ pub enum Action {
     ToggleSessionManager,
     /// View → Command Window.
     ToggleCommandWindow,
+    ToggleCommandManager,
     /// View → Button Bar.
     ToggleButtonBar,
     /// File → Log Session.
@@ -69,7 +70,7 @@ pub enum Action {
 
 /// The functions a Button Bar button can call: the name in `buttonbars.toml` and its label.
 pub type NamedFn = (&'static str, fn() -> String);
-pub const NAMED: [NamedFn; 13] = [
+pub const NAMED: [NamedFn; 14] = [
     ("Connect", || fl!("menu-connect")),
     ("QuickConnect", || fl!("menu-quick-connect")),
     ("NewLocalShell", || fl!("menu-new-local-shell")),
@@ -82,6 +83,7 @@ pub const NAMED: [NamedFn; 13] = [
     ("SplitDown", || fl!("menu-split-down")),
     ("ToggleSessionManager", || fl!("menu-session-manager")),
     ("ToggleCommandWindow", || fl!("menu-command-window")),
+    ("ToggleCommandManager", || fl!("menu-command-manager")),
     ("GlobalOptions", || fl!("menu-global-options")),
 ];
 
@@ -101,6 +103,7 @@ impl Action {
             "SplitDown" => Action::SplitDown,
             "ToggleSessionManager" => Action::ToggleSessionManager,
             "ToggleCommandWindow" => Action::ToggleCommandWindow,
+            "ToggleCommandManager" => Action::ToggleCommandManager,
             "GlobalOptions" => Action::GlobalOptions,
             _ => return None,
         })
@@ -136,7 +139,7 @@ fn key_binds() -> HashMap<KeyBind, Action> {
 /// `(tabs, live, splittable)`: any tab open; the active one connected; its group has
 /// more than one tab (`Tabs::menu_state`).
 pub fn bar(
-    (session_manager, command_window, button_bar): (bool, bool, bool),
+    (session_manager, command_window, button_bar, command_manager): (bool, bool, bool, bool),
     (tabs, live, split, logging): (bool, bool, bool, bool),
 ) -> Element<'static, Message> {
     use menu::Item::{Button, ButtonDisabled, CheckBox, Divider};
@@ -200,6 +203,12 @@ pub fn bar(
                     None,
                     command_window,
                     Action::ToggleCommandWindow,
+                ),
+                CheckBox(
+                    fl!("menu-command-manager"),
+                    None,
+                    command_manager,
+                    Action::ToggleCommandManager,
                 ),
                 CheckBox(
                     fl!("menu-button-bar"),

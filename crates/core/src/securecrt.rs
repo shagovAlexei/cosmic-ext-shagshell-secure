@@ -429,9 +429,88 @@ fn wine_prefix(root: &Path) -> Option<std::path::PathBuf> {
         .map(Path::to_path_buf)
 }
 
+/// SecureCRT's Command Manager folder (`Config/Commands`): `__Commands__.ini` has the folder's
+/// commands as ` SEND,text,label,…` lines (as the Button Bar's), `__FolderData__.ini` the order
+/// of its sub folders (`Z:"Folder List V2"=n` and n names); a folder on disk that is not listed
+/// follows. What is not a `SEND` is counted as skipped.
+pub fn read_commands(dir: &Path) -> (crate::commands::Folder, usize) {
+    read_commands_at(dir, 0)
+}
+
+/// Folders below this depth are not read (a loop of links, a hand-made file).
+const MAX_DEPTH: usize = 8;
+
+fn read_commands_at(dir: &Path, depth: usize) -> (crate::commands::Folder, usize) {
+    let mut skipped = 0;
+    let mut f = crate::commands::Folder::default();
+    let read = |name: &str| std::fs::read_to_string(dir.join(name)).unwrap_or_default();
+    for line in read("__Commands__.ini")
+        .trim_start_matches('\u{feff}')
+        .lines()
+    {
+        let Some(entry) = line.trim_end_matches('\r').strip_prefix(' ') else {
+            continue;
+        };
+        let fields = split_fields(entry);
+        let get = |n: usize| fields.get(n).map_or("", String::as_str);
+        match get(0) {
+            "SEND" if !get(1).trim().is_empty() => f.commands.push(crate::commands::Command {
+                label: get(2).trim().to_string(),
+                text: get(1).to_string(),
+                target: Target::Current,
+            }),
+            _ => skipped += 1,
+        }
+    }
+    // The listed folders in their order, then any other.
+    let mut names: Vec<String> = Vec::new();
+    let mut in_list = false;
+    for line in read("__FolderData__.ini")
+        .trim_start_matches('\u{feff}')
+        .lines()
+    {
+        let line = line.trim_end_matches('\r');
+        match line.strip_prefix(' ') {
+            Some(n) if in_list => names.push(n.to_string()),
+            Some(_) => {}
+            None => in_list = line.starts_with("Z:\"Folder List"),
+        }
+    }
+    let mut on_disk: Vec<String> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| e.path().is_dir())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    on_disk.sort();
+    for n in on_disk {
+        if !names.contains(&n) {
+            names.push(n);
+        }
+    }
+    for n in names {
+        // A name from the file is a folder right here: no path, no link (it may lead anywhere).
+        let own = !n.is_empty() && n != "." && n != ".." && !n.contains(['/', '\\']);
+        let real = own
+            && std::fs::symlink_metadata(dir.join(&n)).is_ok_and(|m| m.is_dir() && !m.is_symlink());
+        if !real || depth >= MAX_DEPTH {
+            continue;
+        }
+        let (mut sub, s) = read_commands_at(&dir.join(&n), depth + 1);
+        skipped += s;
+        sub.name = n;
+        f.folders.push(sub);
+    }
+    (f, skipped)
+}
+
 /// What an import did.
 #[derive(Debug, Default)]
 pub struct Report {
+    /// The Command Manager's folders and commands (the app merges them into its file).
+    pub commands: crate::commands::Folder,
+    pub commands_skipped: usize,
     pub sessions_added: usize,
     /// Already there under that name: left as they are.
     pub sessions_existing: usize,
@@ -473,8 +552,12 @@ pub fn import(
     have_bars: &[String],
     sessions: bool,
     bars: bool,
+    commands: bool,
 ) -> std::io::Result<Report> {
     let mut r = Report::default();
+    if commands {
+        (r.commands, r.commands_skipped) = read_commands(&root.join("Commands"));
+    }
     let mut known: Vec<String> = have_bars.to_vec();
     if bars {
         // No Button Bar file: no bars (the sessions are still imported).
@@ -706,6 +789,12 @@ mod tests {
             .count();
         println!("jump {with_jump}, log {with_log}, bar {with_bar}");
         let text = std::fs::read_to_string(root.join("ButtonBarV5.ini")).unwrap();
+        let (cmds, cskip) = read_commands(&root.join("Commands"));
+        println!(
+            "commands {} in {} folders, skipped {cskip}",
+            cmds.count(),
+            cmds.folders.len()
+        );
         let b = read_button_bars(&text, None);
         let n: usize = b.bars.iter().map(|x| x.buttons.len()).sum();
         println!(
@@ -725,6 +814,54 @@ mod tests {
     }
 
     #[test]
+    fn command_manager_folders() {
+        let dir = tempfile::tempdir().unwrap();
+        let w = |p: &str, text: &str| {
+            let f = dir.path().join(p);
+            std::fs::create_dir_all(f.parent().unwrap()).unwrap();
+            std::fs::write(f, text).unwrap();
+        };
+        w(
+            "__Commands__.ini",
+            "\u{feff}D:\"Is Command List\"=00000001\r\nZ:\"Default\"=00000002\r\n SEND,uptime\\\\n,up,,,0,1,,\r\n RUN,x.py,,,r,0,1,,\r\n",
+        );
+        w(
+            "__FolderData__.ini",
+            "\u{feff}Z:\"Folder List V2\"=00000002\r\n second\r\n first\r\n",
+        );
+        w(
+            "first/__Commands__.ini",
+            "Z:\"Default\"=00000001\r\n SEND,a\\\\nb,,,,0,1,,\r\n",
+        );
+        w("second/__Commands__.ini", "Z:\"Default\"=00000000\r\n");
+        w(
+            "first/inner/__Commands__.ini",
+            "Z:\"Default\"=00000001\r\n SEND,deep,,,,0,1,,\r\n",
+        );
+        w("unlisted/__Commands__.ini", "Z:\"Default\"=00000000\r\n");
+        let (f, skipped) = read_commands(dir.path());
+        assert_eq!(skipped, 1); // the RUN
+        assert_eq!(
+            (f.commands[0].text.as_str(), f.commands[0].label.as_str()),
+            ("uptime\\n", "up")
+        );
+        let names: Vec<&str> = f.folders.iter().map(|x| x.name.as_str()).collect();
+        assert_eq!(names, ["second", "first", "unlisted"]); // listed order, then the rest
+        assert_eq!(f.folders[1].commands[0].label, ""); // no label: none made up
+        assert_eq!(f.folders[1].folders[0].name, "inner");
+        assert_eq!(f.count(), 3);
+        assert_eq!(read_commands(&dir.path().join("none")).0.count(), 0);
+        // names that lead elsewhere, and a loop, are not followed
+        w(
+            "__FolderData__.ini",
+            "Z:\"Folder List V2\"=00000002\r\n ..\r\n loop\r\n",
+        );
+        std::os::unix::fs::symlink(dir.path(), dir.path().join("loop")).unwrap();
+        let (g, _) = read_commands(dir.path());
+        assert!(g.folders.iter().all(|x| x.name != ".." && x.name != "loop"));
+    }
+
+    #[test]
     fn import_into_a_store() {
         let (cfg, out) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
         std::fs::create_dir_all(cfg.path().join("Sessions/AI")).unwrap();
@@ -741,7 +878,7 @@ mod tests {
         .unwrap();
         let store = crate::session::Store::new(out.path().to_path_buf());
         // «Mine» exists already: not imported again
-        let r = import(cfg.path(), &store, &["Mine".to_string()], true, true).unwrap();
+        let r = import(cfg.path(), &store, &["Mine".to_string()], true, true, true).unwrap();
         assert_eq!(
             (
                 r.sessions_added,
@@ -756,7 +893,15 @@ mod tests {
         let s = store.get("AI/gpu1").unwrap();
         assert_eq!(s.button_bar.as_deref(), Some("Kube")); // imported with this import
         // again: nothing new, the session is left as it is
-        let again = import(cfg.path(), &store, &["Kube".to_string()], true, false).unwrap();
+        let again = import(
+            cfg.path(),
+            &store,
+            &["Kube".to_string()],
+            true,
+            false,
+            false,
+        )
+        .unwrap();
         assert_eq!((again.sessions_added, again.sessions_existing), (0, 1));
         // a session that names a bar that is nowhere loses the name
         std::fs::write(
@@ -764,7 +909,7 @@ mod tests {
             SSH.replace("Kube", "Nowhere"),
         )
         .unwrap();
-        import(cfg.path(), &store, &[], true, false).unwrap();
+        import(cfg.path(), &store, &[], true, false, false).unwrap();
         assert_eq!(store.get("n").unwrap().button_bar, None);
         assert_eq!(find_config(cfg.path()), None);
     }
