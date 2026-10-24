@@ -1,7 +1,7 @@
 //! Command Window, as SecureCRT's: text under the terminals that is sent to the current tab,
 //! the visible ones or all of them. Escapes of `core::macros` (`\r \t \e \p` …) work in it; Enter
-//! sends every line, each with a carriage return; Ctrl+Enter (or Shift+Enter) starts a new line. The history lives only as long as the program runs: what
-//! is typed here may be a password, and nothing secret is written to a file.
+//! sends every line, each with a carriage return; Ctrl+Enter (or Shift+Enter) starts a new line. The history
+//! lives only as long as the program runs: what is typed here may be a password, and nothing secret is written to a file.
 
 use crate::app::Message;
 use crate::fl;
@@ -44,6 +44,8 @@ pub struct CommandWindow {
     text: text_editor::Content,
     /// Position in `history` (from the end) while browsing it with the arrow keys.
     browsing: Option<usize>,
+    /// What was typed before the arrows started browsing: Down past the newest entry restores it.
+    draft: String,
     /// Newest last, no repeats in a row.
     history: Vec<String>,
     pub to: SendTo,
@@ -56,6 +58,7 @@ impl CommandWindow {
         Self {
             text: text_editor::Content::new(),
             browsing: None,
+            draft: String::new(),
             history: Vec::new(),
             to: SendTo::Current,
             input_id: widget::Id::unique(),
@@ -93,10 +96,19 @@ impl CommandWindow {
                     (CwMsg::Older, None) => n.checked_sub(1),
                     (CwMsg::Older, Some(i)) => Some(i.saturating_sub(1)),
                     (_, Some(i)) if i + 1 < n => Some(i + 1),
+                    // Down with nothing browsed, or Up with no history: the text stays.
+                    (_, None) => return None,
                     _ => None,
                 };
+                if self.browsing.is_none() {
+                    at?;
+                    self.draft = self.text.text().trim_end().to_string();
+                }
                 self.browsing = at;
-                let t = at.map(|i| self.history[i].clone()).unwrap_or_default();
+                let t = match at {
+                    Some(i) => self.history[i].clone(),
+                    None => std::mem::take(&mut self.draft),
+                };
                 self.set_text(&t);
             }
             CwMsg::Target(i) => self.to = SendTo::ALL.get(i).copied().unwrap_or_default(),
@@ -144,6 +156,8 @@ impl CommandWindow {
             .id(self.input_id.clone())
             .on_action(move |a| m(CwMsg::Edit(a)))
             .padding(6)
+            // One visual row per line, so the height above is right (it scrolls sideways).
+            .wrapping(cosmic::iced::advanced::text::Wrapping::None)
             .height(rows * 22.0 + 14.0)
             .key_binding(move |kp| {
                 use cosmic::iced::keyboard::{Key, key::Named};
@@ -155,6 +169,7 @@ impl CommandWindow {
                     Named::Enter if kp.modifiers.control() || kp.modifiers.shift() => {
                         Some(Binding::Enter)
                     }
+                    Named::Enter if kp.modifiers.alt() || kp.modifiers.logo() => None,
                     Named::Enter => Some(Binding::Custom(m(CwMsg::Submit))),
                     Named::ArrowUp if line == 0 && kp.modifiers.is_empty() => {
                         Some(Binding::Custom(m(CwMsg::Older)))
@@ -229,5 +244,12 @@ mod tests {
         c.update(CwMsg::Newer);
         c.update(CwMsg::Newer);
         assert_eq!(c.text.text().trim_end(), "");
+        // a draft survives the trip, and Down alone leaves the text be
+        type_text(&mut c, "draft");
+        c.update(CwMsg::Newer);
+        assert_eq!(c.text.text().trim_end(), "draft");
+        c.update(CwMsg::Older);
+        c.update(CwMsg::Newer);
+        assert_eq!(c.text.text().trim_end(), "draft");
     }
 }
