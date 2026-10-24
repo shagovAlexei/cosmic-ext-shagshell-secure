@@ -602,3 +602,8 @@ note-filter-text = Text and Markdown
 note-too-big = The file is bigger than { $mb } MB
 note-not-text = Not a text file (UTF-8 expected)
 note-bad-name = This name cannot be used
+
+menu-close-others = Close Other Tabs
+menu-close-all = Close All Tabs
+close-many-title = Close { $n } tabs?
+options-tabs-on-start = Open the sessions from the last time at startup
