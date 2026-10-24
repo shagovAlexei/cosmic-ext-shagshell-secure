@@ -11,6 +11,7 @@ mod i18n;
 mod keygen;
 mod keymap_editor;
 mod menu;
+mod notes;
 mod options;
 mod quick_connect;
 mod scheduler;

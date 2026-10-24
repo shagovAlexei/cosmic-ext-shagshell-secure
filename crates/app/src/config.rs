@@ -150,6 +150,10 @@ pub struct Config {
     pub script_debug: bool,
     /// Script Console: opens by itself when a script writes something.
     pub script_console_auto: bool,
+    /// Notes: the files open at the last exit come back at the start.
+    pub notes_on_start: bool,
+    /// The files the note tabs showed (newest state; written when one opens / closes).
+    pub notes_open: Vec<String>,
     /// Both managers on one side: the Command Manager is the upper one.
     pub commands_above: bool,
     /// Only the header of the pane shows.
@@ -248,6 +252,8 @@ impl Default for Config {
             startup_script: String::new(),
             script_debug: false,
             script_console_auto: true,
+            notes_on_start: false,
+            notes_open: Vec::new(),
             commands_above: false,
             session_manager_collapsed: false,
             command_manager_collapsed: false,

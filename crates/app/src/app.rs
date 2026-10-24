@@ -149,6 +149,10 @@ pub enum Message {
     Sftp(crate::term::TabId, crate::sftp_view::SftpMsg),
     Credentials(crate::credentials_window::CwMsg),
     Scheduler(crate::scheduler::SchMsg),
+    Note(crate::term::TabId, crate::notes::NoteMsg),
+    NoteTick,
+    /// The note chooser answered.
+    NotePicked(Option<std::path::PathBuf>),
     /// The scheduler's clock.
     SchedTick,
     /// Global Options: the master-password keyring wanted on / off.
@@ -280,16 +284,30 @@ impl Application for App {
             (!app.config.startup_script.is_empty() && p.is_file()).then_some((p, Vec::new()))
         });
         app.refresh_scripts();
+        let mut note_tasks = Vec::new();
+        if app.config.notes_on_start {
+            for f in app.config.notes_open.clone() {
+                note_tasks.push(app.open_note(std::path::Path::new(&f)));
+            }
+        }
         let check = match app.config.update_check {
             true => check_updates(false),
             false => Task::none(),
         };
-        (app, Task::batch([theme.unwrap_or_else(Task::none), check]))
+        note_tasks.extend([theme.unwrap_or_else(Task::none), check]);
+        (app, Task::batch(note_tasks))
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
         self.sessions.right = self.config.session_manager_side == crate::config::Side::Right;
+        let tabs_changed = matches!(
+            message,
+            Message::Tabs(_) | Message::Note(_, crate::notes::NoteMsg::RenameDo)
+        );
         let mut task = self.handle(message);
+        if tabs_changed {
+            self.remember_notes();
+        }
         // A tab went into a window of its own: titled.
         for (window, title) in self.tabs.take_new_windows() {
             task = Task::batch([
@@ -392,6 +410,11 @@ impl Application for App {
             },
             crate::askpass::subscription(askpass_sock(&self.control_dir)),
             self.scripts.subscription(),
+            match self.tabs.has_unsaved_notes() {
+                true => cosmic::iced::time::every(std::time::Duration::from_millis(500))
+                    .map(|_| Message::NoteTick),
+                false => Subscription::none(),
+            },
             match self.schedule.jobs.iter().any(|j| j.enabled) {
                 true => cosmic::iced::time::every(std::time::Duration::from_secs(15))
                     .map(|_| Message::SchedTick),
@@ -1016,6 +1039,23 @@ impl App {
             Message::Credentials(m) => return self.credentials(m),
             Message::Scheduler(m) => return self.scheduler(m),
             Message::SchedTick => return self.sched_tick(),
+            Message::NoteTick => self.tabs.notes_tick(),
+            Message::Note(id, m) => {
+                self.sessions.focused = false;
+                let (open, task) = self.tabs.on_note(id, m);
+                if open {
+                    return Task::perform(
+                        crate::notes::pick(fl!("note-open-title"), self.note_start_dir()),
+                        |p| cosmic::Action::App(Message::NotePicked(p)),
+                    );
+                }
+                return task;
+            }
+            Message::NotePicked(p) => {
+                if let Some(p) = p {
+                    return self.open_note(&p);
+                }
+            }
             Message::Key(k, m) => {
                 // «Close tab?»: Enter is Close, Esc Cancel.
                 if self.tabs.confirming()
@@ -1186,6 +1226,7 @@ impl App {
         }
         match action {
             Action::Exit => {
+                self.tabs.save_notes();
                 let _ = std::fs::remove_file(askpass_sock(&self.control_dir));
                 return cosmic::iced::exit();
             }
@@ -1287,6 +1328,25 @@ impl App {
             }
             Action::ScriptsRefresh => self.refresh_scripts(),
             Action::Scheduler => return self.open_scheduler(),
+            Action::Notes => {
+                let russian = crate::i18n::russian();
+                return match shagshell_core::notes::ensure_default(
+                    &shagshell_core::notes::dir(),
+                    russian,
+                ) {
+                    Ok(p) => self.open_note(&p),
+                    Err(e) => {
+                        self.sessions.notice = Some(format!("notes: {e}"));
+                        Task::none()
+                    }
+                };
+            }
+            Action::OpenNote => {
+                return Task::perform(
+                    crate::notes::pick(fl!("note-open-title"), self.note_start_dir()),
+                    |p| cosmic::Action::App(Message::NotePicked(p)),
+                );
+            }
             Action::ScriptsFolder => {
                 return Task::perform(
                     crate::script::pick_folder(fl!("script-folder-title"), self.scripts_dir()),
@@ -1930,6 +1990,46 @@ impl App {
                 self.sessions.notice = Some(e);
                 Task::none()
             }
+        }
+    }
+
+    /// Where the note chooser starts: the folder of the note in front, else the notes folder.
+    fn note_start_dir(&self) -> std::path::PathBuf {
+        let dir = shagshell_core::notes::dir();
+        self.tabs
+            .note_paths()
+            .last()
+            .and_then(|p| p.parent().map(std::path::Path::to_path_buf))
+            .unwrap_or(dir)
+    }
+
+    /// A note tab for `path`: the one that has it is shown, else a new one.
+    fn open_note(&mut self, path: &std::path::Path) -> Task<Message> {
+        if let Some(id) = self.tabs.note_tab(path) {
+            self.tabs.show(id);
+            return Task::none();
+        }
+        if let Err(e) = crate::notes::read(path) {
+            self.sessions.notice = Some(e);
+            return Task::none();
+        }
+        let mut launch = tabs::Launch::local_shell();
+        launch.title =
+            (path.file_name()).map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+        launch.note = Some(path.to_path_buf());
+        let task = self.tabs.open(launch, &look(&self.config));
+        self.remember_notes();
+        task
+    }
+
+    /// The open notes, for the next start.
+    fn remember_notes(&mut self) {
+        let open: Vec<String> = (self.tabs.note_paths().iter())
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+        if open != self.config.notes_open {
+            self.config.notes_open = open;
+            self.save_config();
         }
     }
 
@@ -2773,6 +2873,7 @@ fn ssh_launch(
             session: session.map(str::to_string),
         },
         sftp: false,
+        note: None,
         auto_reconnect: s.reconnect.then(|| tabs::AutoReconnect {
             delay: s.reconnect_delay.unwrap_or(5),
             tries: s.reconnect_tries.unwrap_or(10),
@@ -2849,6 +2950,7 @@ fn program_launch(
         title,
         protocol,
         sftp: false,
+        note: None,
         log: Some(log_spec(s)),
         auto_reconnect: None,
         logon: logon_spec(s, id),
