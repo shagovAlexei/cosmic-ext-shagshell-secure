@@ -309,6 +309,7 @@ impl Editor {
                 ])
                 .spacing(10);
                 widget::dialog()
+                    .icon(crate::dialog_icons::Kind::Keyboard.icon(48))
                     .title(fl!("km-title"))
                     .control(body)
                     .primary_action(
@@ -383,6 +384,7 @@ impl Editor {
             col = col.push(widget::text::body(err.clone()).class(cosmic::theme::Text::Accent));
         }
         widget::dialog()
+            .icon(crate::dialog_icons::Kind::Keyboard.icon(48))
             .title(fl!("km-edit-title"))
             .control(col)
             .primary_action(widget::button::suggested(fl!("ok")).on_press(m(KmMsg::Ok)))

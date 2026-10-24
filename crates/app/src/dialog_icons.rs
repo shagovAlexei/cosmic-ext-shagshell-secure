@@ -12,6 +12,14 @@ pub enum Kind {
     Stop,
     Success,
     Lock,
+    Key,
+    Keyboard,
+    Server,
+    Sync,
+    Import,
+    Bookmark,
+    Folder,
+    Edit,
 }
 
 impl Kind {
@@ -23,6 +31,14 @@ impl Kind {
             Kind::Stop => include_bytes!("../../../res/icons/dialog/stop.svg"),
             Kind::Success => include_bytes!("../../../res/icons/dialog/success.svg"),
             Kind::Lock => include_bytes!("../../../res/icons/dialog/lock.svg"),
+            Kind::Key => include_bytes!("../../../res/icons/dialog/key.svg"),
+            Kind::Keyboard => include_bytes!("../../../res/icons/dialog/keyboard.svg"),
+            Kind::Server => include_bytes!("../../../res/icons/dialog/server.svg"),
+            Kind::Sync => include_bytes!("../../../res/icons/dialog/sync.svg"),
+            Kind::Import => include_bytes!("../../../res/icons/dialog/import.svg"),
+            Kind::Bookmark => include_bytes!("../../../res/icons/dialog/bookmark.svg"),
+            Kind::Folder => include_bytes!("../../../res/icons/dialog/folder.svg"),
+            Kind::Edit => include_bytes!("../../../res/icons/dialog/edit.svg"),
         };
         icon::from_svg_bytes(svg)
     }

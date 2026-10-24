@@ -1303,6 +1303,7 @@ impl SftpView {
             ok: String,
         ) -> Element<'a, Message> {
             widget::dialog()
+                .icon(crate::dialog_icons::Kind::Edit.icon(48))
                 .title(title)
                 .control(body)
                 .primary_action(widget::button::suggested(ok).on_press(m(SftpMsg::DialogOk)))
@@ -1435,6 +1436,7 @@ impl SftpView {
                     );
                 }
                 widget::dialog()
+                    .icon(crate::dialog_icons::Kind::Bookmark.icon(48))
                     .title(fl!("sftp-bm-title"))
                     .control(widget::scrollable(col).height(Length::Fixed(220.0)))
                     .primary_action(

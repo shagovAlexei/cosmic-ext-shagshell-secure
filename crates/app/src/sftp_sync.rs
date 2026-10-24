@@ -229,6 +229,7 @@ impl SyncState {
             }
         };
         widget::dialog()
+            .icon(crate::dialog_icons::Kind::Sync.icon(48))
             .title(fl!("sy-title"))
             .control(body)
             .primary_action(primary)
