@@ -263,6 +263,7 @@ impl Terminal {
         let pty_event_loop =
             EventLoop::new(term.clone(), event_proxy, pty, options.drain_on_exit, false)?;
         let notifier = Notifier(pty_event_loop.channel());
+        log.set_pty(pty_event_loop.channel());
         let _pty_join_handle = pty_event_loop.spawn();
 
         Ok(Self {

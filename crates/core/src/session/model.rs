@@ -163,6 +163,9 @@ pub struct Session {
     pub reconnect_delay: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reconnect_tries: Option<u32>,
+    /// Logon Actions: what to answer to what the session says after connecting.
+    #[serde(rename = "logon", skip_serializing_if = "Vec::is_empty")]
+    pub logon: Vec<crate::logon::Step>,
     /// Log file name template (`core::logfile`); empty: no log on connect.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub log_file: String,

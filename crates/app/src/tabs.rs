@@ -50,6 +50,54 @@ pub struct LogSpec {
     pub user: String,
 }
 
+/// Logon Actions of a session: the table, and what `%user%` / `%password%` stand for.
+#[derive(Clone, Debug, Default)]
+pub struct LogonSpec {
+    pub steps: Vec<shagshell_core::logon::Step>,
+    pub user: String,
+    /// Whose keyring password is `%password%` (the session's, or its credential set's).
+    pub owner: Option<shagshell_core::keyring::Owner>,
+}
+
+/// Answers due are typed into the tab by one worker, in order: the keyring may take a while and
+/// `\p` pauses, and a later answer must not overtake an earlier one. A password that is not saved
+/// is said, not typed.
+fn answer(tap: &term::log::Tap, spec: &LogonSpec) -> term::log::Sender {
+    use shagshell_core::keyring::{Secret, lookup};
+    use shagshell_core::macros::{Piece, parse};
+    let (tx, rx) = std::sync::mpsc::channel::<String>();
+    let (tap, spec) = (tap.clone(), spec.clone());
+    std::thread::spawn(move || {
+        for send in rx {
+            let password = match shagshell_core::logon::needs_password(&send) {
+                true => {
+                    (spec.owner.as_ref()).and_then(|o| lookup(o, Secret::Password).ok().flatten())
+                }
+                false => None,
+            };
+            // The escapes are read first: a password is typed as it is, backslashes and all.
+            for piece in parse(&send) {
+                match piece {
+                    Piece::Bytes(b) => {
+                        match shagshell_core::logon::fill(&b, &spec.user, password.as_deref()) {
+                            Some(bytes) => tap.input(bytes),
+                            None => {
+                                tap.fail(fl!("logon-no-password"));
+                                break;
+                            }
+                        }
+                    }
+                    Piece::Pause(d) => std::thread::sleep(d),
+                }
+            }
+        }
+    });
+    let tx = Mutex::new(tx);
+    std::sync::Arc::new(move |send: String| {
+        let _ = tx.lock().unwrap_or_else(|e| e.into_inner()).send(send);
+    })
+}
+
 /// A session that connects again by itself: after `delay` s, `tries` times in a row.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AutoReconnect {
@@ -73,6 +121,8 @@ pub struct Launch {
     pub log: Option<LogSpec>,
     /// Connects again by itself when the connection drops.
     pub auto_reconnect: Option<AutoReconnect>,
+    /// Answers to what the session says after connecting.
+    pub logon: Option<LogonSpec>,
 }
 
 impl Launch {
@@ -87,6 +137,7 @@ impl Launch {
             sftp: false,
             log: None,
             auto_reconnect: None,
+            logon: None,
         }
     }
 
@@ -511,6 +562,9 @@ impl Tabs {
             && let Err(e) = self.begin_log(&tap, launch, spec)
         {
             *self.notice.lock().unwrap_or_else(|e| e.into_inner()) = Some(e);
+        }
+        if let Some(l) = launch.logon.as_ref().filter(|l| !l.steps.is_empty()) {
+            tap.set_logon(l.steps.clone(), answer(&tap, l));
         }
         Some(Body::Terminal(Box::new(Mutex::new(t))))
     }
