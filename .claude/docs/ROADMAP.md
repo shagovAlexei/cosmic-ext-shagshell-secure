@@ -14,7 +14,7 @@
 - [x] 7. Логирование сессий по шаблонам имён
 - [x] 8. ~~8a — jump host / port forwarding в UI, auto-reconnect~~; ~~8b — Telnet и Serial~~
 - [x] 9. ~~9a — Logon Actions (expect/send)~~; ~~9b — keyword highlighting, color schemes~~; ~~9c — импорт из SecureCRT `.ini` (сессии, кнопки)~~
-- [ ] 10. Скрипты на Python: модуль `crt` (API как в SecureCRT), меню Script, запуск с Button Bar / клавиши / logon script / `--script`
+- [ ] 10. Скрипты на Python: ~~10a — модуль `crt` (API как в SecureCRT), меню Script, `--script`~~; 10b — запуск с Button Bar / клавиши / logon script, импорт кнопок Run Script
 
 ## Бэклог
 

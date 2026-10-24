@@ -57,6 +57,10 @@ pub struct App {
     /// written over.
     hl: shagshell_core::highlight::Rules,
     hl_broken: bool,
+    /// Script → Run…: the scripts running and their dialogs.
+    scripts: crate::script::Scripts,
+    /// `--script`: runs once the terminals can start (their event channel is up).
+    startup: Option<(std::path::PathBuf, Vec<String>)>,
 }
 
 #[derive(Clone, Debug)]
@@ -85,6 +89,7 @@ pub enum Message {
     /// Global Options: the keyword highlighting rules changed.
     SetRules(shagshell_core::highlight::Rules),
     SecureCrt(crate::securecrt_import::ScMsg),
+    Script(crate::script::ScMsg),
     QuickConnect(QcMsg),
     SessionOptions(SoMsg),
     /// Keys and the pointer: acted on only when from the main window (not Session Options).
@@ -104,7 +109,8 @@ pub enum Message {
 
 impl Application for App {
     type Executor = cosmic::executor::Default;
-    type Flags = ();
+    /// `--script file args…`: opens a local shell and runs the script on it.
+    type Flags = Option<(std::path::PathBuf, Vec<String>)>;
     type Message = Message;
     const APP_ID: &'static str = APP_ID;
 
@@ -116,7 +122,7 @@ impl Application for App {
         &mut self.core
     }
 
-    fn init(mut core: Core, _: ()) -> (Self, Task<Message>) {
+    fn init(mut core: Core, startup: Self::Flags) -> (Self, Task<Message>) {
         let config_handler = config::handler();
         let config: Config = config::read(config_handler.as_ref());
         // The language is chosen in main() from the system; a configured one replaces it.
@@ -145,6 +151,7 @@ impl Application for App {
         let mut tabs = Tabs::default();
         tabs.set_sftp_prefs(&config);
         tabs.set_log_prefs(&config);
+        let scripts = crate::script::Scripts::new(tabs.taps.clone(), control_dir.clone());
         let mut app = Self {
             core,
             config,
@@ -164,10 +171,13 @@ impl Application for App {
             sc_import: None,
             hl,
             hl_broken,
+            scripts,
+            startup: None,
         };
         // A broken buttonbars.toml is said, and left alone.
         app.sessions.notice = app.buttons.broken().map(String::from).or(hl_error);
         app.tabs.set_looks(&app.config, &app.hl, &look());
+        app.startup = startup;
         (app, theme.unwrap_or_else(Task::none))
     }
 
@@ -246,6 +256,7 @@ impl Application for App {
                 false => Subscription::none(),
             },
             crate::askpass::subscription(askpass_sock(&self.control_dir)),
+            self.scripts.subscription(),
             self.core()
                 .watch_config::<Config>(APP_ID)
                 .map(|u| Message::Config(u.config)),
@@ -292,6 +303,7 @@ impl Application for App {
 
     fn dialog(&self) -> Option<Element<'_, Message>> {
         (self.asks.dialog(|t| self.tabs.title(t)))
+            .or_else(|| self.scripts.dialog())
             .or_else(|| {
                 self.sc_import
                     .as_ref()
@@ -400,7 +412,17 @@ impl App {
                 let task = self.tabs.update(m, &look());
                 return Task::batch([task, self.prune_asks()]);
             }
-            Message::TermTx(tx) => self.tabs.set_sender(tx),
+            Message::TermTx(tx) => {
+                self.tabs.set_sender(tx);
+                if let Some((path, args)) = self.startup.take() {
+                    // The shell is the active tab at once; what it prints waits in the script's buffer.
+                    let open = self.tabs.open(tabs::Launch::local_shell(), &look());
+                    return Task::batch([
+                        open,
+                        self.script(crate::script::ScMsg::Start(path, args)),
+                    ]);
+                }
+            }
             Message::Term(id, e) => {
                 use alacritty_terminal::event::Event;
                 // Only an ended program can leave a prompt without its ssh (not every output).
@@ -427,6 +449,13 @@ impl App {
             }
             Message::Sessions(SmMsg::Key(TreeKey::Clear)) if self.asks.active() => {
                 return self.update(Message::Ask(crate::askpass::AskMsg::Cancel));
+            }
+            // A script's dialog is up: Enter (a message box) and Esc are its.
+            Message::EnterKey if self.scripts.active() => {
+                return self.script(crate::script::ScMsg::Ok);
+            }
+            Message::Sessions(SmMsg::Key(TreeKey::Clear)) if self.scripts.active() => {
+                return self.script(crate::script::ScMsg::Cancel);
             }
             Message::EnterKey if self.sessions.focused => {
                 let ids = self.sessions.connect();
@@ -477,6 +506,7 @@ impl App {
                     return widget::text_input::focus(self.buttons.first_field());
                 }
             }
+            Message::Script(m) => return self.script(m),
             Message::SecureCrt(m) => {
                 use crate::securecrt_import::{ReportView, ScMsg};
                 match &m {
@@ -808,6 +838,12 @@ impl App {
             }
             Action::EditDefault => return self.open_options(Target::Default),
             Action::Credentials => return self.open_credentials(),
+            Action::RunScript => {
+                return Task::perform(crate::script::pick(fl!("script-pick")), |p| {
+                    cosmic::Action::App(Message::Script(crate::script::ScMsg::Picked(p)))
+                });
+            }
+            Action::CancelScript => self.scripts.cancel(),
             Action::About => self.toggle_drawer(Drawer::About),
             Action::GlobalOptions => {
                 self.toggle_drawer(Drawer::Options);
@@ -818,6 +854,53 @@ impl App {
             _ => {}
         }
         Task::none()
+    }
+
+    /// Script → Run…, and what running scripts ask of the window.
+    fn script(&mut self, m: crate::script::ScMsg) -> Task<Message> {
+        use crate::script::ScMsg;
+        let (start, m) = match m {
+            ScMsg::Picked(p) => (Some(p.map(|p| (p, Vec::new()))), None),
+            ScMsg::Start(p, a) => (Some(Some((p, a))), None),
+            m => (None, Some(m)),
+        };
+        if let Some(start) = start {
+            let Some((path, args)) = start else {
+                return self.tabs.focus_active();
+            };
+            match self.tabs.active_terminal() {
+                None => self.sessions.notice = Some(fl!("script-no-tab")),
+                Some(tab) => match self.scripts.run(&path, &args, tab) {
+                    Ok(()) => {
+                        let name = path
+                            .file_name()
+                            .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+                        self.sessions.notice = Some(fl!("script-running", name = name));
+                    }
+                    Err(e) => self.sessions.notice = Some(e),
+                },
+            }
+            return self.tabs.focus_active();
+        }
+        let Some(m) = m else {
+            return Task::none();
+        };
+        let out = self.scripts.update(m, &mut self.tabs);
+        if out.notice.is_some() {
+            self.sessions.notice = out.notice;
+        }
+        let mut tasks = Vec::new();
+        if out.focus {
+            tasks.push(widget::text_input::focus(self.scripts.input_id.clone()));
+        }
+        if out.refocus {
+            tasks.push(self.tabs.focus_active());
+        }
+        if let Some((name, reply)) = out.connect {
+            tasks.push(self.open_sessions(&[name]));
+            reply.send(Ok(serde_json::Value::Null)); // the tab is there now
+        }
+        Task::batch(tasks)
     }
 
     /// Each session in a tab of its own; one that can't start says why under the tree.

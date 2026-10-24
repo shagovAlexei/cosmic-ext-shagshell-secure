@@ -351,3 +351,14 @@ sftp-goto-title = Перейти в папку
 sftp-go = Перейти
 sftp-goto-title = Перейти в папку
 sftp-go = Перейти
+
+## Скрипты
+script-title = Скрипт
+script-pick = Запустить скрипт
+script-running = Скрипт выполняется: { $name }
+script-done = Скрипт завершён: { $name }
+script-stopped = Скрипт остановлен: { $name }
+script-failed = Скрипт { $name }: { $error }
+script-no-tab = Сначала откройте вкладку с терминалом: скрипт работает с ней
+script-no-python = Не удаётся запустить python3: { $error }
+script-missing = Нет такого скрипта: { $name }

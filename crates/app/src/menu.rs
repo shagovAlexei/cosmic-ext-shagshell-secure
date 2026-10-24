@@ -46,6 +46,10 @@ pub enum Action {
     EditDefault,
     /// Tools → Credentials Manager….
     Credentials,
+    /// Script → Run….
+    RunScript,
+    /// Script → Cancel.
+    CancelScript,
     // Shown, not working yet (later phases).
     Disconnect,
     ConnectSftp,
@@ -200,7 +204,10 @@ pub fn bar(
         ),
         (
             fl!("menu-script"),
-            vec![off(fl!("menu-script-run")), off(fl!("menu-script-cancel"))],
+            vec![
+                Button(fl!("menu-script-run"), None, Action::RunScript),
+                Button(fl!("menu-script-cancel"), None, Action::CancelScript),
+            ],
         ),
         (
             fl!("menu-tools"),
