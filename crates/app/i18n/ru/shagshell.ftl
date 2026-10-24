@@ -140,6 +140,8 @@ so-scheme-global = (как в Общих параметрах)
 options-terminal = Терминал
 options-font = Шрифт (пусто = системный моноширинный)
 options-font-size = Размер шрифта
+options-tab-height = Высота заголовков вкладок, px (пусто = как в теме)
+options-button-height = Высота кнопок Button Bar, px (пусто = как в теме)
 options-copy-on-select = Копировать при выделении
 options-paste-on-middle = Вставлять средней кнопкой мыши
 term-disconnected = Отключено — Enter, чтобы подключиться заново

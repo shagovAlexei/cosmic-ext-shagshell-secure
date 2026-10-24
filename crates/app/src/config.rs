@@ -188,6 +188,10 @@ pub struct Config {
     pub font_family: String,
     /// Terminal font size, px (0 = 14); read through `font_px`.
     pub font_size: u16,
+    /// Tab header height, px (0 = the theme's); read through `tab_px`.
+    pub tab_height: u16,
+    /// Button Bar button height, px (0 = the theme's); read through `button_px`.
+    pub button_height: u16,
     /// Ask GitHub for a newer release when the app starts.
     pub update_check: bool,
     /// The release the user chose to skip (its tag), "" = none.
@@ -225,6 +229,18 @@ impl Config {
                 None => home.join(d),
             },
         }
+    }
+}
+
+impl Config {
+    /// A tab header's height, kept to 20–64 (None = the theme's).
+    pub fn tab_px(&self) -> Option<u16> {
+        (self.tab_height != 0).then(|| self.tab_height.clamp(20, 64))
+    }
+
+    /// A Button Bar button's height, kept to 20–64 (None = the theme's).
+    pub fn button_px(&self) -> Option<u16> {
+        (self.button_height != 0).then(|| self.button_height.clamp(20, 64))
     }
 }
 
@@ -272,6 +288,8 @@ impl Default for Config {
             log_template: "%S_%Y-%M-%D_%h%m%s.log".into(),
             font_family: String::new(),
             font_size: 14,
+            tab_height: 0,
+            button_height: 0,
             update_check: true,
             skipped_version: String::new(),
             sftp_show_hidden: true,
@@ -342,5 +360,16 @@ mod tests {
             .font_px()
         };
         assert_eq!((px(0), px(3), px(14), px(500)), (14.0, 6.0, 14.0, 48.0));
+    }
+
+    #[test]
+    fn heights_are_kept_in_range() {
+        let c = |n| Config {
+            tab_height: n,
+            button_height: n,
+            ..Config::default()
+        };
+        assert_eq!((c(0).tab_px(), c(0).button_px()), (None, None));
+        assert_eq!((c(5).tab_px(), c(500).button_px()), (Some(20), Some(64)));
     }
 }

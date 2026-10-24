@@ -1765,7 +1765,7 @@ impl Tabs {
             };
             // The sides that have a group beside this one: the tab can move there.
             let neighbours = Side::ALL.map(|s| grid.adjacent(pane, s.direction()).is_some());
-            let bar = tab_bar::horizontal(&group.model)
+            let mut bar = tab_bar::horizontal(&group.model)
                 .on_activate(m(TabsMsg::Activate))
                 .on_close(m(TabsMsg::Close))
                 .on_middle_press(m(TabsMsg::Close))
@@ -1776,6 +1776,9 @@ impl Tabs {
                 .enable_tab_drag(TAB_MIME.to_string())
                 .on_reorder(move |ev| app(Message::Tabs(TabsMsg::Reorder(pane, ev))))
                 .on_dnd_drop::<TabDrop>(move |_, _, _| app(Message::Tabs(TabsMsg::Drop(pane))));
+            if let Some(h) = config.tab_px() {
+                bar = bar.button_height(h);
+            }
             let bar = Element::from(bar).map(|a| match a {
                 cosmic::Action::App(m) => m,
                 other => Message::Cosmic(Box::new(other)),

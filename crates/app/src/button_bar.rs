@@ -523,6 +523,7 @@ impl ButtonBar {
         &self,
         shown: Option<usize>,
         window: cosmic::iced::window::Id,
+        height: Option<u16>,
     ) -> Element<'_, Message> {
         let m = Message::ButtonBar;
         let mut row = widget::row::with_capacity(8)
@@ -537,7 +538,11 @@ impl ButtonBar {
         if let Some(bar) = shown.and_then(|s| self.bars.bars.get(s)) {
             let last = bar.buttons.len().saturating_sub(1);
             for (i, b) in bar.buttons.iter().enumerate() {
-                let button = widget::button::standard(b.label.clone()).on_press(m(BbMsg::Press(i)));
+                let mut button =
+                    widget::button::standard(b.label.clone()).on_press(m(BbMsg::Press(i)));
+                if let Some(h) = height {
+                    button = button.height(Length::Fixed(f32::from(h)));
+                }
                 let items = vec![
                     menu::Item::Button(fl!("bb-edit"), None, BarCmd::Edit(i)),
                     menu::Item::Button(fl!("sm-delete"), None, BarCmd::Delete(i)),

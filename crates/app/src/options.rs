@@ -284,6 +284,16 @@ pub fn view<'a>(
             ),
         ))
         .add(settings::item(
+            fl!("options-tab-height"),
+            text(&px(config.tab_height), |c, v| c.tab_height = parse_px(&v)),
+        ))
+        .add(settings::item(
+            fl!("options-button-height"),
+            text(&px(config.button_height), |c, v| {
+                c.button_height = parse_px(&v)
+            }),
+        ))
+        .add(settings::item(
             fl!("options-copy-on-select"),
             widget::toggler(config.copy_on_select).on_toggle(set(|c, on| c.copy_on_select = on)),
         ))
@@ -325,4 +335,16 @@ pub fn view<'a>(
     ])
     .spacing(16);
     context_drawer::context_drawer(content, Message::CloseDrawer).title(fl!("menu-global-options"))
+}
+
+/// A height box shows nothing for 0 (the theme's).
+fn px(n: u16) -> String {
+    match n {
+        0 => String::new(),
+        n => n.to_string(),
+    }
+}
+
+fn parse_px(v: &str) -> u16 {
+    v.trim().parse::<u32>().map_or(0, |n| n.min(64) as u16)
 }
