@@ -6,7 +6,7 @@
 
 - [x] 0. Bootstrap: репозиторий, CLAUDE.md, архитектура, разбор SecureCRT, навык `shagshell-feature`
 - [x] 1. Каркас: workspace, пустое окно libcosmic, justfile, CI, i18n en/ru, `.desktop`, metainfo, иконка
-- [ ] 2. Терминал: вкладка локального shell, вкладки + `pane_grid` (tab groups)
+- [x] 2. Терминал: вкладка локального shell, вкладки + `pane_grid` (tab groups)
 - [ ] 3. Сессии: модель + хранилище (TDD), Session Manager, Session Options, Quick Connect, запуск ssh
 - [ ] 4. Аутентификация: askpass-сокет, keyring, Credentials Manager, диалог host key
 - [ ] 5. SFTP: двухпанельная вкладка + очередь передач (drag-drop, докачка, правила перезаписи)
@@ -25,6 +25,8 @@
 - Синхронизация папок в SFTP
 - X/Y/Zmodem (`rz`/`sz`)
 - Command Manager (дерево сохранённых команд)
+- Перетаскивание вкладки между группами и в новое окно
+- Шрифт и его размер в Global Options
 - Запись скрипта (Script → Start Recording)
 
 Не делаем: SSH1, RLogin, TAPI, TN3270/5250, VBScript/JScript, legacy-эмуляции.

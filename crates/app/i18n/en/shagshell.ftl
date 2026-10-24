@@ -40,5 +40,23 @@ menu-about = About
 
 sessions-empty = No sessions
 no-sessions = No open sessions
-no-sessions-hint = Use Quick Connect (Alt+Q)
+no-sessions-hint = Use Quick Connect (Alt+Q) or Ctrl+Shift+T for a local shell
 status-disconnected = Not connected
+
+menu-new-local-shell = New Local Shell
+menu-close-tab = Close Tab
+menu-clone = Clone
+menu-split-right = Move to New Group — Right
+menu-split-down = Move to New Group — Down
+tab-local-shell = Local Shell
+close-tab-title = Close tab “{ $name }”?
+close-tab-body = The program running in it will be terminated.
+close = Close
+cancel = Cancel
+status-connected = Connected
+status-ended = Disconnected
+options-terminal = Terminal
+options-copy-on-select = Copy on select
+options-paste-on-middle = Paste with the middle mouse button
+term-exited = Process exited — press Enter to restart
+term-exited-code = Process exited with code { $code } — press Enter to restart

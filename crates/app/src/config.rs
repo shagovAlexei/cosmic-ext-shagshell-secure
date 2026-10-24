@@ -7,12 +7,18 @@ use cosmic::cosmic_config::{self, CosmicConfigEntry, cosmic_config_derive::Cosmi
 pub struct Config {
     /// View → Session Manager (Alt+M).
     pub session_manager_visible: bool,
+    /// Global Options → Terminal: a finished mouse selection goes to the clipboard.
+    pub copy_on_select: bool,
+    /// Global Options → Terminal: the middle mouse button pastes.
+    pub paste_on_middle_click: bool,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
             session_manager_visible: true,
+            copy_on_select: true,
+            paste_on_middle_click: true,
         }
     }
 }

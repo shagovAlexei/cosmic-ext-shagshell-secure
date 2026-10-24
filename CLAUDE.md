@@ -75,7 +75,10 @@ We do **not** implement SSH. The system OpenSSH does it; we drive it.
   - `buttonbar.rs` — named bars, buttons (Send String / Run Script / Menu Function / Launch App), `buttonbars.toml`;
   - `script.rs` — the `crt` JSON-lines socket protocol for Python scripts.
 - **`crates/app` (`shagshell`)** is the libcosmic UI, **split by feature**: each module (`session_manager`, `tabs`, `term/`, `sftp_view`, `command_window`, `button_bar`, `dialogs`, `menu`, `keymap`, `config`, `i18n`) owns its own `Message`, `update` and `view`. `app.rs` only routes. No growing a single 15k-line `app.rs` like shagoff-commander did.
-  - `term/` is cosmic-term's terminal (via shagoff-commander `crates/app/src/term/`), driven by a local PTY.
+  - `term/` is cosmic-term's terminal (via shagoff-commander `crates/app/src/term/`), driven by a local PTY. Events come through one channel tagged with `TabId`; `term::print` writes text on screen without the PTY (the exit line).
+  - `tabs.rs`: tabs are kept by id (`HashMap<TabId, Tab>`); each group in the `pane_grid` has a `segmented_button` model holding the ids in order (moving a tab between groups = remove + insert the id). Exit leaves the tab (✗, Enter restarts), closing a live one asks. `app::key_action` is the one list of app keys (physical keys, any layout): the terminal lets exactly those through (`tabs::is_app_key`), everything else is the program's. Never bind Ctrl+Insert / Shift+Insert (the user's system uses them). The tab menu has its own `TabCmd`s, about the right-clicked tab; keys and the menu bar act on the active tab.
+  - `options.rs`: Options → Global Options drawer.
+  - Popups (menus) are windows: `App::view_window` returns an empty `Space` for them, or libcosmic panics ("no view for window"). A `segmented_button` context menu is one root whose children are one menu per tab.
   - `main.rs` also dispatches the `askpass` subcommand and `--check`.
 - Modularity = Rust modules. No plugin system.
 

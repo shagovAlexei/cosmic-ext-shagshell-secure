@@ -3,8 +3,11 @@ mod app;
 mod config;
 mod i18n;
 mod menu;
+mod options;
 mod session_manager;
 mod status_bar;
+mod tabs;
+mod term;
 mod toolbar;
 
 use shagshell_core::check;

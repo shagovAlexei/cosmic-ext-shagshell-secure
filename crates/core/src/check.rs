@@ -8,7 +8,6 @@ pub const TOOLS: [&str; 4] = ["ssh", "telnet", "picocom", "python3"];
 /// For each name in order: is it an executable file in a `path` (PATH-style) dir?
 /// An empty component (`a::b`) is skipped: the shell would read it as the current dir.
 pub fn probe(names: &[&str], path: Option<&OsStr>) -> Vec<(String, bool)> {
-    use std::os::unix::fs::PermissionsExt;
     let dirs: Vec<_> = path
         .map(|p| {
             std::env::split_paths(p)
@@ -16,13 +15,14 @@ pub fn probe(names: &[&str], path: Option<&OsStr>) -> Vec<(String, bool)> {
                 .collect()
         })
         .unwrap_or_default();
-    let found = |name: &str| {
-        dirs.iter().any(|d| {
-            std::fs::metadata(d.join(name))
-                .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
-        })
-    };
+    let found = |name: &str| dirs.iter().any(|d| is_executable(&d.join(name)));
     names.iter().map(|n| (n.to_string(), found(n))).collect()
+}
+
+/// A regular file with an execute bit (a dir named `ssh` is not a program).
+pub(crate) fn is_executable(path: &std::path::Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
 }
 
 #[cfg(test)]
