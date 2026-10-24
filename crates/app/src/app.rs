@@ -66,6 +66,8 @@ pub enum Message {
     Surface(cosmic::surface::Action),
     /// The theme was switched in Global Options: terminals take its colors.
     Restyle,
+    /// Every 2 s while a server file is open in an editor.
+    EditTick,
     /// Anything else a widget speaking `cosmic::Action` says (the tab bar): to the runtime.
     Cosmic(Box<cosmic::Action<Message>>),
     Sessions(SmMsg),
@@ -218,6 +220,7 @@ impl Application for App {
                     cosmic::app::Action::Surface(a),
                 ));
             }
+            Message::EditTick => self.tabs.edit_tick(),
             Message::Restyle => self.tabs.restyle(&look()),
             Message::Cosmic(a) => return cosmic::task::message(*a),
             Message::Sessions(m) => {
@@ -419,6 +422,11 @@ impl Application for App {
             cosmic::iced::window::close_requests().map(Message::CloseRequested),
             crate::term::subscription(),
             crate::sftp_view::subscription(),
+            match self.tabs.has_edits() {
+                true => cosmic::iced::time::every(std::time::Duration::from_secs(2))
+                    .map(|_| Message::EditTick),
+                false => Subscription::none(),
+            },
             crate::askpass::subscription(askpass_sock(&self.control_dir)),
             self.core()
                 .watch_config::<Config>(APP_ID)

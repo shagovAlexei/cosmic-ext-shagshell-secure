@@ -72,6 +72,7 @@ We do **not** implement SSH. The system OpenSSH does it; we drive it.
   - `keyring.rs` — Secret Service over zbus (from shagoff-commander, + `lookup` / `delete`);
   - `credentials.rs` — `credentials.toml` (name → user, unknown fields kept), `put` (checked add / rename), `resolve`; `Store::using` / `relink` follow a renamed / deleted set;
   - `sftp/{proto,queue}.rs` — the SFTP v3 client (tested against `/usr/lib/openssh/sftp-server` run directly) and the transfer queue (a pure state machine: one job at a time, retry, cancel, per-batch «for all»);
+  - `bookmarks.rs` — SFTP bookmarks (`bookmarks.toml`, per place); `uri.rs` — `text/uri-list` of dropped files → paths;
   - `panel.rs` — a file panel (listing, cursor, marks, targets) and size / time text, after shagoff-commander;
   - `logfile.rs` — log name templates `%H %S %Y %M %D %h %m %s %P %U`;
   - `macros.rs` — Button Bar / Command Window escapes (`\r \n \t \e \\ \p`);

@@ -193,6 +193,21 @@ impl Tabs {
         self.tx = Some(tx);
     }
 
+    /// An SFTP tab has a file open in a local editor (the timer runs only then).
+    pub fn has_edits(&self) -> bool {
+        self.tabs
+            .values()
+            .any(|t| matches!(&t.body, Body::Sftp(v) if v.has_edits()))
+    }
+
+    pub fn edit_tick(&mut self) {
+        for tab in self.tabs.values_mut() {
+            if let Body::Sftp(v) = &mut tab.body {
+                drop(v.update(SftpMsg::EditTick));
+            }
+        }
+    }
+
     pub fn set_sftp_prefs(&mut self, config: &Config) {
         let hidden_changed = self.sftp_prefs.1 != config.sftp_show_hidden;
         self.sftp_prefs = (config.sftp_overwrite.choice(), config.sftp_show_hidden);
