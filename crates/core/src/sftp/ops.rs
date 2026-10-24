@@ -316,6 +316,9 @@ pub fn transfer<R: Read, W: Write>(
             return Ok(Copied::Skipped);
         }
     }
+    // The source's time as it was before the copy: a file changed meanwhile then differs, and a
+    // later sync copies it again.
+    let src_secs = source_secs(c, job).ok();
     let tmp = part(&job.dst);
     match (job.dir, how) {
         (Dir::Down, Plan1::Resume(from)) => {
@@ -369,7 +372,7 @@ pub fn transfer<R: Read, W: Write>(
     }
     // The copy keeps the source's time (SecureFX's «preserve times»): a later sync then sees the
     // two as the same. Only a nicety: a server that refuses it is no failure of the copy.
-    match preserve_times(c, job) {
+    match preserve_times(c, job, src_secs) {
         Err(e) if is_fatal(&e) => return Err(e),
         _ => {}
     }
@@ -382,34 +385,44 @@ pub fn transfer<R: Read, W: Write>(
     Ok(Copied::Done)
 }
 
-/// The target of `job` gets the source's modification time.
-fn preserve_times<R: Read, W: Write>(c: &mut Client<R, W>, job: &Job) -> io::Result<()> {
+/// The source's modification time (seconds).
+fn source_secs<R: Read, W: Write>(c: &mut Client<R, W>, job: &Job) -> io::Result<i64> {
+    match job.dir {
+        Dir::Down => remote_stat(c, &job.src).map(|s| s.1),
+        Dir::Up => local_stat(&job.src).map(|s| s.1),
+    }
+}
+
+/// The target of `job` gets the source's modification time (`secs`, if it was known).
+fn preserve_times<R: Read, W: Write>(
+    c: &mut Client<R, W>,
+    job: &Job,
+    secs: Option<i64>,
+) -> io::Result<()> {
+    let Some(secs) = secs else { return Ok(()) };
     match job.dir {
         Dir::Down => {
-            let (_, secs) = remote_stat(c, &job.src)?;
             let t = std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs.max(0) as u64);
             std::fs::OpenOptions::new()
                 .write(true)
                 .open(&job.dst)?
                 .set_modified(t)
         }
-        Dir::Up => {
-            let (_, secs) = local_stat(&job.src)?;
-            c.set_times(&job.dst, u32::try_from(secs.max(0)).unwrap_or(u32::MAX))
-        }
+        Dir::Up => c.set_times(&job.dst, u32::try_from(secs.max(0)).unwrap_or(u32::MAX)),
     }
 }
 
-/// The server's tree under `root` as `sync::Node`s (links skipped; a folder that can't be read
-/// is left out).
+/// The server's tree under `root` as `sync::Node`s, with the folders that could not be read.
+/// A name that is not one plain file name (a `/` in it) is not trusted and left out: it would
+/// lead out of the synchronised folder.
 pub fn scan_remote<R: Read, W: Write>(
     c: &mut Client<R, W>,
     root: &Path,
     recursive: bool,
-) -> io::Result<Vec<crate::sftp::sync::Node>> {
-    let mut out = Vec::new();
-    scan_remote_dir(c, root, Path::new(""), recursive, &mut out, true)?;
-    Ok(out)
+) -> io::Result<(Vec<crate::sftp::sync::Node>, Vec<PathBuf>)> {
+    let (mut out, mut unread) = (Vec::new(), Vec::new());
+    scan_remote_dir(c, root, Path::new(""), recursive, &mut out, &mut unread)?;
+    Ok((out, unread))
 }
 
 fn scan_remote_dir<R: Read, W: Write>(
@@ -418,27 +431,34 @@ fn scan_remote_dir<R: Read, W: Write>(
     rel: &Path,
     recursive: bool,
     out: &mut Vec<crate::sftp::sync::Node>,
-    top: bool,
+    unread: &mut Vec<PathBuf>,
 ) -> io::Result<()> {
+    use std::os::unix::ffi::OsStrExt;
     let entries = match c.read_dir(&root.join(rel)) {
         Ok(e) => e,
         // The folder asked for must be there; one below it may be closed to us.
-        Err(e) if !top && !is_fatal(&e) => return Ok(()),
+        Err(e) if !rel.as_os_str().is_empty() && !is_fatal(&e) => {
+            unread.push(rel.to_path_buf());
+            return Ok(());
+        }
         Err(e) => return Err(e),
     };
     for e in entries {
-        if e.attrs.is_link() {
+        let name = e.name.as_bytes();
+        if name.is_empty() || name.contains(&b'/') || name == b"." || name == b".." {
             continue;
         }
         let rel = rel.join(&e.name);
+        let link = e.attrs.is_link();
         out.push(crate::sftp::sync::Node {
             rel: rel.clone(),
             size: e.attrs.size.unwrap_or(0),
             mtime: i64::from(e.attrs.mtime.unwrap_or(0)),
-            is_dir: e.attrs.is_dir(),
+            is_dir: e.attrs.is_dir() && !link,
+            link,
         });
-        if e.attrs.is_dir() && recursive {
-            scan_remote_dir(c, root, &rel, recursive, out, false)?;
+        if e.attrs.is_dir() && !link && recursive {
+            scan_remote_dir(c, root, &rel, recursive, out, unread)?;
         }
     }
     Ok(())
@@ -510,7 +530,7 @@ mod tests {
     }
 
     #[test]
-    fn scan_remote_reads_the_tree_without_links() {
+    fn scan_remote_reads_the_tree_and_marks_links() {
         let Some((_s, mut c)) = server() else { return };
         let r = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(r.path().join("a/b")).unwrap();
@@ -518,12 +538,19 @@ mod tests {
         std::os::unix::fs::symlink(r.path().join("a"), r.path().join("ln")).unwrap();
         let mut rel: Vec<String> = scan_remote(&mut c, r.path(), true)
             .unwrap()
+            .0
             .iter()
             .map(|n| n.rel.display().to_string())
             .collect();
         rel.sort();
-        assert_eq!(rel, ["a", "a/b", "a/b/f"]);
-        assert_eq!(scan_remote(&mut c, r.path(), false).unwrap().len(), 1);
+        assert_eq!(rel, ["a", "a/b", "a/b/f", "ln"]); // the link is there, marked
+        assert_eq!(scan_remote(&mut c, r.path(), false).unwrap().0.len(), 2);
+        let nodes = scan_remote(&mut c, r.path(), true).unwrap().0;
+        assert!(
+            nodes
+                .iter()
+                .any(|n| n.link && n.rel == Path::new("ln") && !n.is_dir)
+        );
         assert!(scan_remote(&mut c, &r.path().join("none"), true).is_err());
     }
 

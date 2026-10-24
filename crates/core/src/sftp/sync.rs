@@ -16,6 +16,8 @@ pub struct Node {
     /// Seconds since the epoch.
     pub mtime: i64,
     pub is_dir: bool,
+    /// A symbolic link: never copied, never followed (a copy would write through it).
+    pub link: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -79,8 +81,16 @@ fn op(kind: Kind, n: &Node, why: Option<Why>) -> Op {
 
 /// What makes `remote` like `local` (Up), `local` like `remote` (Down), or both like the newer
 /// (Both). `mirror`: what the target has and the source has not is deleted (Up / Down only).
-/// Folders to make first, then copies, then deletes; each in path order.
-pub fn diff(local: &[Node], remote: &[Node], mode: Mode, mirror: bool) -> Vec<Op> {
+/// Folders to make first, then copies, then deletes; each in path order. `unread`: folders that
+/// could not be read on one side: nothing under them is touched (what is not seen is not
+/// "missing").
+pub fn diff(
+    local: &[Node],
+    remote: &[Node],
+    mode: Mode,
+    mirror: bool,
+    unread: &[PathBuf],
+) -> Vec<Op> {
     let l: BTreeMap<&Path, &Node> = local.iter().map(|n| (n.rel.as_path(), n)).collect();
     let r: BTreeMap<&Path, &Node> = remote.iter().map(|n| (n.rel.as_path(), n)).collect();
     let mut paths: Vec<&Path> = l.keys().chain(r.keys()).copied().collect();
@@ -89,17 +99,29 @@ pub fn diff(local: &[Node], remote: &[Node], mode: Mode, mirror: bool) -> Vec<Op
     let (mut dirs, mut copies, mut deletes, mut conflicts) = (vec![], vec![], vec![], vec![]);
     // Folders deleted whole: what is inside them is not listed again.
     let mut gone: Vec<&Path> = Vec::new();
+    // A file and a folder of one name: what is inside the folder waits for the user.
+    let mut blocked: Vec<&Path> = Vec::new();
     for p in paths {
-        if gone.iter().any(|g| p.starts_with(g)) {
+        if gone.iter().chain(&blocked).any(|g| p.starts_with(g))
+            || unread.iter().any(|u| p.starts_with(u))
+        {
             continue;
         }
         match (l.get(p), r.get(p)) {
+            (Some(a), Some(b)) if a.link && b.link => continue,
+            // A copy would write through the link.
+            (Some(a), Some(b)) if a.link || b.link => {
+                conflicts.push(op(Kind::Conflict, a, None));
+                continue;
+            }
+            _ => {}
+        }
+        match (l.get(p), r.get(p)) {
             (Some(a), Some(b)) if a.is_dir != b.is_dir => {
-                conflicts.push(op(Kind::Conflict, a, None))
+                conflicts.push(op(Kind::Conflict, a, None));
+                blocked.push(p);
             }
-            (Some(a), Some(b)) if a.is_dir => {
-                let _ = b;
-            }
+            (Some(a), Some(_)) if a.is_dir => {}
             (Some(a), Some(b)) => {
                 if same(a, b) {
                     continue;
@@ -121,6 +143,7 @@ pub fn diff(local: &[Node], remote: &[Node], mode: Mode, mirror: bool) -> Vec<Op
                 }
             }
             (Some(a), None) => match mode {
+                Mode::Up | Mode::Both if a.link => {}
                 Mode::Up | Mode::Both if a.is_dir => dirs.push(op(Kind::MkdirRemote, a, None)),
                 Mode::Up | Mode::Both => copies.push(op(Kind::CopyUp, a, Some(Why::New))),
                 Mode::Down if mirror => {
@@ -132,6 +155,7 @@ pub fn diff(local: &[Node], remote: &[Node], mode: Mode, mirror: bool) -> Vec<Op
                 Mode::Down => {}
             },
             (None, Some(b)) => match mode {
+                Mode::Down | Mode::Both if b.link => {}
                 Mode::Down | Mode::Both if b.is_dir => dirs.push(op(Kind::MkdirLocal, b, None)),
                 Mode::Down | Mode::Both => copies.push(op(Kind::CopyDown, b, Some(Why::New))),
                 Mode::Up if mirror => {
@@ -166,21 +190,25 @@ pub fn totals(ops: &[Op]) -> (usize, u64, usize) {
 }
 
 /// The local tree under `root` (links are skipped, as in a copy; unreadable folders too).
-pub fn scan_local(root: &Path, recursive: bool) -> std::io::Result<Vec<Node>> {
-    let mut out = Vec::new();
-    scan_dir(root, Path::new(""), recursive, &mut out)?;
-    Ok(out)
+/// With the folders that could not be read.
+pub fn scan_local(root: &Path, recursive: bool) -> std::io::Result<(Vec<Node>, Vec<PathBuf>)> {
+    let (mut out, mut unread) = (Vec::new(), Vec::new());
+    scan_dir(root, Path::new(""), recursive, &mut out, &mut unread)?;
+    Ok((out, unread))
 }
 
-fn scan_dir(root: &Path, rel: &Path, recursive: bool, out: &mut Vec<Node>) -> std::io::Result<()> {
+fn scan_dir(
+    root: &Path,
+    rel: &Path,
+    recursive: bool,
+    out: &mut Vec<Node>,
+    unread: &mut Vec<PathBuf>,
+) -> std::io::Result<()> {
     for e in std::fs::read_dir(root.join(rel))? {
         let Ok(e) = e else { continue };
         let Ok(m) = std::fs::symlink_metadata(e.path()) else {
             continue;
         };
-        if m.file_type().is_symlink() {
-            continue;
-        }
         let rel = rel.join(e.file_name());
         let mtime = m
             .modified()
@@ -191,11 +219,14 @@ fn scan_dir(root: &Path, rel: &Path, recursive: bool, out: &mut Vec<Node>) -> st
             rel: rel.clone(),
             size: m.len(),
             mtime,
-            is_dir: m.is_dir(),
+            is_dir: m.is_dir() && !m.file_type().is_symlink(),
+            link: m.file_type().is_symlink(),
         });
-        if m.is_dir() && recursive {
-            // A folder that can't be read is left out, not a failure of everything.
-            let _ = scan_dir(root, &rel, recursive, out);
+        if m.is_dir() && !m.file_type().is_symlink() && recursive {
+            // A folder that can't be read is said to be so, not a failure of everything.
+            if scan_dir(root, &rel, recursive, out, unread).is_err() {
+                unread.push(rel);
+            }
         }
     }
     Ok(())
@@ -211,6 +242,7 @@ mod tests {
             size,
             mtime,
             is_dir: false,
+            link: false,
         }
     }
 
@@ -220,6 +252,7 @@ mod tests {
             size: 0,
             mtime: 0,
             is_dir: true,
+            link: false,
         }
     }
 
@@ -252,7 +285,7 @@ mod tests {
             f("older", 5, 99),
             f("extra", 1, 1),
         ];
-        let ops = diff(&l, &r, Mode::Up, false);
+        let ops = diff(&l, &r, Mode::Up, false, &[]);
         assert_eq!(
             kinds(&ops),
             [
@@ -269,7 +302,7 @@ mod tests {
     fn down_is_the_mirror_image() {
         let l = [f("a", 1, 10)];
         let r = [f("a", 1, 50), f("b", 7, 1)];
-        let ops = diff(&l, &r, Mode::Down, false);
+        let ops = diff(&l, &r, Mode::Down, false, &[]);
         assert_eq!(
             kinds(&ops),
             [
@@ -289,7 +322,7 @@ mod tests {
             f("old/y/z", 1, 1),
             f("loose", 1, 1),
         ];
-        let ops = diff(&l, &r, Mode::Up, true);
+        let ops = diff(&l, &r, Mode::Up, true, &[]);
         assert_eq!(
             kinds(&ops),
             [
@@ -299,10 +332,10 @@ mod tests {
         );
         assert_eq!(totals(&ops), (0, 0, 2));
         // not asked for: nothing goes
-        assert!(diff(&l, &r, Mode::Up, false).is_empty());
+        assert!(diff(&l, &r, Mode::Up, false, &[]).is_empty());
         // Both never deletes
         assert!(
-            kinds(&diff(&l, &r, Mode::Both, true))
+            kinds(&diff(&l, &r, Mode::Both, true, &[]))
                 .iter()
                 .all(|(k, ..)| !matches!(k, Kind::DeleteLocal | Kind::DeleteRemote))
         );
@@ -312,7 +345,7 @@ mod tests {
     fn both_ways_the_newer_wins() {
         let l = [f("l", 1, 10), f("x", 1, 100), f("y", 1, 5), f("t", 1, 10)];
         let r = [f("r", 1, 10), f("x", 1, 10), f("y", 1, 500), f("t", 2, 11)];
-        let ops = diff(&l, &r, Mode::Both, false);
+        let ops = diff(&l, &r, Mode::Both, false, &[]);
         assert_eq!(
             kinds(&ops),
             [
@@ -329,7 +362,7 @@ mod tests {
     fn folders_are_made_first_and_clashes_are_flagged() {
         let l = [d("sub"), f("sub/a", 1, 1), f("both", 1, 1)];
         let r = [d("both")];
-        let ops = diff(&l, &r, Mode::Up, false);
+        let ops = diff(&l, &r, Mode::Up, false, &[]);
         assert_eq!(
             kinds(&ops),
             [
@@ -338,12 +371,57 @@ mod tests {
                 (Kind::Conflict, "both", None),
             ]
         );
-        let down = diff(&[], &[d("e")], Mode::Down, false);
+        let down = diff(&[], &[d("e")], Mode::Down, false, &[]);
         assert_eq!(kinds(&down), [(Kind::MkdirLocal, "e", None)]);
     }
 
+    fn link(rel: &str) -> Node {
+        Node {
+            link: true,
+            ..f(rel, 1, 1)
+        }
+    }
+
     #[test]
-    fn scan_local_skips_links_and_can_stay_flat() {
+    fn regression_unread_folders_are_never_deleted_from() {
+        // `d` could not be read on the server: its local files are not "extra".
+        let l = [d("d"), f("d/a", 1, 1), f("x", 1, 1)];
+        let r = [d("d")];
+        let ops = diff(&l, &r, Mode::Down, true, &[PathBuf::from("d")]);
+        assert_eq!(kinds(&ops), [(Kind::DeleteLocal, "x", None)]);
+        assert!(
+            diff(&l, &r, Mode::Up, false, &[PathBuf::from("d")])
+                .iter()
+                .all(|o| !o.rel.starts_with("d/"))
+        );
+    }
+
+    #[test]
+    fn regression_links_are_never_written_through() {
+        // a link on one side, a file on the other: not touched; a lone link is not copied
+        let ops = diff(
+            &[link("cfg"), link("only")],
+            &[f("cfg", 1, 1)],
+            Mode::Down,
+            false,
+            &[],
+        );
+        assert_eq!(kinds(&ops), [(Kind::Conflict, "cfg", None)]);
+        assert!(diff(&[link("only")], &[], Mode::Up, false, &[]).is_empty());
+        assert!(diff(&[], &[link("only")], Mode::Down, false, &[]).is_empty());
+        assert!(diff(&[link("a")], &[link("a")], Mode::Both, false, &[]).is_empty());
+    }
+
+    #[test]
+    fn regression_inside_a_file_folder_clash_nothing_is_done() {
+        let l = [d("x"), f("x/a", 1, 1)];
+        let r = [f("x", 1, 1)];
+        let ops = diff(&l, &r, Mode::Up, false, &[]);
+        assert_eq!(kinds(&ops), [(Kind::Conflict, "x", None)]);
+    }
+
+    #[test]
+    fn scan_local_marks_links_and_can_stay_flat() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("a/b")).unwrap();
         std::fs::write(dir.path().join("a/b/f"), "xyz").unwrap();
@@ -351,15 +429,17 @@ mod tests {
         std::os::unix::fs::symlink(dir.path().join("top"), dir.path().join("ln")).unwrap();
         let mut deep: Vec<String> = scan_local(dir.path(), true)
             .unwrap()
+            .0
             .iter()
             .map(|n| n.rel.display().to_string())
             .collect();
         deep.sort();
-        assert_eq!(deep, ["a", "a/b", "a/b/f", "top"]);
-        let flat = scan_local(dir.path(), false).unwrap();
-        assert_eq!(flat.len(), 2);
+        assert_eq!(deep, ["a", "a/b", "a/b/f", "ln", "top"]);
+        let flat = scan_local(dir.path(), false).unwrap().0;
+        assert_eq!(flat.len(), 3);
         let f = scan_local(dir.path(), true)
             .unwrap()
+            .0
             .into_iter()
             .find(|n| n.rel == Path::new("a/b/f"))
             .unwrap();

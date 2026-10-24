@@ -10,7 +10,7 @@ use cosmic::Element;
 use cosmic::iced::Length;
 use cosmic::widget;
 use shagshell_core::panel::size_text;
-use shagshell_core::sftp::sync::{self, Kind, Mode, Node, Op, Why};
+use shagshell_core::sftp::sync::{self, Kind, Mode, Op, Why};
 use std::path::PathBuf;
 
 /// Rows of the preview shown (the rest are counted): a long list is slow to draw.
@@ -35,7 +35,11 @@ pub enum Phase {
     Preview,
 }
 
+static IDS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
 pub struct SyncState {
+    /// Which dialog a read of the trees was asked by (a cancelled dialog's answer is dropped).
+    pub id: u64,
     pub local: PathBuf,
     pub remote: PathBuf,
     mode: usize,
@@ -51,6 +55,7 @@ pub struct SyncState {
 impl SyncState {
     pub fn new(local: PathBuf, remote: PathBuf) -> Self {
         Self {
+            id: IDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             local,
             remote,
             mode: 0,
@@ -97,8 +102,8 @@ impl SyncState {
     }
 
     /// The trees came back: the list of what differs.
-    pub fn compared(&mut self, local: &[Node], remote: &[Node]) {
-        self.ops = sync::diff(local, remote, self.mode(), self.mirror);
+    pub fn compared(&mut self, s: &crate::sftp_worker::Scanned) {
+        self.ops = sync::diff(&s.local, &s.remote, self.mode(), self.mirror, &s.unread);
         self.checked = self.ops.iter().map(|o| o.kind != Kind::Conflict).collect();
         self.phase = Phase::Preview;
     }

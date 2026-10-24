@@ -210,6 +210,8 @@ pub struct SftpView {
     /// A sync's copy batches, and what is deleted once they are all done.
     sync_batches: Vec<u64>,
     sync_deletes: Vec<(shagshell_core::sftp::sync::Kind, PathBuf)>,
+    /// A copy of the sync failed or was cancelled: nothing is deleted.
+    sync_failed: bool,
 }
 
 /// A server's file opened in the local editor: sent back when it is saved.
@@ -265,6 +267,7 @@ impl SftpView {
             edit_batches: HashMap::new(),
             sync_batches: Vec::new(),
             sync_deletes: Vec::new(),
+            sync_failed: false,
         };
         for p in &mut v.panels {
             p.set_show_hidden(show_hidden);
@@ -636,6 +639,11 @@ impl SftpView {
             SftpMsg::Conflict(choice) => self.conflict(choice),
             SftpMsg::Cancel(id) => {
                 let asked = matches!(self.dialog, Some(Dialog::Conflict { job, .. }) if job == id);
+                if (self.queue.jobs().iter())
+                    .any(|j| j.id == id && self.sync_batches.contains(&j.batch))
+                {
+                    self.sync_failed = true;
+                }
                 if self.queue.cancel(id) {
                     match asked {
                         // Waiting for the «already exists» answer, the worker runs nothing:
@@ -728,13 +736,20 @@ impl SftpView {
                 self.paused = false;
                 self.pump();
             }
-            Event::Scanned(r) => {
-                if let Some(Dialog::Sync(s)) = &mut self.dialog {
+            Event::Scanned(id, r) => {
+                if let Some(Dialog::Sync(s)) = &mut self.dialog
+                    && s.id == id
+                {
                     match r {
-                        Ok((l, r)) => s.compared(&l, &r),
+                        Ok(scanned) => s.compared(&scanned),
                         Err(e) => s.failed(e),
                     }
                 }
+            }
+            Event::SyncDone(error) => {
+                self.status = Some(error.unwrap_or_else(|| fl!("sy-done")));
+                self.relist(LOCAL);
+                self.relist(REMOTE);
             }
             Event::Progress(id, n) => self.queue.progress(id, n),
             Event::Conflict(id, target) => {
@@ -762,6 +777,12 @@ impl SftpView {
             }
             Event::Finished(id, r) => {
                 let job = self.queue.jobs().iter().find(|j| j.id == id).cloned();
+                if r.is_err()
+                    && let Some(j) = &job
+                    && self.sync_batches.contains(&j.batch)
+                {
+                    self.sync_failed = true;
+                }
                 match r {
                     Ok(true) => self.queue.skip(id),
                     Ok(false) => self.queue.finish(id, Ok(())),
@@ -1104,6 +1125,7 @@ impl SftpView {
             SyncMsg::Compare if s.phase == Phase::Setup => {
                 s.phase = Phase::Scanning;
                 let cmd = Cmd::Scan {
+                    id: s.id,
                     local: s.local.clone(),
                     remote: s.remote.clone(),
                     recursive: s.recursive,
@@ -1166,6 +1188,7 @@ impl SftpView {
             }
         }
         self.sync_batches.clear();
+        self.sync_failed = false;
         for (dir, files) in [(Dir::Up, up), (Dir::Down, down)] {
             if files.is_empty() {
                 continue;
@@ -1197,39 +1220,34 @@ impl SftpView {
         if open {
             return;
         }
-        let failed = self.queue.jobs().iter().any(|j| {
-            self.sync_batches.contains(&j.batch)
-                && matches!(j.state, State::Failed(_) | State::Cancelled)
-        });
+        let failed = self.sync_failed
+            || self.queue.jobs().iter().any(|j| {
+                self.sync_batches.contains(&j.batch)
+                    && matches!(j.state, State::Failed(_) | State::Cancelled)
+            });
         self.sync_batches.clear();
+        self.sync_failed = false;
         let deletes = std::mem::take(&mut self.sync_deletes);
         if failed {
             self.status = Some(fl!("sy-failed"));
             return;
         }
         use shagshell_core::sftp::sync::Kind;
-        let remote: Vec<PathBuf> = (deletes.iter())
-            .filter(|(k, _)| *k == Kind::DeleteRemote)
-            .map(|(_, p)| p.clone())
-            .collect();
-        let mut said = false;
-        for (_, p) in deletes.iter().filter(|(k, _)| *k == Kind::DeleteLocal) {
-            let r = match std::fs::symlink_metadata(p) {
-                Ok(m) if m.is_dir() => std::fs::remove_dir_all(p),
-                _ => std::fs::remove_file(p),
-            };
-            if let Err(e) = r {
-                self.status = Some(format!("{}: {e}", p.display()));
-                said = true;
+        let pick = |k: Kind| -> Vec<PathBuf> {
+            (deletes.iter())
+                .filter(|(kind, _)| *kind == k)
+                .map(|(_, p)| p.clone())
+                .collect()
+        };
+        let (local, remote) = (pick(Kind::DeleteLocal), pick(Kind::DeleteRemote));
+        // Off the UI thread; the worker says when it is over.
+        match local.is_empty() && remote.is_empty() {
+            true => {
+                self.status = Some(fl!("sy-done"));
+                self.relist(LOCAL);
+                self.relist(REMOTE);
             }
-        }
-        if !remote.is_empty() {
-            self.send_browse(Cmd::Delete(remote));
-        }
-        self.relist(LOCAL);
-        self.relist(REMOTE);
-        if !said {
-            self.status = Some(fl!("sy-done"));
+            false => self.send_browse(Cmd::SyncDelete { local, remote }),
         }
     }
 

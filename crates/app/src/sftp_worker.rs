@@ -58,9 +58,16 @@ pub enum Cmd {
     },
     /// Synchronize Folders (browse worker): both trees as `Node`s.
     Scan {
+        id: u64,
         local: PathBuf,
         remote: PathBuf,
         recursive: bool,
+    },
+    /// Synchronize Folders, the deletes (browse worker): local files and server ones; the first
+    /// failure is said.
+    SyncDelete {
+        local: Vec<PathBuf>,
+        remote: Vec<PathBuf>,
     },
     /// Server folders to make (and their parents), in order (transfer worker).
     Mkdirs(Vec<PathBuf>),
@@ -91,13 +98,23 @@ pub enum Event {
         error: Option<String>,
     },
     /// The two trees of a sync, or why not.
-    Scanned(Result<(Vec<Node>, Vec<Node>), String>),
+    Scanned(u64, Result<Scanned, String>),
+    /// The deletes of a sync are over: the first failure.
+    SyncDone(Option<String>),
     Progress(u64, u64),
     /// The target exists: ask (then `Run` again with the answer). Its size, if known.
     Conflict(u64, Option<u64>),
     /// `Ok(true)`: skipped.
     Finished(u64, Result<bool, String>),
     Disconnected(String),
+}
+
+/// What a sync reads: both trees, and the folders that could not be read.
+#[derive(Clone, Debug)]
+pub struct Scanned {
+    pub local: Vec<Node>,
+    pub remote: Vec<Node>,
+    pub unread: Vec<PathBuf>,
 }
 
 /// A worker: dropping it ends its thread and its ssh.
@@ -291,6 +308,7 @@ fn handle(c: &mut Sftp, cmd: Cmd, send: &impl Fn(Event), cancel: &AtomicBool) ->
             send(Event::Changed(soft(r)?));
         }
         Cmd::Scan {
+            id,
             local,
             remote,
             recursive,
@@ -302,7 +320,41 @@ fn handle(c: &mut Sftp, cmd: Cmd, send: &impl Fn(Event), cancel: &AtomicBool) ->
                 Err(e) if ops::is_fatal(&e) => return Err(e),
                 Err(e) => Err(format!("{}: {e}", remote.display())),
             };
-            send(Event::Scanned(l.and_then(|l| r.map(|r| (l, r)))));
+            send(Event::Scanned(
+                id,
+                l.and_then(|(local, mut unread)| {
+                    r.map(|(remote, more)| {
+                        unread.extend(more);
+                        Scanned {
+                            local,
+                            remote,
+                            unread,
+                        }
+                    })
+                }),
+            ));
+        }
+        Cmd::SyncDelete { local, remote } => {
+            let mut first: Option<String> = None;
+            for p in &local {
+                let r = match std::fs::symlink_metadata(p) {
+                    Ok(m) if m.is_dir() => std::fs::remove_dir_all(p),
+                    _ => std::fs::remove_file(p),
+                };
+                if let Err(e) = r {
+                    first.get_or_insert(format!("{}: {e}", p.display()));
+                }
+            }
+            for p in &remote {
+                match ops::delete_remote(c, p) {
+                    Err(e) if ops::is_fatal(&e) => return Err(e),
+                    Err(e) => {
+                        first.get_or_insert(format!("{}: {e}", p.display()));
+                    }
+                    Ok(()) => {}
+                }
+            }
+            send(Event::SyncDone(first));
         }
         Cmd::Mkdirs(dirs) => {
             for d in dirs {

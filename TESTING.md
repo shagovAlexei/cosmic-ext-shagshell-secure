@@ -199,3 +199,6 @@
 | `sftp::ops::tests::regression_resume_refuses_a_different_older_file` | «Докачать» не дописывает новый файл к старому другому файлу того же имени: сверяется конец цели с тем же местом источника, иначе файл копируется заново |
 | `sftp::ops::tests::regression_skip_and_overwrite_need_no_stat` | «Пропустить» / «Перезаписать» работают и при битой ссылке-цели (stat нужен только «Только если новее» и «Докачать») |
 | `app::tests::regression_escape_in_a_secondary_window_is_seen` (app) | Esc в окне параметров / менеджера учётных данных закрывает его (сообщение сравнивалось не с тем типом) |
+| `sftp::sync::tests::regression_unread_folders_are_never_deleted_from` | папка, которую не удалось прочитать с одной стороны, не даёт «лишних» файлов для удаления на другой |
+| `sftp::sync::tests::regression_links_are_never_written_through` | синхронизация не пишет через символическую ссылку: файл против ссылки — «не трогается», одинокая ссылка не копируется |
+| `sftp::sync::tests::regression_inside_a_file_folder_clash_nothing_is_done` | внутри пары «файл / папка с одним именем» ничего не копируется |
