@@ -549,3 +549,4 @@ script-folder-title = Папка скриптов
 options-scripts = Скрипты
 options-scripts-folder = Папка скриптов (пусто: ~/.config/shagshell/scripts)
 options-startup-script = Скрипт при запуске, на локальной оболочке
+script-filter-all = Все файлы

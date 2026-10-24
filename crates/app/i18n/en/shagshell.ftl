@@ -548,3 +548,4 @@ script-folder-title = Scripts folder
 options-scripts = Scripts
 options-scripts-folder = Scripts folder (empty: ~/.config/shagshell/scripts)
 options-startup-script = Script at startup, on a local shell
+script-filter-all = All files

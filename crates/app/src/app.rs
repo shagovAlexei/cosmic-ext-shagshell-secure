@@ -612,8 +612,12 @@ impl App {
                     c.language != self.config.language,
                     c.app_theme != self.config.app_theme,
                 );
+                let folder = c.scripts_folder != self.config.scripts_folder;
                 self.config = c;
                 self.save_config();
+                if folder {
+                    self.refresh_scripts();
+                }
                 self.tabs.set_sftp_prefs(&self.config);
                 self.tabs.set_log_prefs(&self.config);
                 self.tabs
@@ -648,6 +652,7 @@ impl App {
             Message::RecordSaved(text, path) => {
                 if let Some(path) = path {
                     self.remember_script_dir(&path);
+                    self.refresh_scripts();
                     self.sessions.notice = Some(match std::fs::write(&path, text) {
                         Ok(()) => fl!("rec-saved", path = path.display().to_string()),
                         Err(e) => fl!("rec-failed", error = e.to_string()),
@@ -1418,6 +1423,7 @@ impl App {
     fn recent_files(&self) -> Vec<std::path::PathBuf> {
         (self.config.recent_scripts.iter())
             .map(std::path::PathBuf::from)
+            .filter(|p| p.is_file())
             .collect()
     }
 
@@ -1436,7 +1442,6 @@ impl App {
             self.config.script_dir = d.display().to_string();
             self.save_config();
         }
-        self.refresh_scripts();
     }
 
     /// A script picked or run from the menu: its folder is where the next chooser opens, and it

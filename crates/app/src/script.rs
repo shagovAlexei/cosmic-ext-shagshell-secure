@@ -1078,7 +1078,7 @@ mod portal {
     fn filters() -> [FileFilter; 2] {
         [
             FileFilter::new("Python").glob("*.py"),
-            FileFilter::new("*").glob("*"),
+            FileFilter::new(&crate::fl!("script-filter-all")).glob("*"),
         ]
     }
 
