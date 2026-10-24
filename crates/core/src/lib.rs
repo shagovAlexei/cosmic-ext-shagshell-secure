@@ -3,6 +3,7 @@ pub mod bookmarks;
 pub mod buttonbar;
 pub mod check;
 pub mod credentials;
+pub mod highlight;
 pub mod keyring;
 pub mod launch;
 pub mod logfile;

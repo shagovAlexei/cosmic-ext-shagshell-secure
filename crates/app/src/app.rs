@@ -51,6 +51,10 @@ pub struct App {
     /// View → Command Window.
     command: crate::command_window::CommandWindow,
     buttons: crate::button_bar::ButtonBar,
+    /// Keyword highlighting rules (`highlights.toml`); a file that could not be read is never
+    /// written over.
+    hl: shagshell_core::highlight::Rules,
+    hl_broken: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -76,6 +80,8 @@ pub enum Message {
     Sessions(SmMsg),
     CommandWindow(crate::command_window::CwMsg),
     ButtonBar(crate::button_bar::BbMsg),
+    /// Global Options: the keyword highlighting rules changed.
+    SetRules(shagshell_core::highlight::Rules),
     QuickConnect(QcMsg),
     SessionOptions(SoMsg),
     /// Keys and the pointer: acted on only when from the main window (not Session Options).
@@ -124,6 +130,15 @@ impl Application for App {
             shagshell_core::session::Store::new(shagshell_core::session::store::default_root());
         let sessions = SessionManager::new(store, &config.expanded, config.session_manager_width);
         let asks = crate::askpass::Asks::new(askpass_sock(&control_dir));
+        let hl_path = shagshell_core::highlight::default_path();
+        let (hl, hl_error) = match shagshell_core::highlight::Rules::load(&hl_path) {
+            Ok(r) => (r, None),
+            Err(e) => (
+                Default::default(),
+                Some(format!("{}: {e}", hl_path.display())),
+            ),
+        };
+        let hl_broken = hl_error.is_some();
         let mut tabs = Tabs::default();
         tabs.set_sftp_prefs(&config);
         tabs.set_log_prefs(&config);
@@ -143,9 +158,12 @@ impl Application for App {
             asks,
             command: crate::command_window::CommandWindow::new(),
             buttons: crate::button_bar::ButtonBar::new(),
+            hl,
+            hl_broken,
         };
         // A broken buttonbars.toml is said, and left alone.
-        app.sessions.notice = app.buttons.broken().map(String::from);
+        app.sessions.notice = app.buttons.broken().map(String::from).or(hl_error);
+        app.tabs.set_looks(&app.config, &app.hl, &look());
         (app, theme.unwrap_or_else(Task::none))
     }
 
@@ -251,7 +269,7 @@ impl Application for App {
     fn context_drawer(&self) -> Option<cosmic::app::context_drawer::ContextDrawer<'_, Message>> {
         match self.drawer? {
             Drawer::About => Some(about::view(&self.about)),
-            Drawer::Options => Some(options::view(&self.config, self.separate)),
+            Drawer::Options => Some(options::view(&self.config, self.separate, &self.hl)),
         }
     }
 
@@ -340,6 +358,7 @@ impl App {
                 self.save_config();
                 self.tabs.set_sftp_prefs(&self.config);
                 self.tabs.set_log_prefs(&self.config);
+                self.tabs.set_looks(&self.config, &self.hl, &look());
                 let mut tasks = Vec::new();
                 if lang {
                     crate::i18n::init(&config::languages(
@@ -448,6 +467,20 @@ impl App {
                 if opens && self.buttons.has_dialog() {
                     return widget::text_input::focus(self.buttons.first_field());
                 }
+            }
+            Message::SetRules(r) => {
+                self.hl = r;
+                match self.hl_broken {
+                    // Not written over a file that could not be read: said, every time.
+                    true => self.sessions.notice = Some(fl!("hl-broken")),
+                    false => {
+                        if let Err(e) = self.hl.save(&shagshell_core::highlight::default_path()) {
+                            self.sessions.notice = Some(e.to_string());
+                        }
+                    }
+                }
+                // Only the words changed: no need to restyle every terminal.
+                self.tabs.set_highlights(&self.config, &self.hl);
             }
             Message::Restyle => self.tabs.restyle(&look()),
             Message::Cosmic(a) => return cosmic::task::message(*a),
@@ -744,6 +777,7 @@ impl App {
                                 title: name,
                                 log: Some(log_spec(&s)),
                                 logon: logon_spec(&s, Some(id)),
+                                scheme: s.color_scheme.clone(),
                                 ..tabs::Launch::local_shell()
                             };
                             tasks.push(self.tabs.open(l, &look()));
@@ -1304,6 +1338,8 @@ impl App {
                 };
                 self.sessions.reload();
                 self.sessions_changed(&id, &new);
+                // A scheme chosen for the session shows in its open tabs at once.
+                self.tabs.restyle(&look());
                 if renamed {
                     self.sessions.select(&new);
                     let (from, to) = (id, new.clone());
@@ -1476,6 +1512,7 @@ fn ssh_launch(
         // An empty file name: no log on connect, the port and user still serve a log by hand.
         log: Some(log_spec(s)),
         logon: logon_spec(s, session),
+        scheme: s.color_scheme.clone(),
     })
 }
 
@@ -1546,6 +1583,7 @@ fn program_launch(
         log: Some(log_spec(s)),
         auto_reconnect: None,
         logon: logon_spec(s, id),
+        scheme: s.color_scheme.clone(),
     })
 }
 

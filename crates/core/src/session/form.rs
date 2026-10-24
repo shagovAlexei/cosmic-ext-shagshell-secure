@@ -41,6 +41,7 @@ pub struct Form {
     pub stop_bits: u8,
     pub flow: Flow,
     pub logon: Vec<crate::logon::Step>,
+    pub color_scheme: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -141,6 +142,7 @@ impl Form {
             stop_bits: s.serial.stop_bits.unwrap_or(1),
             flow: s.serial.flow,
             logon: s.logon.clone(),
+            color_scheme: s.color_scheme.clone(),
         }
     }
 
@@ -236,6 +238,7 @@ impl Form {
                 .filter(|s| !(s.expect.trim().is_empty() && s.send.is_empty()))
                 .cloned()
                 .collect(),
+            color_scheme: self.color_scheme.clone(),
             jump,
             forwards,
             reconnect: self.reconnect,

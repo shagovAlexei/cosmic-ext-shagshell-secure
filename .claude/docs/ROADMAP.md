@@ -13,7 +13,7 @@
 - [x] 6. ~~6a — Command Window (send to all)~~; ~~6b — Button Bar: именованные панели, Send String / Menu Function / Launch App, панель на сессию
 - [x] 7. Логирование сессий по шаблонам имён
 - [x] 8. ~~8a — jump host / port forwarding в UI, auto-reconnect~~; ~~8b — Telnet и Serial~~
-- [ ] 9. ~~9a — Logon Actions (expect/send)~~; 9b — keyword highlighting, color schemes; 9c — импорт из SecureCRT `.ini` (сессии, кнопки)
+- [ ] 9. ~~9a — Logon Actions (expect/send)~~; ~~9b — keyword highlighting, color schemes~~; 9c — импорт из SecureCRT `.ini` (сессии, кнопки)
 - [ ] 10. Скрипты на Python: модуль `crt` (API как в SecureCRT), меню Script, запуск с Button Bar / клавиши / logon script / `--script`
 
 ## Бэклог

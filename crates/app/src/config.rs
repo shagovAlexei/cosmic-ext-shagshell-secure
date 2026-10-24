@@ -103,6 +103,10 @@ pub struct Config {
     pub command_window_visible: bool,
     /// View → Button Bar.
     pub button_bar_visible: bool,
+    /// Terminal colour scheme: "" (the theme's), or a key of `terminal_theme::schemes`.
+    pub color_scheme: String,
+    /// Keyword highlighting on (the words are in `highlights.toml`).
+    pub highlight_enabled: bool,
     /// Where session logs go ("" = `~/ShagShellLogs`).
     pub log_dir: String,
     /// The log name when it is started by hand (File → Log Session).
@@ -140,6 +144,8 @@ impl Default for Config {
             app_theme: AppTheme::System,
             command_window_visible: false,
             button_bar_visible: true,
+            color_scheme: String::new(),
+            highlight_enabled: true,
             log_dir: String::new(),
             log_template: "%S_%Y-%M-%D_%h%m%s.log".into(),
             sftp_show_hidden: true,
