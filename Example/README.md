@@ -30,10 +30,13 @@ saved session (see `03_connect_saved_session.py`).
 | `08_send_to_all_tabs.py` | one command to every connected tab / команда во все вкладки |
 | `09_auto_responder.py` | answer known lines of the output (`WaitForStrings`) / автоответчик |
 | `10_comment_in_log.py` | a timestamped comment in the session log / комментарий в лог |
+| `12_dialogs_gallery.py` | every dialog: MessageBox flags, Prompt, List, file dialogs / все диалоги |
+| `13_pick_file_and_hosts.py` | choose a commands file and sessions from a list / выбор файла и сессий из списка |
 | `11_network_device.py` | `enable`, `terminal length 0`, `show run` → file (Cisco-like) / сетевое устройство |
 
 ## Differences from SecureCRT / Отличия от SecureCRT
 - `crt.Screen.Synchronous` and `IgnoreEscape` are always on / всегда включены.
 - `Session.Connect` accepts only `/S "saved session name"` / только `/S "имя сохранённой сессии"`.
 - Line ends: a terminal gets `\r` for Enter; `Screen.Get` joins rows with `\n` / `Screen.Get` соединяет строки `\n`.
+- Dialogs are windows of their own; `crt.Dialog.List` is ours (SecureCRT: Internet Explorer) / диалоги - отдельные окна; `crt.Dialog.List` - наш.
 - Only `python3` (no VBScript, JScript) / только Python.

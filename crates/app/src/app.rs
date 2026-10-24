@@ -353,6 +353,11 @@ impl Application for App {
         if let Some(o) = self.options.as_ref().filter(|o| o.window == id) {
             return o.view(focused);
         }
+        if self.scripts.win == Some(id)
+            && let Some(v) = self.scripts.window_view(focused)
+        {
+            return v;
+        }
         match self.creds_win.as_ref().filter(|c| c.window == id) {
             Some(c) => c.view(focused),
             None => widget::Space::new().into(),
@@ -361,7 +366,6 @@ impl Application for App {
 
     fn dialog(&self) -> Option<Element<'_, Message>> {
         (self.asks.dialog(|t| self.tabs.title(t)))
-            .or_else(|| self.scripts.dialog())
             .or_else(|| self.keys.as_ref().map(Keys::view))
             .or_else(|| self.commands.dialog())
             .or_else(|| self.keymap.as_ref().map(crate::keymap_editor::Editor::view))
@@ -519,10 +523,6 @@ impl App {
             Message::Sessions(SmMsg::Key(TreeKey::Clear)) if self.asks.active() => {
                 return self.update(Message::Ask(crate::askpass::AskMsg::Cancel));
             }
-            // A script's dialog is up: Enter (a message box) and Esc are its.
-            Message::EnterKey if self.scripts.active() => {
-                return self.script(crate::script::ScMsg::Ok);
-            }
             Message::Sessions(SmMsg::Key(TreeKey::Clear)) if self.keys.is_some() => {
                 return self.key_dialog(crate::keygen::KgMsg::Close);
             }
@@ -534,15 +534,9 @@ impl App {
                 });
             }
             Message::Sessions(SmMsg::Key(TreeKey::Clear))
-                if self.commands.has_dialog()
-                    && !self.asks.active()
-                    && !self.scripts.active()
-                    && self.keys.is_none() =>
+                if self.commands.has_dialog() && !self.asks.active() && self.keys.is_none() =>
             {
                 return self.command_manager(crate::command_manager::CmMsg::Cancel);
-            }
-            Message::Sessions(SmMsg::Key(TreeKey::Clear)) if self.scripts.active() => {
-                return self.script(crate::script::ScMsg::Cancel);
             }
             Message::EnterKey if self.sessions.focused => {
                 let ids = self.sessions.connect();
@@ -730,7 +724,19 @@ impl App {
                     return self.credentials(CwMsg::Close);
                 }
             }
+            // A script's dialog window: Enter (a message box) and Esc.
+            Message::Input(w, m) if self.scripts.win == Some(w) => {
+                if is_escape(&m) {
+                    return self.script(crate::script::ScMsg::Cancel);
+                }
+                if matches!(*m, Message::EnterKey) {
+                    return self.script(crate::script::ScMsg::Ok);
+                }
+            }
             Message::Input(..) => {}
+            Message::CloseRequested(w) if self.scripts.win == Some(w) => {
+                return self.script(crate::script::ScMsg::Cancel);
+            }
             Message::CloseRequested(w) if self.options.as_ref().is_some_and(|o| o.window == w) => {
                 return self.session_options(SoMsg::Cancel);
             }
@@ -1003,7 +1009,10 @@ impl App {
                     cosmic::Action::App(Message::Script(crate::script::ScMsg::Picked(p)))
                 });
             }
-            Action::CancelScript => self.scripts.cancel(),
+            Action::CancelScript => {
+                self.scripts.cancel();
+                return self.script_window();
+            }
             Action::CancelTransfer => self.tabs.cancel_transfer(),
             Action::Transfer(proto, send) => {
                 let dir = self.config.download_dir();
@@ -1069,6 +1078,12 @@ impl App {
         let Some(m) = m else {
             return Task::none();
         };
+        if matches!(m, crate::script::ScMsg::Drag) {
+            return self
+                .scripts
+                .win
+                .map_or_else(Task::none, cosmic::iced::window::drag);
+        }
         let out = self.scripts.update(m, &mut self.tabs);
         if out.notice.is_some() {
             self.sessions.notice = out.notice;
@@ -1094,12 +1109,45 @@ impl App {
                 })),
             }
         }
+        for (call, save) in out.files {
+            let reply = call.reply.clone();
+            tasks.push(Task::perform(
+                crate::script::Scripts::choose(call.args, save),
+                move |p| {
+                    cosmic::Action::App(Message::Script(crate::script::ScMsg::Chosen(
+                        reply.clone(),
+                        p,
+                    )))
+                },
+            ));
+        }
+        tasks.push(self.script_window());
         if let Some((name, reply)) = out.connect {
             // Their scripts do not run: a script that connects its own session would loop.
             tasks.push(self.open_sessions(&[name], false));
             reply.send(Ok(serde_json::Value::Null)); // the tab is there now
         }
         Task::batch(tasks)
+    }
+
+    /// The window of the script dialog that is up: opened with the first ask, gone with the last.
+    fn script_window(&mut self) -> Task<Message> {
+        match (self.scripts.active(), self.scripts.win) {
+            (true, None) => {
+                let (window, open) = cosmic::iced::window::open(self.scripts.settings());
+                self.scripts.win = Some(window);
+                let id = self.scripts.input_id.clone();
+                Task::batch([
+                    open.then(move |_| widget::text_input::focus(id.clone())),
+                    cosmic::ApplicationExt::set_window_title(self, fl!("script-title"), window),
+                ])
+            }
+            (false, Some(w)) => {
+                self.scripts.win = None;
+                cosmic::iced::window::close(w)
+            }
+            _ => Task::none(),
+        }
     }
 
     /// Tools → Keymap Editor…: the editor's messages; a change is saved and put in force.

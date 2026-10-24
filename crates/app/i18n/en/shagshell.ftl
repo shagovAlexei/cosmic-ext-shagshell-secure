@@ -360,6 +360,10 @@ sftp-go = Go
 
 ## Scripts
 script-title = Script
+script-retry = Retry
+script-abort = Abort
+script-ignore = Ignore
+script-list-filter = Filter
 script-pick = Run script
 script-running = Script running: { $name }
 script-done = Script finished: { $name }

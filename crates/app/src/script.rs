@@ -69,8 +69,15 @@ pub enum ScMsg {
     /// A session's script: on the tab it opened.
     StartOn(u64, PathBuf, Vec<String>),
     Input(String),
+    /// The window's header was dragged.
+    Drag,
     /// A button of a MessageBox (its SecureCRT result code).
     Button(i64),
+    /// A row of a List dialog, and its filter.
+    Pick(usize),
+    Filter(String),
+    /// A file chosen for `FileOpenDialog` / `FileSaveDialog` (`None`: given up).
+    Chosen(Reply, Option<String>),
     /// The clipboard's text, for a script that asked.
     Clip(Reply, String),
     Ok,
@@ -85,7 +92,69 @@ struct Run {
 /// A dialog a script asked for.
 struct Ask {
     call: Call,
+    /// Prompt: the text typed.
     value: String,
+    /// List: the rows chosen, and the filter typed.
+    picked: std::collections::BTreeSet<usize>,
+    filter: String,
+}
+
+impl Ask {
+    fn arg(&self, i: usize) -> &str {
+        self.call
+            .args
+            .get(i)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+    }
+
+    fn flags(&self) -> script::Flags {
+        script::Flags::parse(self.call.args.get(2).and_then(Value::as_i64).unwrap_or(0))
+    }
+
+    fn items(&self) -> Vec<String> {
+        let list = self.call.args.get(2).and_then(Value::as_array);
+        list.map(|l| {
+            l.iter()
+                .map(|v| v.as_str().unwrap_or_default().to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+    }
+
+    fn multi(&self) -> bool {
+        self.call.args.get(4).and_then(Value::as_bool) == Some(true)
+    }
+
+    /// What the script gets for OK / Enter (`None`: the dialog stays, nothing to give).
+    fn accept(&self) -> Value {
+        match self.call.call.as_str() {
+            "Dialog.Prompt" => json!(self.value),
+            "Dialog.List" => {
+                let items = self.items();
+                let pick = |i: &usize| items.get(*i).map(|s| json!(s));
+                match (self.multi(), self.picked.is_empty()) {
+                    (_, true) => Value::Null,
+                    (true, false) => json!(self.picked.iter().filter_map(pick).collect::<Vec<_>>()),
+                    (false, false) => self
+                        .picked
+                        .iter()
+                        .next()
+                        .and_then(pick)
+                        .unwrap_or(Value::Null),
+                }
+            }
+            _ => json!(self.flags().enter()),
+        }
+    }
+
+    /// What the script gets for Esc / the window closed.
+    fn dismiss(&self) -> Value {
+        match self.call.call.as_str() {
+            "Dialog.Prompt" | "Dialog.List" => Value::Null,
+            _ => json!(self.flags().escape()),
+        }
+    }
 }
 
 pub struct Scripts {
@@ -94,6 +163,8 @@ pub struct Scripts {
     taps: Taps,
     asks: VecDeque<Ask>,
     pub input_id: widget::Id,
+    /// The window of the dialog that is up.
+    pub win: Option<cosmic::iced::window::Id>,
     dir: PathBuf,
     tx: tokio::sync::mpsc::UnboundedSender<ScMsg>,
     rx: Arc<Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<ScMsg>>>>,
@@ -111,6 +182,8 @@ pub struct Outcome {
     pub connect: Option<(String, Reply)>,
     /// `Clipboard.Set` / `Clipboard.Get` of a script.
     pub clip: Vec<(Option<String>, Reply)>,
+    /// `FileOpenDialog` / `FileSaveDialog`: the chooser to show.
+    pub files: Vec<(Call, bool)>,
 }
 
 impl Scripts {
@@ -122,6 +195,7 @@ impl Scripts {
             taps,
             asks: VecDeque::new(),
             input_id: widget::Id::unique(),
+            win: None,
             dir,
             tx,
             rx: Arc::new(Mutex::new(Some(rx))),
@@ -130,6 +204,21 @@ impl Scripts {
 
     pub fn active(&self) -> bool {
         !self.asks.is_empty()
+    }
+
+    /// The window of the oldest ask (a list is taller).
+    pub fn settings(&self) -> cosmic::iced::window::Settings {
+        let list = self
+            .asks
+            .front()
+            .is_some_and(|a| a.call.call == "Dialog.List");
+        cosmic::iced::window::Settings {
+            size: cosmic::iced::Size::new(460.0, if list { 420.0 } else { 220.0 }),
+            min_size: Some(cosmic::iced::Size::new(360.0, 160.0)),
+            decorations: false,
+            exit_on_close_request: false,
+            ..Default::default()
+        }
     }
 
     /// Starts `script` on tab `tab`.
@@ -214,13 +303,31 @@ impl Scripts {
             ScMsg::Call(c) => match answer(&c, tabs) {
                 Some(a) => c.reply.send(a),
                 None => match c.call.as_str() {
-                    "Dialog.MessageBox" | "Dialog.Prompt" => {
-                        let value = (c.args.get(2))
-                            .and_then(Value::as_str)
-                            .unwrap_or_default()
-                            .to_string();
-                        self.asks.push_back(Ask { call: c, value });
+                    "Dialog.MessageBox" | "Dialog.Prompt" | "Dialog.List" => {
+                        let value = match c.call.as_str() {
+                            "Dialog.Prompt" => (c.args.get(2))
+                                .and_then(Value::as_str)
+                                .unwrap_or_default()
+                                .to_string(),
+                            _ => String::new(),
+                        };
+                        let mut picked = std::collections::BTreeSet::new();
+                        if c.call == "Dialog.List"
+                            && let Some(d) = c.args.get(3).and_then(Value::as_u64)
+                        {
+                            picked.insert(d as usize);
+                        }
+                        self.asks.push_back(Ask {
+                            call: c,
+                            value,
+                            picked,
+                            filter: String::new(),
+                        });
                         out.focus = true;
+                    }
+                    "Dialog.FileOpen" | "Dialog.FileSave" => {
+                        let save = c.call == "Dialog.FileSave";
+                        out.files.push((c, save));
                     }
                     "Clipboard.Set" => {
                         let text = c.args.first().and_then(Value::as_str).unwrap_or_default();
@@ -262,27 +369,36 @@ impl Scripts {
                     End::Failed(e) => fl!("script-failed", name = name, error = e),
                 });
             }
-            ScMsg::Picked(_) | ScMsg::Start(..) | ScMsg::StartOn(..) => {}
+            ScMsg::Picked(_) | ScMsg::Start(..) | ScMsg::StartOn(..) | ScMsg::Drag => {}
             ScMsg::Input(v) => {
                 if let Some(a) = self.asks.front_mut() {
                     a.value = v;
                 }
             }
             ScMsg::Clip(reply, text) => reply.send(Ok(json!(text))),
+            ScMsg::Chosen(reply, path) => reply.send(Ok(path.map_or(Value::Null, |p| json!(p)))),
+            ScMsg::Pick(i) => {
+                if let Some(a) = self.asks.front_mut() {
+                    match a.multi() {
+                        true if a.picked.remove(&i) => {}
+                        true => {
+                            a.picked.insert(i);
+                        }
+                        false => a.picked = [i].into(),
+                    }
+                }
+            }
+            ScMsg::Filter(f) => {
+                if let Some(a) = self.asks.front_mut() {
+                    a.filter = f;
+                }
+            }
             ScMsg::Ok | ScMsg::Cancel | ScMsg::Button(_) => {
                 if let Some(a) = self.asks.pop_front() {
-                    let ok = !matches!(msg, ScMsg::Cancel);
-                    let reply = match (a.call.call.as_str(), &msg) {
-                        ("Dialog.Prompt", _) if ok => json!(a.value),
-                        ("Dialog.Prompt", _) => Value::Null,
-                        (_, ScMsg::Button(id)) => json!(id),
-                        // Enter: the first button; Esc: Cancel / No, else the only one.
-                        _ => json!(match (buttons(&a.call), ok) {
-                            (_, true) => ID_FIRST[buttons(&a.call).min(5)],
-                            (1 | 3, false) => ID_CANCEL,
-                            (4, false) => ID_NO,
-                            _ => ID_OK,
-                        }),
+                    let reply = match &msg {
+                        ScMsg::Ok => a.accept(),
+                        ScMsg::Button(id) => json!(id),
+                        _ => a.dismiss(),
                     };
                     a.call.reply.send(Ok(reply));
                     out.refocus = self.asks.is_empty();
@@ -292,61 +408,163 @@ impl Scripts {
         out
     }
 
-    /// The dialog of the oldest ask.
-    pub fn dialog(&self) -> Option<Element<'_, Message>> {
+    /// The window of the oldest ask.
+    pub fn window_view(&self, focused: bool) -> Option<Element<'_, Message>> {
+        use cosmic::iced::Length;
         let a = self.asks.front()?;
-        let s = |i: usize| {
-            a.call
-                .args
-                .get(i)
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-        };
-        let title = match s(1) {
+        let m = Message::Script;
+        let title = match a.arg(1) {
             "" => fl!("script-title"),
             t => t.to_string(),
         };
-        let m = Message::Script;
-        let mut body = widget::column::with_capacity(2)
-            .spacing(10)
-            .push(widget::text::body(s(0).to_string()));
-        let prompt = a.call.call == "Dialog.Prompt";
-        if prompt {
-            let mut input = widget::text_input("", a.value.clone())
-                .id(self.input_id.clone())
-                .on_input(|v| Message::Script(ScMsg::Input(v)))
-                .on_submit(|_| Message::Script(ScMsg::Ok));
-            if a.call.args.get(3).and_then(Value::as_bool) == Some(true) {
-                input = input.password();
+        let btn = |label: String, id: i64, primary: bool| {
+            let b = match primary {
+                true => widget::button::suggested(label),
+                false => widget::button::standard(label),
+            };
+            b.on_press(m(ScMsg::Button(id)))
+        };
+        let mut body = widget::column::with_capacity(3).spacing(12);
+        let mut buttons = widget::row::with_capacity(4).spacing(8);
+        match a.call.call.as_str() {
+            "Dialog.Prompt" => {
+                let mut input = widget::text_input("", a.value.clone())
+                    .id(self.input_id.clone())
+                    .on_input(move |v| m(ScMsg::Input(v)))
+                    .on_submit(move |_| m(ScMsg::Ok));
+                if a.call.args.get(3).and_then(Value::as_bool) == Some(true) {
+                    input = input.password();
+                }
+                body = body
+                    .push(widget::text::body(a.arg(0).to_string()))
+                    .push(input);
+                buttons = buttons
+                    .push(widget::button::standard(fl!("cancel")).on_press(m(ScMsg::Cancel)))
+                    .push(widget::button::suggested(fl!("ok")).on_press(m(ScMsg::Ok)));
             }
-            body = body.push(input);
+            "Dialog.List" => {
+                let items = a.items();
+                let mut rows = widget::column::with_capacity(items.len()).spacing(4);
+                for i in script::list_matches(&items, &a.filter) {
+                    let b = match a.picked.contains(&i) {
+                        true => widget::button::suggested(items[i].clone()),
+                        false => widget::button::text(items[i].clone()),
+                    };
+                    rows = rows.push(b.width(Length::Fill).on_press(m(ScMsg::Pick(i))));
+                }
+                body = body
+                    .push(widget::text::body(a.arg(0).to_string()))
+                    .push(
+                        widget::text_input(fl!("script-list-filter"), a.filter.clone())
+                            .id(self.input_id.clone())
+                            .on_input(move |v| m(ScMsg::Filter(v)))
+                            .on_submit(move |_| m(ScMsg::Ok)),
+                    )
+                    .push(widget::scrollable(rows).height(Length::Fixed(220.0)));
+                buttons = buttons
+                    .push(widget::button::standard(fl!("cancel")).on_press(m(ScMsg::Cancel)))
+                    .push(widget::button::suggested(fl!("ok")).on_press(m(ScMsg::Ok)));
+            }
+            _ => {
+                let f = a.flags();
+                let icon = match f.icon {
+                    script::Icon::None => None,
+                    script::Icon::Stop => Some("dialog-error-symbolic"),
+                    script::Icon::Question => Some("dialog-question-symbolic"),
+                    script::Icon::Warning => Some("dialog-warning-symbolic"),
+                    script::Icon::Info => Some("dialog-information-symbolic"),
+                };
+                let mut line = widget::row::with_capacity(2).spacing(16);
+                if let Some(name) = icon {
+                    line = line.push(widget::icon::from_name(name).size(48));
+                }
+                body = body.push(line.push(widget::text::body(a.arg(0).to_string())));
+                let ids = f.ids();
+                let default = f.enter();
+                for id in ids {
+                    let label = match id {
+                        script::ID_OK => fl!("ok"),
+                        script::ID_CANCEL => fl!("cancel"),
+                        script::ID_YES => fl!("yes"),
+                        script::ID_NO => fl!("no"),
+                        script::ID_RETRY => fl!("script-retry"),
+                        script::ID_ABORT => fl!("script-abort"),
+                        _ => fl!("script-ignore"),
+                    };
+                    buttons = buttons.push(btn(label, id, id == default));
+                }
+            }
         }
-        let btn =
-            |label: String, id: i64| widget::button::standard(label).on_press(m(ScMsg::Button(id)));
-        let mut d = widget::dialog().title(title).control(body);
-        d = if prompt {
-            d.primary_action(widget::button::suggested(fl!("ok")).on_press(m(ScMsg::Ok)))
-                .secondary_action(
-                    widget::button::standard(fl!("cancel")).on_press(m(ScMsg::Cancel)),
-                )
-        } else {
-            let ok = widget::button::suggested(fl!("ok")).on_press(m(ScMsg::Button(ID_OK)));
-            let yes = widget::button::suggested(fl!("yes")).on_press(m(ScMsg::Button(ID_YES)));
-            match buttons(&a.call) {
-                1 => d
-                    .primary_action(ok)
-                    .secondary_action(btn(fl!("cancel"), ID_CANCEL)),
-                3 => d
-                    .primary_action(yes)
-                    .secondary_action(btn(fl!("no"), ID_NO))
-                    .tertiary_action(btn(fl!("cancel"), ID_CANCEL)),
-                4 => d
-                    .primary_action(yes)
-                    .secondary_action(btn(fl!("no"), ID_NO)),
-                _ => d.primary_action(ok),
+        let content = widget::column::with_children(vec![
+            widget::header_bar()
+                .title(title)
+                .on_close(m(ScMsg::Cancel))
+                .on_drag(m(ScMsg::Drag))
+                .focused(focused)
+                .into(),
+            widget::container(
+                widget::column::with_children(vec![
+                    body.into(),
+                    widget::container(buttons)
+                        .width(Length::Fill)
+                        .align_x(cosmic::iced::alignment::Horizontal::Right)
+                        .into(),
+                ])
+                .spacing(16),
+            )
+            .padding(16)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into(),
+        ]);
+        // A window of our own gets no background from libcosmic: without one it is see-through.
+        Some(
+            widget::container(content)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .class(cosmic::theme::Container::WindowBackground)
+                .into(),
+        )
+    }
+
+    /// A script's file chooser (`FileOpenDialog` / `FileSaveDialog`): the path, or `None`.
+    pub async fn choose(args: Vec<Value>, save: bool) -> Option<String> {
+        use cosmic::dialog::file_chooser::{FileFilter, open, save as sv};
+        let s = |i: usize| {
+            args.get(i)
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string()
+        };
+        let (title, label) = (s(0), s(1));
+        let filters = script::file_filters(&s(3));
+        let filter = |(d, exts): &(String, Vec<String>)| {
+            exts.iter()
+                .fold(FileFilter::new(d), |f, e| f.glob(&format!("*.{e}")))
+        };
+        let url = match save {
+            true => {
+                let mut d = sv::Dialog::new().title(title);
+                if !label.is_empty() {
+                    d = d.accept_label(label);
+                }
+                for f in filters.iter().filter(|f| !f.1.is_empty()) {
+                    d = d.filter(filter(f));
+                }
+                d.save_file().await.ok()?.url()?.clone()
+            }
+            false => {
+                let mut d = open::Dialog::new().title(title);
+                if !label.is_empty() {
+                    d = d.accept_label(label);
+                }
+                for f in filters.iter().filter(|f| !f.1.is_empty()) {
+                    d = d.filter(filter(f));
+                }
+                d.open_file().await.ok()?.url().clone()
             }
         };
-        Some(d.into())
+        url.to_file_path().ok().map(|p| p.display().to_string())
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
@@ -439,22 +657,6 @@ fn answer(c: &Call, tabs: &mut Tabs) -> Option<Answer> {
         }),
         _ => return None,
     })
-}
-
-/// SecureCRT's results of a MessageBox.
-const ID_OK: i64 = 1;
-const ID_CANCEL: i64 = 2;
-const ID_YES: i64 = 6;
-const ID_NO: i64 = 7;
-/// The result of Enter for each `BUTTON_*` code (0 OK, 1 OK/Cancel, 2 –, 3 Yes/No/Cancel, 4 Yes/No, 5 –).
-const ID_FIRST: [i64; 6] = [ID_OK, ID_OK, ID_OK, ID_YES, ID_YES, ID_OK];
-
-/// The `BUTTON_*` code of a MessageBox call.
-fn buttons(c: &Call) -> usize {
-    c.args
-        .get(2)
-        .and_then(Value::as_u64)
-        .map_or(0, |n| n as usize)
 }
 
 fn screen(tabs: &Tabs, id: u64) -> Result<crate::term::Screen, String> {
