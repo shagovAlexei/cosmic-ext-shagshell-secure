@@ -13,10 +13,9 @@ See [ROADMAP](.claude/docs/ROADMAP.md) and [architecture](.claude/docs/specs/00-
 
 ## Install
 
-Download the latest release into a fresh folder, check it and install — copy the whole block, it needs nothing else (the files are fetched from this repository only):
+Download the latest release into the current folder, check it and install — copy the whole block, it needs nothing else (the files are fetched from this repository only):
 
 ```sh
-cd "$(mktemp -d)"
 B=https://github.com/shagovAlexei/cosmic-ext-shagshell-secure/releases/latest/download
 curl -fLO $B/SHA256SUMS
 curl -fLO $B/$(awk '{print $2}' SHA256SUMS)
