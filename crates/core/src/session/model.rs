@@ -20,6 +20,9 @@ pub struct Session {
     /// More ssh options, split as a shell would.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub extra: String,
+    /// A credential set (`credentials.toml`): its user and password instead of the session's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub credential: Option<String>,
     /// Fields this version doesn't know, written back unchanged.
     #[serde(flatten)]
     pub rest: toml::Table,

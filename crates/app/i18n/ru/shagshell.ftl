@@ -131,3 +131,28 @@ ask-keyring-failed = Keyring: { $error }
 ask-accept = Принять и сохранить
 so-saved = Пароль сохранён в keyring
 so-forget = Забыть
+ask-save-to = Сохранить пароль в «{ $set }»
+
+# Credentials Manager
+menu-credentials = Учётные данные…
+cw-title = Учётные данные
+cw-new-title = Новый набор
+cw-name = Имя
+cw-password = Пароль
+cw-password-saved = (сохранён — введите, чтобы сменить)
+cw-password-none = (не задан)
+cw-save = Сохранить
+cw-add = Новый
+cw-delete-confirm = { $count ->
+    [0] Не используется ни в одной сессии
+    [one] Используется в { $count } сессии: она сохранит логин и будет спрашивать пароль
+   *[other] Используется в { $count } сессиях: они сохранят логин и будут спрашивать пароль
+}
+so-credential = Учётные данные
+so-credential-none = (нет)
+options-passwords = Пароли
+options-master = Хранить пароли в отдельной связке с мастер-паролем
+options-master-hint = Отдельная связка keyring «ShagShell Secure»: её пароль спрашивается при первом обращении после входа. Сохранённые пароли переносятся туда и обратно.
+options-credentials = Учётные данные: наборы «логин + пароль»
+options-open = Открыть…
+credentials-broken = Не читается credentials.toml: исправьте или удалите его, чтобы подключить эту сессию

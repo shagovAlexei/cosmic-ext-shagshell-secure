@@ -24,15 +24,44 @@ impl Secret {
     }
 }
 
-/// What a session's secret is filed under.
-pub fn attrs(session: &str, s: Secret) -> Vec<(&'static str, String)> {
+/// Whose secret: a session's (by id) or a credential set's (by name).
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Owner {
+    Session(String),
+    Credential(String),
+}
+
+impl Owner {
+    fn kind(&self) -> &'static str {
+        match self {
+            Owner::Session(_) => "session",
+            Owner::Credential(_) => "credential",
+        }
+    }
+
+    fn id(&self) -> &str {
+        match self {
+            Owner::Session(id) | Owner::Credential(id) => id,
+        }
+    }
+
+    fn label(&self, s: Secret) -> String {
+        format!("ShagShell Secure: {} ({})", self.id(), s.name())
+    }
+}
+
+/// What a secret is filed under.
+pub fn attrs(owner: &Owner, s: Secret) -> Vec<(&'static str, String)> {
     vec![
         ("app", APP.to_string()),
-        ("kind", "session".to_string()),
-        ("id", session.to_string()),
+        ("kind", owner.kind().to_string()),
+        ("id", owner.id().to_string()),
         ("secret", s.name().to_string()),
     ]
 }
+
+/// The keyring of its own (the master password) is the one with this label.
+const COLLECTION: &str = "ShagShell Secure";
 
 fn map<'a>(attrs: &'a [(&'static str, String)]) -> HashMap<&'static str, &'a str> {
     attrs.iter().map(|(k, v)| (*k, v.as_str())).collect()
@@ -132,19 +161,49 @@ impl Service {
         attrs: &[(&'static str, String)],
         value: &str,
     ) -> zbus::Result<()> {
-        let collection: OwnedObjectPath = self.service()?.call("ReadAlias", &("default",))?;
-        if collection.as_str() == "/" {
-            return Err(zbus::Error::Failure("no default keyring".into()));
+        let collection = self.target()?;
+        self.create(&collection, label, map(attrs), value)
+    }
+
+    /// Where new secrets go: our own keyring if there is one, else the default one.
+    fn target(&self) -> zbus::Result<OwnedObjectPath> {
+        if let Some(c) = self.own()? {
+            return Ok(c);
         }
+        let collection: OwnedObjectPath = self.service()?.call("ReadAlias", &("default",))?;
+        match collection.as_str() {
+            "/" => Err(zbus::Error::Failure("no default keyring".into())),
+            _ => Ok(collection),
+        }
+    }
+
+    /// Our own keyring (the master password), if made.
+    fn own(&self) -> zbus::Result<Option<OwnedObjectPath>> {
+        let all: Vec<OwnedObjectPath> = self.service()?.get_property("Collections")?;
+        for c in all {
+            let label: String = self
+                .proxy(c.as_str(), "org.freedesktop.Secret.Collection")?
+                .get_property("Label")?;
+            if label == COLLECTION {
+                return Ok(Some(c));
+            }
+        }
+        Ok(None)
+    }
+
+    fn create(
+        &self,
+        collection: &OwnedObjectPath,
+        label: &str,
+        attrs: HashMap<&str, &str>,
+        value: &str,
+    ) -> zbus::Result<()> {
         let (_, prompt): (Vec<OwnedObjectPath>, OwnedObjectPath) =
-            self.service()?.call("Unlock", &(vec![&collection],))?;
+            self.service()?.call("Unlock", &(vec![collection],))?;
         answer(&self.conn, &prompt)?;
         let props = HashMap::from([
             ("org.freedesktop.Secret.Item.Label", Value::from(label)),
-            (
-                "org.freedesktop.Secret.Item.Attributes",
-                Value::from(map(attrs)),
-            ),
+            ("org.freedesktop.Secret.Item.Attributes", Value::from(attrs)),
         ]);
         let secret = (
             &self.session,
@@ -185,19 +244,19 @@ pub fn available() -> bool {
 }
 
 /// The saved secret, if any.
-pub fn lookup(session: &str, s: Secret) -> zbus::Result<Option<String>> {
+pub fn lookup(owner: &Owner, s: Secret) -> zbus::Result<Option<String>> {
     let svc = Service::open()?;
-    match svc.search(&attrs(session, s))?.first() {
+    match svc.search(&attrs(owner, s))?.first() {
         Some(item) => svc.secret(item).map(Some),
         None => Ok(None),
     }
 }
 
-/// The session has a password or passphrase saved (no unlock asked).
-pub fn exists(session: &str) -> zbus::Result<bool> {
+/// A password or passphrase is saved (no unlock asked).
+pub fn exists(owner: &Owner) -> zbus::Result<bool> {
     let svc = Service::open()?;
     for s in [Secret::Password, Secret::Passphrase] {
-        if !svc.find(&attrs(session, s))?.is_empty() {
+        if !svc.find(&attrs(owner, s))?.is_empty() {
             return Ok(true);
         }
     }
@@ -205,15 +264,90 @@ pub fn exists(session: &str) -> zbus::Result<bool> {
 }
 
 /// Save it, replacing the one saved before.
-pub fn store(session: &str, s: Secret, value: &str) -> zbus::Result<()> {
-    let label = format!("ShagShell Secure: {session} ({})", s.name());
-    Service::open()?.store(&label, &attrs(session, s), value)
+pub fn store(owner: &Owner, s: Secret, value: &str) -> zbus::Result<()> {
+    Service::open()?.store(&owner.label(s), &attrs(owner, s), value)
 }
 
-pub fn delete(session: &str, s: Secret) -> zbus::Result<()> {
+pub fn delete(owner: &Owner, s: Secret) -> zbus::Result<()> {
     let svc = Service::open()?;
-    for item in svc.search(&attrs(session, s))? {
+    for item in svc.search(&attrs(owner, s))? {
         svc.delete(&item)?;
+    }
+    Ok(())
+}
+
+/// A credential set renamed: its secrets filed under the new name.
+pub fn rename(from: &Owner, to: &Owner) -> zbus::Result<()> {
+    let svc = Service::open()?;
+    for s in [Secret::Password, Secret::Passphrase] {
+        for item in svc.search(&attrs(from, s))? {
+            let value = svc.secret(&item)?;
+            svc.store(&to.label(s), &attrs(to, s), &value)?;
+            svc.delete(&item)?;
+        }
+    }
+    Ok(())
+}
+
+/// Passwords kept in a keyring of our own, with its own password (the master password).
+pub fn separate() -> zbus::Result<bool> {
+    Ok(Service::open()?.own()?.is_some())
+}
+
+/// Make our own keyring (gnome-keyring asks for its password) and move our secrets into it; or
+/// move them back into the default keyring and delete ours.
+pub fn set_separate(on: bool) -> zbus::Result<()> {
+    let svc = Service::open()?;
+    let own = svc.own()?;
+    let (from, to) = match (on, own) {
+        (true, Some(_)) | (false, None) => return Ok(()),
+        (true, None) => {
+            let props = HashMap::from([(
+                "org.freedesktop.Secret.Collection.Label",
+                Value::from(COLLECTION),
+            )]);
+            let (made, prompt): (OwnedObjectPath, OwnedObjectPath) =
+                svc.service()?.call("CreateCollection", &(props, ""))?;
+            let made = match made.as_str() {
+                "/" => answer_value(&svc.conn, &prompt)?
+                    .and_then(|v| OwnedObjectPath::try_from(v).ok())
+                    .ok_or_else(|| zbus::Error::Failure("no keyring made".into()))?,
+                _ => made,
+            };
+            (None, made)
+        }
+        (false, Some(own)) => {
+            let default: OwnedObjectPath = svc.service()?.call("ReadAlias", &("default",))?;
+            if default.as_str() == "/" {
+                return Err(zbus::Error::Failure("no default keyring".into()));
+            }
+            (Some(own), default)
+        }
+    };
+    let prefix = format!("{}/", to.as_str());
+    let ours = svc.find(&[("app", APP.to_string())])?;
+    let moving: Vec<_> = ours
+        .into_iter()
+        .filter(|i| !i.as_str().starts_with(&prefix))
+        .collect();
+    svc.unlock(&moving)?;
+    for item in moving {
+        let p = svc.proxy(item.as_str(), "org.freedesktop.Secret.Item")?;
+        let attrs: HashMap<String, String> = p.get_property("Attributes")?;
+        let label: String = p.get_property("Label")?;
+        let value = svc.secret(&item)?;
+        let a = attrs
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+        svc.create(&to, &label, a, &value)?;
+        svc.delete(&item)?;
+    }
+    if let Some(own) = from {
+        let prompt: OwnedObjectPath = svc
+            .proxy(own.as_str(), "org.freedesktop.Secret.Collection")?
+            .call("Delete", &())?;
+        answer(&svc.conn, &prompt)?;
     }
     Ok(())
 }
@@ -225,8 +359,8 @@ pub fn retarget(old: &str, new: &str) -> zbus::Result<()> {
         svc.ours(|id, _| crate::session::store::retarget(id, old, new).filter(|to| to != id))?;
     for (item, s, to) in moving {
         let value = svc.secret(&item)?;
-        let label = format!("ShagShell Secure: {to} ({})", s.name());
-        svc.store(&label, &attrs(&to, s), &value)?;
+        let to = Owner::Session(to);
+        svc.store(&to.label(s), &attrs(&to, s), &value)?;
         svc.delete(&item)?;
     }
     Ok(())
@@ -243,8 +377,13 @@ pub fn forget_under(id: &str) -> zbus::Result<()> {
 
 /// A keyring prompt (unlock, delete): shown, and waited for. `/`: none needed.
 fn answer(conn: &Connection, prompt: &OwnedObjectPath) -> zbus::Result<()> {
+    answer_value(conn, prompt).map(drop)
+}
+
+/// `answer`, with what the prompt gives back (CreateCollection: the new keyring).
+fn answer_value(conn: &Connection, prompt: &OwnedObjectPath) -> zbus::Result<Option<OwnedValue>> {
     if prompt.as_str() == "/" {
-        return Ok(());
+        return Ok(None);
     }
     let p = Proxy::new(conn, DEST, prompt.as_str(), "org.freedesktop.Secret.Prompt")?;
     let mut done = p.receive_signal("Completed")?;
@@ -252,10 +391,10 @@ fn answer(conn: &Connection, prompt: &OwnedObjectPath) -> zbus::Result<()> {
     let msg = done
         .next()
         .ok_or_else(|| zbus::Error::Failure("no answer".into()))?;
-    let (dismissed, _): (bool, OwnedValue) = msg.body().deserialize()?;
+    let (dismissed, result): (bool, OwnedValue) = msg.body().deserialize()?;
     match dismissed {
         true => Err(zbus::Error::Failure("dismissed".into())),
-        false => Ok(()),
+        false => Ok(Some(result)),
     }
 }
 
@@ -269,25 +408,64 @@ mod tests {
     #[ignore]
     fn live_round_trip() {
         let id = "zz-shagshell-test/probe";
-        store(id, Secret::Password, "p1").unwrap();
-        store(id, Secret::Password, "p2").unwrap(); // replaces
-        assert_eq!(lookup(id, Secret::Password).unwrap().as_deref(), Some("p2"));
-        assert_eq!(lookup(id, Secret::Passphrase).unwrap(), None);
+        let o = Owner::Session(id.into());
+        store(&o, Secret::Password, "p1").unwrap();
+        store(&o, Secret::Password, "p2").unwrap(); // replaces
+        assert_eq!(lookup(&o, Secret::Password).unwrap().as_deref(), Some("p2"));
+        assert_eq!(lookup(&o, Secret::Passphrase).unwrap(), None);
         retarget("zz-shagshell-test", "zz-shagshell-test2").unwrap();
-        assert_eq!(lookup(id, Secret::Password).unwrap(), None);
-        let moved = "zz-shagshell-test2/probe";
+        assert_eq!(lookup(&o, Secret::Password).unwrap(), None);
+        let moved = Owner::Session("zz-shagshell-test2/probe".into());
         assert_eq!(
-            lookup(moved, Secret::Password).unwrap().as_deref(),
+            lookup(&moved, Secret::Password).unwrap().as_deref(),
             Some("p2")
         );
-        assert!(exists(moved).unwrap() && !exists(id).unwrap());
+        assert!(exists(&moved).unwrap() && !exists(&o).unwrap());
         forget_under("zz-shagshell-test2").unwrap();
-        assert_eq!(lookup(moved, Secret::Password).unwrap(), None);
+        assert_eq!(lookup(&moved, Secret::Password).unwrap(), None);
+        // A credential set: same id as a session, a different secret; renamed.
+        let c = Owner::Credential("zz-shagshell-test2/probe".into());
+        store(&c, Secret::Password, "c1").unwrap();
+        assert_eq!(lookup(&moved, Secret::Password).unwrap(), None);
+        let c2 = Owner::Credential("zz-shagshell-test-renamed".into());
+        rename(&c, &c2).unwrap();
+        assert_eq!(
+            lookup(&c2, Secret::Password).unwrap().as_deref(),
+            Some("c1")
+        );
+        assert!(!exists(&c).unwrap());
+        delete(&c2, Secret::Password).unwrap();
+        assert!(!exists(&c2).unwrap());
+    }
+
+    /// Our own keyring (the master password). Only on a throwaway bus: its prompt asks for a new
+    /// password — `dbus-run-session` + `gnome-keyring-daemon`, the prompter on a headless display.
+    #[test]
+    #[ignore]
+    fn live_separate() {
+        let o = Owner::Session("zz-shagshell-test/sep".into());
+        store(&o, Secret::Password, "p").unwrap();
+        assert!(!separate().unwrap());
+        set_separate(true).unwrap();
+        assert!(separate().unwrap());
+        assert_eq!(lookup(&o, Secret::Password).unwrap().as_deref(), Some("p"));
+        let svc = Service::open().unwrap();
+        let own = svc.own().unwrap().unwrap();
+        let items = svc.find(&attrs(&o, Secret::Password)).unwrap();
+        assert!(
+            items.iter().all(|i| i.as_str().starts_with(own.as_str())),
+            "{items:?}"
+        );
+        drop(svc);
+        set_separate(false).unwrap();
+        assert!(!separate().unwrap());
+        assert_eq!(lookup(&o, Secret::Password).unwrap().as_deref(), Some("p"));
+        delete(&o, Secret::Password).unwrap();
     }
 
     #[test]
     fn attrs_schema() {
-        let a = attrs("lab/web", Secret::Passphrase);
+        let a = attrs(&Owner::Session("lab/web".into()), Secret::Passphrase);
         let got: Vec<(&str, &str)> = a.iter().map(|(k, v)| (*k, v.as_str())).collect();
         assert_eq!(
             got,
@@ -298,5 +476,7 @@ mod tests {
                 ("secret", "passphrase"),
             ]
         );
+        let c = attrs(&Owner::Credential("adm".into()), Secret::Password);
+        assert_eq!((c[1].1.as_str(), c[2].1.as_str()), ("credential", "adm"));
     }
 }

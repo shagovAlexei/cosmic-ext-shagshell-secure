@@ -41,7 +41,12 @@ pub fn ssh_argv(s: &Session, control_dir: &Path, home: &Path) -> Result<Vec<Stri
 
 /// ssh's environment: every prompt to our askpass (`exe`), which asks the app over `sock`.
 /// `session`: the saved session (its keyring entries); the tab id is added by the tab.
-pub fn askpass_env(exe: &Path, sock: &Path, session: Option<&str>) -> Vec<(String, String)> {
+pub fn askpass_env(
+    exe: &Path,
+    sock: &Path,
+    session: Option<&str>,
+    credential: Option<&str>,
+) -> Vec<(String, String)> {
     let mut env = vec![
         ("SSH_ASKPASS".into(), exe.display().to_string()),
         ("SSH_ASKPASS_REQUIRE".into(), "force".into()),
@@ -49,6 +54,9 @@ pub fn askpass_env(exe: &Path, sock: &Path, session: Option<&str>) -> Vec<(Strin
     ];
     if let Some(s) = session {
         env.push(("SHAGSHELL_SESSION".into(), s.to_string()));
+    }
+    if let Some(c) = credential {
+        env.push(("SHAGSHELL_CREDENTIAL".into(), c.to_string()));
     }
     env
 }
@@ -87,6 +95,7 @@ mod tests {
             Path::new("/usr/bin/shagshell"),
             Path::new("/r/a.sock"),
             Some("lab/w"),
+            Some("adm"),
         );
         let got: Vec<(&str, &str)> = env.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
         assert_eq!(
@@ -96,9 +105,13 @@ mod tests {
                 ("SSH_ASKPASS_REQUIRE", "force"),
                 ("SHAGSHELL_ASKPASS_SOCK", "/r/a.sock"),
                 ("SHAGSHELL_SESSION", "lab/w"),
+                ("SHAGSHELL_CREDENTIAL", "adm"),
             ]
         );
-        assert_eq!(askpass_env(Path::new("x"), Path::new("y"), None).len(), 3);
+        assert_eq!(
+            askpass_env(Path::new("x"), Path::new("y"), None, None).len(),
+            3
+        );
     }
 
     fn s(host: &str) -> Session {

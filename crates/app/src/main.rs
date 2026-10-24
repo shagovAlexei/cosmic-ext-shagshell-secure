@@ -2,6 +2,7 @@ mod about;
 mod app;
 mod askpass;
 mod config;
+mod credentials_window;
 mod i18n;
 mod menu;
 mod options;

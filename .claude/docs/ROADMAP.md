@@ -8,7 +8,7 @@
 - [x] 1. Каркас: workspace, пустое окно libcosmic, justfile, CI, i18n en/ru, `.desktop`, metainfo, иконка
 - [x] 2. Терминал: вкладка локального shell, вкладки + `pane_grid` (tab groups)
 - [x] 3. Сессии: 3a — модель + хранилище, Session Manager, Quick Connect, запуск ssh, импорт ~/.ssh/config; 3b — окно Session Options
-- [ ] 4. Аутентификация: ~~4a — askpass, keyring, диалоги пароля / host key~~; 4b — Credentials Manager
+- [x] 4. Аутентификация: 4a — askpass, keyring, диалоги пароля / host key; 4b — Credentials Manager, мастер-пароль (своя связка keyring)
 - [ ] 5. SFTP: двухпанельная вкладка + очередь передач (drag-drop, докачка, правила перезаписи)
 - [ ] 6. Command Window (send to all) и Button Bar: именованные панели, Send String / Menu Function / Launch App, панель на сессию
 - [ ] 7. Логирование сессий по шаблонам имён
@@ -18,7 +18,6 @@
 
 ## Бэклог
 
-- Мастер-пароль / свой зашифрованный сейф
 - Flatpak
 - Генерация ключей в UI (обёртка над `ssh-keygen`), загрузка ключа на сервер (`ssh-copy-id`)
 - Редактирование удалённого файла локально (SecureFX «Edit»)

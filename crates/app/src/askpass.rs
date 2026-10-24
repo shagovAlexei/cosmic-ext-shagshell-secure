@@ -8,7 +8,7 @@ use cosmic::Element;
 use cosmic::iced::{Subscription, futures::SinkExt};
 use cosmic::widget;
 use shagshell_core::askpass::{self, Kind, Reply, Request};
-use shagshell_core::keyring::Secret;
+use shagshell_core::keyring::{Owner, Secret};
 use std::collections::VecDeque;
 use std::io::BufReader;
 use std::path::PathBuf;
@@ -52,8 +52,8 @@ pub struct Incoming {
 #[derive(Clone, Debug)]
 pub enum AskMsg {
     Incoming(Incoming),
-    /// The keyring looked up for a prompt: the secret, none, or why it failed.
-    Saved(Incoming, Result<Option<Hidden>, String>),
+    /// The keyring looked up for a prompt (its owner): the secret, none, or why it failed.
+    Saved(Incoming, Owner, Result<Option<Hidden>, String>),
     Input(Hidden),
     Save(bool),
     Ok,
@@ -69,7 +69,9 @@ struct Pending {
     retry: bool,
     value: String,
     save: bool,
-    /// Can't be saved: no saved session, not a secret, or the keyring failed (why).
+    /// Whose saved secret it is (`askpass::owner`).
+    owner: Option<Owner>,
+    /// Can't be saved: no owner, or the keyring failed (why).
     no_save: Option<String>,
 }
 
@@ -86,11 +88,11 @@ pub struct Asks {
 #[derive(Default)]
 pub struct Outcome {
     /// Look the secret up off the UI thread, then `AskMsg::Saved`.
-    pub lookup: Option<(Incoming, String, Secret)>,
-    /// Save it off the UI thread (session, kind, secret), then `AskMsg::Stored`.
-    pub store: Option<(String, Secret, Hidden)>,
+    pub lookup: Option<(Incoming, Owner, Secret)>,
+    /// Save it off the UI thread, then `AskMsg::Stored`.
+    pub store: Option<(Owner, Secret, Hidden)>,
     /// Remove a saved one that turned out wrong (the user unticked «Save» on the retry).
-    pub forget: Option<(String, Secret)>,
+    pub forget: Option<(Owner, Secret)>,
     /// A dialog came to the front: show its tab, focus its field.
     pub shown: Option<(Option<u64>, widget::Id)>,
     /// The last dialog went: the keys back to the active terminal.
@@ -118,30 +120,26 @@ impl Asks {
             AskMsg::Incoming(inc) if self.tries.cancelled(inc.req.ppid) => {
                 inc.reply.send(Reply::Cancel);
             }
-            AskMsg::Incoming(mut inc) => {
-                // A ProxyJump / -J ssh (ssh's child, another host) inherits the session's env: it
-                // must never get, or save over, this session's password.
-                if inc.req.session.is_some() && !askpass::direct(inc.req.ppid) {
-                    inc.req.session = None;
-                }
+            AskMsg::Incoming(inc) => {
                 let kind = askpass::classify(&inc.req.prompt);
                 let first = self.tries.first(inc.req.ppid, kind);
-                if let (Some(s), Some(session)) = (secret(kind), inc.req.session.clone())
+                let owner = owner_of(&inc, kind);
+                if let (Some(s), Some(owner)) = (secret(kind), owner.clone())
                     && first
                 {
                     return Outcome {
-                        lookup: Some((inc, session, s)),
+                        lookup: Some((inc, owner, s)),
                         ..Default::default()
                     };
                 }
                 // The same ssh asking again: what it was given was wrong.
                 let retry = !first && secret(kind).is_some();
-                return self.push(inc, kind, retry, None);
+                return self.push(inc, kind, owner, retry, None);
             }
-            AskMsg::Saved(inc, Ok(Some(Hidden(p)))) => inc.reply.send(Reply::Answer(p)),
-            AskMsg::Saved(inc, found) => {
+            AskMsg::Saved(inc, _, Ok(Some(Hidden(p)))) => inc.reply.send(Reply::Answer(p)),
+            AskMsg::Saved(inc, owner, found) => {
                 let kind = askpass::classify(&inc.req.prompt);
-                return self.push(inc, kind, false, found.err());
+                return self.push(inc, kind, Some(owner), false, found.err());
             }
             AskMsg::Input(Hidden(v)) => {
                 if let Some(p) = self.queue.front_mut() {
@@ -162,7 +160,7 @@ impl Asks {
                     _ => p.value,
                 };
                 let target = (p.no_save.is_none())
-                    .then(|| Some((p.inc.req.session.clone()?, secret(p.kind)?)))
+                    .then(|| Some((p.owner.clone()?, secret(p.kind)?)))
                     .flatten();
                 let ppid = p.inc.req.ppid;
                 let was_saved = self.tries.was_saved(ppid, p.kind);
@@ -171,7 +169,7 @@ impl Asks {
                 }
                 p.inc.reply.send(Reply::Answer(answer.clone()));
                 let (store, forget) = match target {
-                    Some((session, s)) if p.save => (Some((session, s, Hidden(answer))), None),
+                    Some((owner, s)) if p.save => (Some((owner, s, Hidden(answer))), None),
                     // Saved a moment ago, refused by the server, not wanted any more.
                     Some(t) if was_saved => (None, Some(t)),
                     _ => (None, None),
@@ -204,10 +202,18 @@ impl Asks {
         Outcome::default()
     }
 
-    fn push(&mut self, inc: Incoming, kind: Kind, retry: bool, failed: Option<String>) -> Outcome {
-        let no_save = match (secret(kind), &inc.req.session) {
-            (Some(_), Some(_)) => failed.map(|e| fl!("ask-keyring-failed", error = e)),
-            _ => Some(String::new()),
+    /// `owner`: `owner_of` (worked out once per prompt: it reads /proc).
+    fn push(
+        &mut self,
+        inc: Incoming,
+        kind: Kind,
+        owner: Option<Owner>,
+        retry: bool,
+        failed: Option<String>,
+    ) -> Outcome {
+        let no_save = match owner {
+            Some(_) => failed.map(|e| fl!("ask-keyring-failed", error = e)),
+            None => Some(String::new()),
         };
         // A retry after a saved answer: still meant to be saved (the correct one replaces it).
         let save = retry && self.tries.was_saved(inc.req.ppid, kind);
@@ -217,6 +223,7 @@ impl Asks {
             retry,
             value: String::new(),
             save,
+            owner,
             no_save,
         });
         match self.queue.len() {
@@ -298,8 +305,9 @@ impl Asks {
             body = body.push(input);
         }
         if secret(p.kind).is_some() {
-            let mut save = widget::checkbox(p.save).label(match p.kind {
-                Kind::Passphrase => fl!("ask-save-passphrase"),
+            let mut save = widget::checkbox(p.save).label(match (&p.owner, p.kind) {
+                (Some(Owner::Credential(c)), _) => fl!("ask-save-to", set = c.clone()),
+                (_, Kind::Passphrase) => fl!("ask-save-passphrase"),
                 _ => fl!("ask-save-password"),
             });
             if p.no_save.is_none() {
@@ -329,6 +337,12 @@ impl Asks {
                 .into(),
         )
     }
+}
+
+/// `askpass::owner` for this prompt, the ssh checked to be a tab's own.
+fn owner_of(inc: &Incoming, kind: Kind) -> Option<Owner> {
+    let direct = askpass::direct(inc.req.ppid);
+    askpass::owner(&inc.req, kind, direct)
 }
 
 /// The socket: one thread accepting, one per helper waiting for its answer.

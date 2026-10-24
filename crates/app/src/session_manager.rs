@@ -748,12 +748,16 @@ fn parent(id: &str) -> &str {
 }
 
 pub fn check(name: &str, at_root: bool) -> Result<(), String> {
-    valid_name(name, at_root).map_err(|e| match e {
+    valid_name(name, at_root).map_err(name_text)
+}
+
+pub fn name_text(e: NameError) -> String {
+    match e {
         NameError::Empty => fl!("name-empty"),
         NameError::Slash => fl!("name-slash"),
         NameError::Dot => fl!("name-dot"),
         NameError::Reserved => fl!("name-reserved"),
-    })
+    }
 }
 
 pub fn io_text(e: &std::io::Error) -> String {

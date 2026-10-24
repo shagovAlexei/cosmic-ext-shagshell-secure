@@ -175,6 +175,34 @@ impl Store {
         !id.is_empty() && self.root.join(id).is_dir()
     }
 
+    /// The sessions (Default too) that use credential set `name`.
+    pub fn using(&self, name: &str) -> Vec<String> {
+        let mut all = Vec::new();
+        every(&self.load(), "", &mut all);
+        if let Ok(d) = self.get(DEFAULT) {
+            all.push((DEFAULT.to_string(), d));
+        }
+        all.into_iter()
+            .filter(|(_, s)| s.credential.as_deref() == Some(name))
+            .map(|(id, _)| id)
+            .collect()
+    }
+
+    /// Credential set `old` renamed to `new`, or deleted (`None`): its sessions follow; on delete
+    /// they keep logging in as `user`. The ids changed.
+    pub fn relink(&self, old: &str, new: Option<&str>, user: &str) -> io::Result<Vec<String>> {
+        let ids = self.using(old);
+        for id in &ids {
+            let mut s = self.get(id)?;
+            s.credential = new.map(str::to_string);
+            if new.is_none() && !user.is_empty() {
+                s.user = Some(user.to_string());
+            }
+            self.save(id, &s)?;
+        }
+        Ok(ids)
+    }
+
     /// A session or folder by that id (a folder and a session never share one).
     fn exists(&self, id: &str) -> bool {
         self.file(id).exists() || self.is_folder(id)
@@ -230,6 +258,17 @@ fn parent(id: &str) -> &str {
 
 fn file_name(id: &str) -> &str {
     id.rsplit_once('/').map_or(id, |(_, n)| n)
+}
+
+/// Every session of the tree with its id.
+fn every(nodes: &[Node], prefix: &str, out: &mut Vec<(String, Session)>) {
+    for n in nodes {
+        let id = join(prefix, n.name());
+        match n {
+            Node::Folder { children, .. } => every(children, &id, out),
+            Node::Session { session, .. } => out.push((id, session.clone())),
+        }
+    }
 }
 
 fn load_dir(dir: &Path, root: bool) -> Vec<Node> {
@@ -458,6 +497,35 @@ mod tests {
         assert_eq!(s.count_sessions("lab/a"), 1);
         s.delete("lab").unwrap();
         assert!(s.load().is_empty());
+    }
+
+    #[test]
+    fn relink_rename() {
+        let (_d, s) = store();
+        let mut x = host("h");
+        x.credential = Some("adm".into());
+        s.save("lab/a", &x).unwrap();
+        s.save(DEFAULT, &x).unwrap();
+        s.save("b", &host("h")).unwrap();
+        let mut ids = s.using("adm");
+        ids.sort();
+        assert_eq!(ids, ["Default", "lab/a"]);
+        s.relink("adm", Some("root"), "").unwrap();
+        assert_eq!(s.get("lab/a").unwrap().credential.as_deref(), Some("root"));
+        assert!(s.using("adm").is_empty());
+        assert_eq!(s.get("b").unwrap().credential, None);
+    }
+
+    #[test]
+    fn relink_delete_copies_user() {
+        let (_d, s) = store();
+        let mut x = host("h");
+        x.credential = Some("adm".into());
+        x.user = Some("old".into());
+        s.save("a", &x).unwrap();
+        s.relink("adm", None, "admin").unwrap();
+        let a = s.get("a").unwrap();
+        assert_eq!((a.credential, a.user.as_deref()), (None, Some("admin")));
     }
 
     #[test]

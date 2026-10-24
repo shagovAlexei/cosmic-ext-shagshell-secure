@@ -34,6 +34,9 @@ pub struct Request {
     pub prompt: String,
     /// `SHAGSHELL_SESSION`: the saved session the ssh runs for.
     pub session: Option<String>,
+    /// `SHAGSHELL_CREDENTIAL`: the session's credential set (its password is the set's).
+    #[serde(default)]
+    pub credential: Option<String>,
     /// `SHAGSHELL_TAB`.
     pub tab: Option<u64>,
     /// The ssh process (the helper's parent): one connection's prompts.
@@ -97,6 +100,7 @@ pub fn run_helper(sock: &Path, prompt: &str) -> i32 {
     let req = Request {
         prompt: prompt.to_string(),
         session: std::env::var("SHAGSHELL_SESSION").ok(),
+        credential: std::env::var("SHAGSHELL_CREDENTIAL").ok(),
         tab: std::env::var("SHAGSHELL_TAB")
             .ok()
             .and_then(|t| t.parse().ok()),
@@ -125,6 +129,21 @@ pub fn abort(ppid: u32, sock: &Path) -> bool {
         .args(["-TERM", &ppid.to_string()])
         .status()
         .is_ok_and(|s| s.success())
+}
+
+/// Whose saved secret answers this prompt, if any: a password of a session with a credential set
+/// is the set's; others the session's. `direct`: asked by the ssh a tab started (see `direct`) —
+/// a ProxyJump ssh talks to another host and gets none.
+pub fn owner(req: &Request, kind: Kind, direct: bool) -> Option<crate::keyring::Owner> {
+    use crate::keyring::Owner;
+    if !direct || !matches!(kind, Kind::Password | Kind::Passphrase) {
+        return None;
+    }
+    match (&req.credential, &req.session) {
+        (Some(c), _) if kind == Kind::Password => Some(Owner::Credential(c.clone())),
+        (_, Some(s)) => Some(Owner::Session(s.clone())),
+        _ => None,
+    }
 }
 
 /// Prompts already answered from the keyring, per ssh process: the second one means the saved
@@ -243,6 +262,7 @@ mod tests {
         let req = Request {
             prompt: HOST_KEY.into(),
             session: Some("lab/web".into()),
+            credential: None,
             tab: Some(3),
             ppid: 42,
         };
@@ -271,6 +291,7 @@ mod tests {
         let req = Request {
             prompt: "p".into(),
             session: None,
+            credential: None,
             tab: None,
             ppid: 9,
         };
@@ -310,6 +331,30 @@ mod tests {
         assert!(!ours.wait().unwrap().success());
         other.kill().unwrap();
         let _ = other.wait();
+    }
+
+    #[test]
+    fn owner_of_a_prompt() {
+        use crate::keyring::Owner;
+        let mut req = Request {
+            prompt: String::new(),
+            session: Some("lab/r1".into()),
+            credential: None,
+            tab: None,
+            ppid: 1,
+        };
+        let s = Some(Owner::Session("lab/r1".into()));
+        assert_eq!(owner(&req, Kind::Password, true), s);
+        assert_eq!(owner(&req, Kind::Password, false), None); // ProxyJump
+        assert_eq!(owner(&req, Kind::HostKey, true), None);
+        req.credential = Some("adm".into());
+        assert_eq!(
+            owner(&req, Kind::Password, true),
+            Some(Owner::Credential("adm".into()))
+        );
+        assert_eq!(owner(&req, Kind::Passphrase, true), s); // the key is the session's
+        req.session = None;
+        assert_eq!(owner(&req, Kind::Passphrase, true), None);
     }
 
     #[test]
