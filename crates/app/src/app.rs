@@ -458,18 +458,18 @@ impl Application for App {
         if let Some(o) = self.options.as_ref().filter(|o| o.window == id) {
             return o.view(focused);
         }
-        if self.scripts.console_win == Some(id) {
-            return self.scripts.console_view(focused);
-        }
         if self.scripts.win == Some(id)
             && let Some(v) = self.scripts.window_view(focused)
         {
             return v;
         }
-        if let Some(v) = self
-            .tabs
-            .window_view(id, &self.config, focused, self.dialog().is_none())
-        {
+        if let Some(v) = self.tabs.window_view(
+            id,
+            &self.config,
+            focused,
+            self.dialog().is_none(),
+            &self.scripts,
+        ) {
             return v;
         }
         if let Some(s) = self.sched_win.as_ref().filter(|s| s.window == id) {
@@ -518,22 +518,23 @@ impl Application for App {
 
     fn view(&self) -> Element<'_, Message> {
         let window = (self.core.main_window_id()).unwrap_or(cosmic::iced::window::Id::RESERVED);
-        let center = match self
-            .tabs
-            .view(&self.config, window, self.dialog().is_none())
-        {
-            Some(tabs) => tabs,
-            None => widget::container(
-                widget::column::with_children(vec![
-                    widget::text::title3(fl!("no-sessions")).into(),
-                    widget::text(fl!("no-sessions-hint")).into(),
-                ])
-                .spacing(8)
-                .align_x(cosmic::iced::Alignment::Center),
-            )
-            .center(Length::Fill)
-            .into(),
-        };
+        let center =
+            match self
+                .tabs
+                .view(&self.config, window, self.dialog().is_none(), &self.scripts)
+            {
+                Some(tabs) => tabs,
+                None => widget::container(
+                    widget::column::with_children(vec![
+                        widget::text::title3(fl!("no-sessions")).into(),
+                        widget::text(fl!("no-sessions-hint")).into(),
+                    ])
+                    .spacing(8)
+                    .align_x(cosmic::iced::Alignment::Center),
+                )
+                .center(Length::Fill)
+                .into(),
+            };
         let (left, right) = crate::config::panels(
             (
                 self.config.session_manager_side,
@@ -1019,9 +1020,6 @@ impl App {
             Message::CloseRequested(w) if self.tabs.tab_in(w).is_some() => {
                 return self.update(Message::Tabs(crate::tabs::TabsMsg::Reattach(w)));
             }
-            Message::CloseRequested(w) if self.scripts.console_win == Some(w) => {
-                return self.script(crate::script::ScMsg::ConsoleClose);
-            }
             Message::CloseRequested(w) if self.scripts.win == Some(w) => {
                 return self.script(crate::script::ScMsg::Cancel);
             }
@@ -1356,7 +1354,7 @@ impl App {
                     |p| cosmic::Action::App(Message::ScriptsFolder(p)),
                 );
             }
-            Action::ScriptConsole => return self.open_console(),
+            Action::ScriptConsole => return self.open_console(true),
             Action::CancelScript => {
                 self.scripts.cancel();
                 return self.script_window();
@@ -1442,26 +1440,11 @@ impl App {
         let Some(m) = m else {
             return Task::none();
         };
-        match &m {
-            crate::script::ScMsg::ConsoleClose => {
-                return match self.scripts.console_win.take() {
-                    Some(w) => cosmic::iced::window::close(w),
-                    None => Task::none(),
-                };
-            }
-            crate::script::ScMsg::ConsoleDrag => {
-                return self
-                    .scripts
-                    .console_win
-                    .map_or_else(Task::none, cosmic::iced::window::drag);
-            }
-            crate::script::ScMsg::ConsoleDebug(on) => {
-                let mut c = self.config.clone();
-                c.script_debug = *on;
-                self.config = c;
-                self.save_config();
-            }
-            _ => {}
+        if let crate::script::ScMsg::ConsoleDebug(on) = &m {
+            let mut c = self.config.clone();
+            c.script_debug = *on;
+            self.config = c;
+            self.save_config();
         }
         if matches!(m, crate::script::ScMsg::Drag) {
             return self
@@ -1525,7 +1508,7 @@ impl App {
         }
         tasks.push(self.script_window());
         if out.output.is_some() && self.config.script_console_auto {
-            tasks.push(self.open_console());
+            tasks.push(self.open_console(false));
         }
         if let Some(text) = out.copy {
             tasks.push(cosmic::iced::clipboard::write(text));
@@ -1622,23 +1605,10 @@ impl App {
         self.remember_script_dir(path);
     }
 
-    /// Script → Console: the window, raised when it is already there.
-    fn open_console(&mut self) -> Task<Message> {
-        if let Some(w) = self.scripts.console_win {
-            return cosmic::iced::window::gain_focus(w);
-        }
-        let (window, open) = cosmic::iced::window::open(cosmic::iced::window::Settings {
-            size: cosmic::iced::Size::new(720.0, 440.0),
-            min_size: Some(cosmic::iced::Size::new(420.0, 240.0)),
-            decorations: false,
-            exit_on_close_request: false,
-            ..Default::default()
-        });
-        self.scripts.console_win = Some(window);
-        Task::batch([
-            open.map(|_| cosmic::Action::None),
-            cosmic::ApplicationExt::set_window_title(self, fl!("console-title"), window),
-        ])
+    /// Script → Console: a tab in the right-hand group; `raise`: shown when it is there already
+    /// (a script's first output only opens it).
+    fn open_console(&mut self, raise: bool) -> Task<Message> {
+        self.tabs.open_console(raise, &look(&self.config))
     }
 
     /// The window of the script dialog that is up: opened with the first ask, gone with the last.
@@ -2877,6 +2847,7 @@ fn ssh_launch(
         },
         sftp: false,
         note: None,
+        console: false,
         auto_reconnect: s.reconnect.then(|| tabs::AutoReconnect {
             delay: s.reconnect_delay.unwrap_or(5),
             tries: s.reconnect_tries.unwrap_or(10),
@@ -2954,6 +2925,7 @@ fn program_launch(
         protocol,
         sftp: false,
         note: None,
+        console: false,
         log: Some(log_spec(s)),
         auto_reconnect: None,
         logon: logon_spec(s, id),

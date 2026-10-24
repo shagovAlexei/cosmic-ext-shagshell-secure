@@ -89,8 +89,6 @@ pub enum ScMsg {
     ConsoleClear,
     ConsoleCopy,
     ConsoleDebug(bool),
-    ConsoleClose,
-    ConsoleDrag,
 }
 
 struct Run {
@@ -175,8 +173,6 @@ pub struct Scripts {
     /// Set when `Output` is queued, cleared when the window has taken it.
     dirty: Arc<AtomicBool>,
     pub debug: Arc<AtomicBool>,
-    /// The Script Console's window.
-    pub console_win: Option<cosmic::iced::window::Id>,
     /// The newest run the console opened for by itself (a closed console stays closed).
     shown_run: u64,
     tx: tokio::sync::mpsc::UnboundedSender<ScMsg>,
@@ -224,7 +220,6 @@ impl Scripts {
             console: Arc::default(),
             dirty: Arc::default(),
             debug: Arc::default(),
-            console_win: None,
             shown_run: 0,
             tx,
             rx: Arc::new(Mutex::new(Some(rx))),
@@ -469,7 +464,7 @@ impl Scripts {
                     .first()
                     .map_or(first, |l| l.run.max(first));
                 // Once per run: a console closed by hand stays closed for it.
-                if run > self.shown_run && self.console_win.is_none() {
+                if run > self.shown_run {
                     self.shown_run = run;
                     out.output = Some(run);
                 }
@@ -491,7 +486,6 @@ impl Scripts {
                 );
             }
             ScMsg::ConsoleDebug(on) => self.debug.store(on, Ordering::SeqCst),
-            ScMsg::ConsoleClose | ScMsg::ConsoleDrag => {}
             ScMsg::Picked(_) | ScMsg::Start(..) | ScMsg::StartOn(..) | ScMsg::Drag => {}
             ScMsg::Input(v) => {
                 if let Some(a) = self.asks.front_mut() {
@@ -668,7 +662,7 @@ impl Scripts {
     }
 
     /// The Script Console window.
-    pub fn console_view(&self, focused: bool) -> Element<'_, Message> {
+    pub fn console_view(&self) -> Element<'_, Message> {
         use cosmic::iced::{Color, Length};
         use script::Kind;
         let m = Message::Script;
@@ -720,16 +714,7 @@ impl Scripts {
                 widget::toggler(self.debug.load(Ordering::SeqCst))
                     .on_toggle(move |on| m(ScMsg::ConsoleDebug(on))),
             );
-        let content = widget::column::with_children(vec![
-            widget::header_bar()
-                .title(fl!("console-title"))
-                .on_close(m(ScMsg::ConsoleClose))
-                .on_drag(m(ScMsg::ConsoleDrag))
-                .focused(focused)
-                .into(),
-            tools.into(),
-            body,
-        ]);
+        let content = widget::column::with_children(vec![tools.into(), body]);
         widget::container(content)
             .width(Length::Fill)
             .height(Length::Fill)
