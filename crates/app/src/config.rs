@@ -103,6 +103,8 @@ pub struct Config {
     pub command_window_visible: bool,
     /// View → Button Bar.
     pub button_bar_visible: bool,
+    /// View → Command Manager.
+    pub command_manager_visible: bool,
     /// Terminal colour scheme: "" (the theme's), or a key of `terminal_theme::schemes`.
     pub color_scheme: String,
     /// Keyword highlighting on (the words are in `highlights.toml`).
@@ -163,6 +165,7 @@ impl Default for Config {
             app_theme: AppTheme::System,
             command_window_visible: false,
             button_bar_visible: true,
+            command_manager_visible: false,
             color_scheme: String::new(),
             highlight_enabled: true,
             log_dir: String::new(),

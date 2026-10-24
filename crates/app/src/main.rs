@@ -2,6 +2,7 @@ mod about;
 mod app;
 mod askpass;
 mod button_bar;
+mod command_manager;
 mod command_window;
 mod config;
 mod credentials_window;

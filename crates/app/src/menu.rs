@@ -16,6 +16,7 @@ pub enum Action {
     ToggleSessionManager,
     /// View → Command Window.
     ToggleCommandWindow,
+    ToggleCommandManager,
     /// View → Button Bar.
     ToggleButtonBar,
     /// File → Log Session.
@@ -136,7 +137,7 @@ fn key_binds() -> HashMap<KeyBind, Action> {
 /// `(tabs, live, splittable)`: any tab open; the active one connected; its group has
 /// more than one tab (`Tabs::menu_state`).
 pub fn bar(
-    (session_manager, command_window, button_bar): (bool, bool, bool),
+    (session_manager, command_window, button_bar, command_manager): (bool, bool, bool, bool),
     (tabs, live, split, logging): (bool, bool, bool, bool),
 ) -> Element<'static, Message> {
     use menu::Item::{Button, ButtonDisabled, CheckBox, Divider};
@@ -200,6 +201,12 @@ pub fn bar(
                     None,
                     command_window,
                     Action::ToggleCommandWindow,
+                ),
+                CheckBox(
+                    fl!("menu-command-manager"),
+                    None,
+                    command_manager,
+                    Action::ToggleCommandManager,
                 ),
                 CheckBox(
                     fl!("menu-button-bar"),
