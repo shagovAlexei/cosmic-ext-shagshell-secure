@@ -487,3 +487,7 @@ cm-name-taken = A folder of that name is there already
 cm-broken = commands.toml could not be read: changes are not saved so that it is not overwritten
 sc-report-commands = Commands found: { $found } (not imported: { $skipped }); those already in the Command Manager are not duplicated.
 sc-nothing = Tick something to import
+menu-move-left = Move to Group — Left
+menu-move-right = Move to Group — Right
+menu-move-up = Move to Group — Up
+menu-move-down = Move to Group — Down

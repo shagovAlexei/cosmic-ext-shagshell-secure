@@ -248,7 +248,39 @@ pub enum TabCmd {
     Sftp,
     SplitRight,
     SplitDown,
+    /// Into the neighbouring group on this side.
+    MoveTo(Side),
     Close,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Side {
+    Left,
+    Right,
+    Up,
+    Down,
+}
+
+impl Side {
+    const ALL: [Side; 4] = [Side::Left, Side::Right, Side::Up, Side::Down];
+
+    fn direction(self) -> pane_grid::Direction {
+        match self {
+            Side::Left => pane_grid::Direction::Left,
+            Side::Right => pane_grid::Direction::Right,
+            Side::Up => pane_grid::Direction::Up,
+            Side::Down => pane_grid::Direction::Down,
+        }
+    }
+
+    fn label(self) -> String {
+        match self {
+            Side::Left => fl!("menu-move-left"),
+            Side::Right => fl!("menu-move-right"),
+            Side::Up => fl!("menu-move-up"),
+            Side::Down => fl!("menu-move-down"),
+        }
+    }
 }
 
 /// `cosmic::Action`: the tab bar's menu is a popup of its own (see `Tabs::view`).
@@ -268,6 +300,8 @@ pub enum TabsMsg {
     CloseCancelled,
     Context(pane_grid::Pane, Entity),
     Reorder(pane_grid::Pane, ReorderEvent),
+    /// A tab was dropped on this group (its bar or its body).
+    Drop(pane_grid::Pane),
     PaneClicked(pane_grid::Pane),
     Resized(pane_grid::ResizeEvent),
     Paste(Option<String>),
@@ -296,6 +330,8 @@ pub struct Tabs {
     notice: Mutex<Option<String>>,
     /// A live tab asked to close: waits for the dialog.
     confirm: Option<(pane_grid::Pane, Entity)>,
+    /// The tab pressed last: a drag that starts is about it (the drag carries no tab).
+    pressed: Option<(pane_grid::Pane, Entity)>,
     /// The tab right-clicked last: `TabCmd`s are about it.
     context: Option<(pane_grid::Pane, Entity)>,
     /// Every terminal's tap, for the scripts running on other threads.
@@ -747,6 +783,36 @@ impl Tabs {
         focus(widget_id)
     }
 
+    /// A dragged tab (the one pressed last) goes to group `dst`: the same tab, still running.
+    fn move_pressed_to(&mut self, dst: pane_grid::Pane) {
+        let Some((src, e)) = self.pressed.take() else {
+            return;
+        };
+        let Some(grid) = self.grid.as_mut() else {
+            return;
+        };
+        if src == dst {
+            return; // inside its own bar it is a reorder
+        }
+        let moved = grid.get(src).and_then(|g| {
+            Some((
+                g.model.data::<TabId>(e).copied()?,
+                g.model.text(e).map(str::to_string)?,
+            ))
+        });
+        let (Some((id, title)), true) = (moved, grid.get(dst).is_some()) else {
+            return;
+        };
+        let emptied = grid.get_mut(src).is_some_and(|g| detach(&mut g.model, e));
+        if let Some(g) = grid.get_mut(dst) {
+            g.model.insert().text(title).data(id).closable().activate();
+        }
+        if emptied && grid.len() > 1 {
+            grid.close(src);
+        }
+        self.focus = Some(dst);
+    }
+
     fn forget_tap(&self, id: TabId) {
         self.taps
             .lock()
@@ -933,6 +999,17 @@ impl Tabs {
             }
             TabCmd::SplitRight => self.split(t, pane_grid::Axis::Vertical),
             TabCmd::SplitDown => self.split(t, pane_grid::Axis::Horizontal),
+            TabCmd::MoveTo(side) => {
+                let to = self
+                    .grid
+                    .as_ref()
+                    .and_then(|g| g.adjacent(t.0, side.direction()));
+                if let Some(to) = to {
+                    self.pressed = Some((t.0, t.1));
+                    self.move_pressed_to(to);
+                }
+                self.focus_active()
+            }
             TabCmd::Close => self.update(TabsMsg::Close(t.0, t.1), look),
         }
     }
@@ -1133,6 +1210,7 @@ impl Tabs {
             }
             TabsMsg::Activate(pane, e) => {
                 self.focus = Some(pane);
+                self.pressed = Some((pane, e));
                 if let Some(group) = self.grid.as_mut().and_then(|g| g.get_mut(pane)) {
                     group.model.activate(e);
                 }
@@ -1163,6 +1241,10 @@ impl Tabs {
                 if let Some(group) = self.grid.as_mut().and_then(|g| g.get_mut(pane)) {
                     group.model.reorder(ev.dragged, ev.target, ev.position);
                 }
+            }
+            TabsMsg::Drop(pane) => {
+                self.move_pressed_to(pane);
+                return self.focus_active();
             }
             TabsMsg::PaneClicked(pane) => {
                 self.focus = Some(pane);
@@ -1241,16 +1323,19 @@ impl Tabs {
             let m = move |f: fn(pane_grid::Pane, Entity) -> TabsMsg| {
                 move |e| app(Message::Tabs(f(pane, e)))
             };
+            // The sides that have a group beside this one: the tab can move there.
+            let neighbours = Side::ALL.map(|s| grid.adjacent(pane, s.direction()).is_some());
             let bar = tab_bar::horizontal(&group.model)
                 .on_activate(m(TabsMsg::Activate))
                 .on_close(m(TabsMsg::Close))
                 .on_middle_press(m(TabsMsg::Close))
                 .on_context(m(TabsMsg::Context))
-                .context_menu(Some(tab_menu(&group.model, &self.tabs)))
+                .context_menu(Some(tab_menu(&group.model, &self.tabs, neighbours)))
                 .window_id(window)
                 .on_surface_action(move |a| app(Message::Surface(a)))
                 .enable_tab_drag(TAB_MIME.to_string())
-                .on_reorder(move |ev| app(Message::Tabs(TabsMsg::Reorder(pane, ev))));
+                .on_reorder(move |ev| app(Message::Tabs(TabsMsg::Reorder(pane, ev))))
+                .on_dnd_drop::<TabDrop>(move |_, _, _| app(Message::Tabs(TabsMsg::Drop(pane))));
             let bar = Element::from(bar).map(|a| match a {
                 cosmic::Action::App(m) => m,
                 other => Message::Cosmic(Box::new(other)),
@@ -1280,6 +1365,13 @@ impl Tabs {
                         .height(Length::Fill)
                         .into(),
                 };
+            // A tab dropped on the body comes here too.
+            let body: Element<'_, Message> =
+                cosmic::widget::dnd_destination::DndDestination::for_data::<TabDrop>(
+                    body,
+                    move |_, _| Message::Tabs(TabsMsg::Drop(pane)),
+                )
+                .into();
             let active = many && focus == Some(pane);
             let content = widget::container(widget::column::with_children(vec![bar, body]))
                 .padding(1)
@@ -1330,6 +1422,7 @@ fn detach(model: &mut SingleSelectModel, e: Entity) -> bool {
 fn tab_menu(
     model: &SingleSelectModel,
     tabs: &HashMap<TabId, Tab>,
+    neighbours: [bool; 4],
 ) -> Vec<menu::Tree<cosmic::Action<Message>>> {
     use menu::Item::{Button, ButtonDisabled, Divider};
     let can_split = model.len() > 1;
@@ -1341,7 +1434,7 @@ fn tab_menu(
         let tab = model.data::<TabId>(e).and_then(|id| tabs.get(id));
         let live = tab.is_some_and(Tab::live);
         let sftp = tab.is_some_and(|t| t.launch.sftp().is_some());
-        let items = vec![
+        let mut items = vec![
             Button(fl!("menu-reconnect"), None, TabCmd::Reconnect),
             on(live, fl!("menu-disconnect"), TabCmd::Disconnect),
             Button(fl!("menu-clone"), None, TabCmd::Clone),
@@ -1349,9 +1442,14 @@ fn tab_menu(
             Divider,
             on(can_split, fl!("menu-split-right"), TabCmd::SplitRight),
             on(can_split, fl!("menu-split-down"), TabCmd::SplitDown),
-            Divider,
-            Button(fl!("menu-close-tab"), None, TabCmd::Close),
         ];
+        // Into a group already there (dragging the tab onto it does the same).
+        for (side, has) in Side::ALL.into_iter().zip(neighbours) {
+            if has {
+                items.push(Button(side.label(), None, TabCmd::MoveTo(side)));
+            }
+        }
+        items.extend([Divider, Button(fl!("menu-close-tab"), None, TabCmd::Close)]);
         let blank = Element::from(widget::Space::new());
         menu::Tree::with_children(blank, menu::items(&HashMap::new(), items))
     };
@@ -1364,6 +1462,22 @@ fn tab_menu(
 
 /// Keys the terminal leaves to the app: exactly those `app::key_action` acts on (by physical
 /// key, any layout). Everything else, every Ctrl+letter and Alt+letter, is the terminal's.
+/// What a tab drag carries: nothing but «a tab» (libcosmic sends one byte, not which).
+pub struct TabDrop;
+
+impl cosmic::iced::clipboard::mime::AllowedMimeTypes for TabDrop {
+    fn allowed() -> std::borrow::Cow<'static, [String]> {
+        std::borrow::Cow::Owned(vec![TAB_MIME.to_string()])
+    }
+}
+
+impl TryFrom<(Vec<u8>, String)> for TabDrop {
+    type Error = ();
+    fn try_from(_: (Vec<u8>, String)) -> Result<Self, ()> {
+        Ok(TabDrop)
+    }
+}
+
 pub fn is_app_key(mods: Modifiers, _: &Key, key: &Physical) -> bool {
     crate::app::key_action(key, mods).is_some()
 }
