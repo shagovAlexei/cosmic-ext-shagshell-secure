@@ -550,3 +550,6 @@ options-scripts = Скрипты
 options-scripts-folder = Папка скриптов (пусто: ~/.config/shagshell/scripts)
 options-startup-script = Скрипт при запуске, на локальной оболочке
 script-filter-all = Все файлы
+so-pre-script = Скрипт до подключения (.py, пусто: нет)
+so-pre-script-hint = Запускается первым, без вкладки: может спросить, поднять VPN, загрузить ключ (crt.Dialog, os, subprocess). Если он упал или вызвал sys.exit(1), сессия не открывается.
+pre-script-failed = Скрипт до подключения «{ $name }» не завершился: не подключаюсь

@@ -74,6 +74,8 @@ pub struct App {
     startup: Option<(std::path::PathBuf, Vec<String>)>,
     /// The `*.py` files of the Script menu's folder (read at start, and when asked).
     script_files: Vec<std::path::PathBuf>,
+    /// Sessions waiting for their pre-script: run id → the tab to open, and its post-script.
+    pre_runs: std::collections::HashMap<u64, (tabs::Launch, String)>,
 }
 
 /// The open dialog of Tools → Create / Upload Public Key….
@@ -231,6 +233,7 @@ impl Application for App {
             update: None,
             startup: None,
             script_files: Vec::new(),
+            pre_runs: Default::default(),
         };
         // A broken buttonbars.toml is said, and left alone.
         app.sessions.notice = (app.buttons.broken().map(String::from))
@@ -1303,8 +1306,8 @@ impl App {
             match on.or_else(|| self.tabs.active_terminal()) {
                 None => self.sessions.notice = Some(fl!("script-no-tab")),
                 Some(tab) => match self.scripts.run(&path, &args, tab) {
-                    Ok(()) if quiet => {}
-                    Ok(()) => {
+                    Ok(_) if quiet => {}
+                    Ok(_) => {
                         let name = path
                             .file_name()
                             .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
@@ -1349,10 +1352,22 @@ impl App {
                 .map_or_else(Task::none, cosmic::iced::window::drag);
         }
         let out = self.scripts.update(m, &mut self.tabs);
+        let mut pre_task = Task::none();
+        if let Some((run, ok)) = out.ended
+            && let Some((launch, post)) = self.pre_runs.remove(&run)
+        {
+            match ok {
+                true => pre_task = self.open_tab(launch, &post),
+                false => {
+                    self.sessions.notice =
+                        Some(fl!("pre-script-failed", name = launch.title.clone()));
+                }
+            }
+        }
         if out.notice.is_some() {
             self.sessions.notice = out.notice;
         }
-        let mut tasks = Vec::new();
+        let mut tasks = vec![pre_task];
         if out.focus {
             tasks.push(widget::text_input::focus(self.scripts.input_id.clone()));
         }
@@ -1715,6 +1730,37 @@ impl App {
         self.tabs.open(l, &look(&self.config))
     }
 
+    /// A session's tab: after its pre-script (when it has one and scripts are wanted) finished
+    /// well, else at once.
+    fn open_session_tab(
+        &mut self,
+        launch: tabs::Launch,
+        s: &shagshell_core::session::Session,
+        scripts: bool,
+    ) -> Task<Message> {
+        let post = if scripts { s.script.as_str() } else { "" };
+        let pre = s.pre_script.trim();
+        if !scripts || pre.is_empty() {
+            return self.open_tab(launch, post);
+        }
+        let path = shagshell_core::script::expand_home(std::path::Path::new(pre));
+        let args = vec![
+            launch.title.clone(),
+            s.host.clone(),
+            s.user.clone().unwrap_or_default(),
+        ];
+        match self.scripts.run(&path, &args, 0) {
+            Ok(run) => {
+                self.pre_runs.insert(run, (launch, post.to_string()));
+                Task::none()
+            }
+            Err(e) => {
+                self.sessions.notice = Some(e);
+                Task::none()
+            }
+        }
+    }
+
     /// A tab for `launch`; the session's `script` (if any) runs on it.
     fn open_tab(&mut self, launch: tabs::Launch, script: &str) -> Task<Message> {
         let open = self.tabs.open(launch, &look(&self.config));
@@ -1746,13 +1792,12 @@ impl App {
                                 label: s.label.clone(),
                                 ..tabs::Launch::local_shell()
                             };
-                            tasks.push(self.open_tab(l, if scripts { &s.script } else { "" }));
+                            tasks.push(self.open_session_tab(l, &s, scripts));
                             continue;
                         }
                         P::Telnet | P::Serial => {
                             match program_launch(&s, name, Some(id)) {
-                                Ok(l) => tasks
-                                    .push(self.open_tab(l, if scripts { &s.script } else { "" })),
+                                Ok(l) => tasks.push(self.open_session_tab(l, &s, scripts)),
                                 Err(e) => self.sessions.notice = Some(e),
                             }
                             continue;
@@ -1760,7 +1805,7 @@ impl App {
                         P::Ssh2 => {}
                     }
                     match ssh_launch(&self.control_dir, creds.as_ref(), &s, name, Some(id)) {
-                        Ok(l) => tasks.push(self.open_tab(l, if scripts { &s.script } else { "" })),
+                        Ok(l) => tasks.push(self.open_session_tab(l, &s, scripts)),
                         Err(e) => self.sessions.notice = Some(e),
                     }
                 }

@@ -172,6 +172,10 @@ pub struct Session {
     /// Logon Actions: what to answer to what the session says after connecting.
     #[serde(rename = "logon", skip_serializing_if = "Vec::is_empty")]
     pub logon: Vec<crate::logon::Step>,
+    /// A Python script run before the connection starts, with no tab: it can ask, bring up a VPN,
+    /// load a key; if it fails the session is not opened.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub pre_script: String,
     /// A Python script run on the tab when the session is opened (`core::script`).
     #[serde(skip_serializing_if = "String::is_empty")]
     pub script: String,
