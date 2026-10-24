@@ -49,6 +49,10 @@ pub enum SoMsg {
     /// The file chooser's pick (`None`: cancelled), for the window that asked.
     Browsed(window::Id, Option<String>),
     Drag,
+    /// The keyring looked up for this window's session: a password or passphrase is saved.
+    Saved(window::Id, bool),
+    /// «Забыть»: the session's saved secrets removed.
+    Forget,
     Ok,
     Cancel,
 }
@@ -59,6 +63,8 @@ pub struct SessionOptions {
     form: Form,
     categories: segmented_button::SingleSelectModel,
     pub error: Option<String>,
+    /// The session has a secret in the keyring (Edit only).
+    saved: bool,
     first_id: widget::Id,
 }
 
@@ -79,6 +85,7 @@ impl SessionOptions {
             categories,
             error: None,
             first_id: widget::Id::unique(),
+            saved: false,
         }
     }
 
@@ -124,6 +131,7 @@ impl SessionOptions {
                 Field::Extra => f.extra = v,
             },
             SoMsg::Category(e) => self.categories.activate(e),
+            SoMsg::Saved(w, saved) if w == self.window => self.saved = saved,
             SoMsg::Browsed(w, Some(path)) if w == self.window => f.identity = path,
             _ => {}
         }
@@ -176,6 +184,19 @@ impl SessionOptions {
                     field(fl!("qc-port"), Field::Port, &f.port, false),
                     field(fl!("qc-user"), Field::User, &f.user, false),
                 ]);
+                if self.saved {
+                    v.push(
+                        widget::row::with_children(vec![
+                            widget::text::body(fl!("so-saved")).into(),
+                            widget::button::standard(fl!("so-forget"))
+                                .on_press(m(SoMsg::Forget))
+                                .into(),
+                        ])
+                        .spacing(12)
+                        .align_y(cosmic::iced::Alignment::Center)
+                        .into(),
+                    );
+                }
                 v
             }
         };

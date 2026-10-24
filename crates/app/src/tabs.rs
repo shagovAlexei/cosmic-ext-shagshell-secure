@@ -35,6 +35,8 @@ pub enum Protocol {
 pub struct Launch {
     pub program: String,
     pub args: Vec<String>,
+    /// More environment (ssh's askpass); the tab adds `SHAGSHELL_TAB` when there is any.
+    pub env: Vec<(String, String)>,
     /// Ours (a session's name, «Local Shell»), numbered if taken.
     pub title: String,
     pub protocol: Protocol,
@@ -46,6 +48,7 @@ impl Launch {
         Self {
             program: shell.to_string_lossy().into_owned(),
             args: Vec::new(),
+            env: Vec::new(),
             title: fl!("tab-local-shell"),
             protocol: Protocol::Local,
         }
@@ -157,6 +160,30 @@ impl Tabs {
         self.tabs.values_mut().map(|t| &mut t.launch)
     }
 
+    pub fn title(&self, id: TabId) -> Option<String> {
+        self.tabs.get(&id).map(|t| t.launch.title.clone())
+    }
+
+    /// Its program runs (an askpass prompt from it is still wanted).
+    pub fn alive(&self, id: TabId) -> bool {
+        self.tabs.get(&id).is_some_and(|t| t.alive)
+    }
+
+    /// Bring tab `id` to the front of its group: an askpass dialog is about it.
+    pub fn show(&mut self, id: TabId) {
+        let Some(grid) = self.grid.as_mut() else {
+            return;
+        };
+        for (pane, group) in grid.iter_mut() {
+            let found = (group.model.iter()).find(|&e| group.model.data::<TabId>(e) == Some(&id));
+            if let Some(e) = found {
+                group.model.activate(e);
+                self.focus = Some(*pane);
+                return;
+            }
+        }
+    }
+
     /// The saved session the active tab was opened from.
     pub fn active_session(&self) -> Option<String> {
         match &self.tabs.get(&self.active()?.2)?.launch.protocol {
@@ -236,9 +263,22 @@ impl Tabs {
     fn spawn(&self, id: TabId, launch: &Launch, look: &Look) -> Option<Terminal> {
         let tx = self.tx.clone()?;
         let (style, dark, bg) = look;
-        term::start(id, tx, &launch.program, &launch.args, *dark, *bg, style)
-            .inspect_err(|e| log::error!("start {}: {e}", launch.program))
-            .ok()
+        let mut env = launch.env.clone();
+        if !env.is_empty() {
+            env.push(("SHAGSHELL_TAB".into(), id.to_string()));
+        }
+        term::start(
+            id,
+            tx,
+            &launch.program,
+            &launch.args,
+            &env,
+            *dark,
+            *bg,
+            style,
+        )
+        .inspect_err(|e| log::error!("start {}: {e}", launch.program))
+        .ok()
     }
 
     /// Start the program again in a tab whose program ended (SecureCRT's Reconnect / Enter).
@@ -303,7 +343,7 @@ impl Tabs {
         self.focus_active()
     }
 
-    fn focus_active(&self) -> Task<Message> {
+    pub fn focus_active(&self) -> Task<Message> {
         match self.active().and_then(|(_, _, id)| self.tabs.get(&id)) {
             Some(t) => focus(t.widget_id.clone()),
             None => Task::none(),
@@ -545,7 +585,13 @@ impl Tabs {
         )
     }
 
-    pub fn view(&self, config: &Config, window: iced::window::Id) -> Option<Element<'_, Message>> {
+    /// `keys`: false while a dialog is up — its Enter / Esc must not go to the program.
+    pub fn view(
+        &self,
+        config: &Config,
+        window: iced::window::Id,
+        keys: bool,
+    ) -> Option<Element<'_, Message>> {
         let grid = self.grid.as_ref()?;
         let focus = self.focus;
         let many = grid.len() > 1;
@@ -571,7 +617,8 @@ impl Tabs {
                         .copy_on_select(copy)
                         .paste_on_middle(middle)
                         // An ended program takes no keys (its PTY is gone): Enter reaches the app.
-                        .ended(!tab.alive)
+                        // Nor does any while a dialog is up.
+                        .ended(!tab.alive || !keys)
                         .padding(4)
                         .into(),
                     None => widget::Space::new()

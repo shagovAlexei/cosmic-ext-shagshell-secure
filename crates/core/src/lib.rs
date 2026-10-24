@@ -1,4 +1,6 @@
+pub mod askpass;
 pub mod check;
+pub mod keyring;
 pub mod launch;
 pub mod session;
 pub mod shell;
