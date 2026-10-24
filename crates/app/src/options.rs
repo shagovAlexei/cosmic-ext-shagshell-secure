@@ -47,7 +47,7 @@ pub fn view<'a>(
     };
     let interface = settings::section()
         .title(fl!("options-interface"))
-        .add(settings::item(
+        .add(settings::flex_item(
             fl!("options-language"),
             widget::dropdown(languages, Some(language), {
                 let c = config.clone();
@@ -60,30 +60,30 @@ pub fn view<'a>(
                 }
             }),
         ))
-        .add(settings::item(
+        .add(settings::flex_item(
             fl!("options-sessions-side"),
             side(
                 |c| c.session_manager_side,
                 |c, s| c.session_manager_side = s,
             ),
         ))
-        .add(settings::item(
+        .add(settings::flex_item(
             fl!("options-commands-side"),
             side(
                 |c| c.command_manager_side,
                 |c, s| c.command_manager_side = s,
             ),
         ))
-        .add(settings::item(
+        .add(settings::flex_item(
             fl!("options-console-auto"),
             widget::toggler(config.script_console_auto)
                 .on_toggle(set(|c, on| c.script_console_auto = on)),
         ))
-        .add(settings::item(
+        .add(settings::flex_item(
             fl!("options-notes-on-start"),
             widget::toggler(config.notes_on_start).on_toggle(set(|c, on| c.notes_on_start = on)),
         ))
-        .add(settings::item(
+        .add(settings::flex_item(
             fl!("options-theme"),
             widget::dropdown(themes, theme, {
                 let c = config.clone();
@@ -105,7 +105,7 @@ pub fn view<'a>(
         .position(|r| *r == config.sftp_overwrite);
     let sftp = settings::section()
         .title(fl!("options-sftp"))
-        .add(settings::item(
+        .add(settings::flex_item(
             fl!("options-sftp-exists"),
             widget::dropdown(rules, rule, {
                 let c = config.clone();
@@ -116,7 +116,7 @@ pub fn view<'a>(
                 }
             }),
         ))
-        .add(settings::item(
+        .add(settings::flex_item(
             fl!("options-sftp-hidden"),
             widget::toggler(config.sftp_show_hidden)
                 .on_toggle(set(|c, on| c.sftp_show_hidden = on)),
@@ -129,7 +129,7 @@ pub fn view<'a>(
                 f(&mut c, v);
                 Message::SetConfig(c)
             })
-            .width(cosmic::iced::Length::Fixed(260.0))
+            .width(cosmic::iced::Length::Fixed(240.0))
             .into()
     };
     // Colour scheme of the terminal and the keyword rules.
@@ -149,7 +149,7 @@ pub fn view<'a>(
         .map_or(0, |i| i + 1);
     let mut colours = settings::section()
         .title(fl!("options-colours"))
-        .add(settings::item(
+        .add(settings::flex_item(
             fl!("options-scheme"),
             widget::dropdown(names, Some(scheme), {
                 let c = config.clone();
@@ -162,7 +162,7 @@ pub fn view<'a>(
                 }
             }),
         ))
-        .add(settings::item(
+        .add(settings::flex_item(
             fl!("options-highlight"),
             widget::toggler(config.highlight_enabled)
                 .on_toggle(set(|c, on| c.highlight_enabled = on)),
@@ -232,62 +232,116 @@ pub fn view<'a>(
     }));
     let logging = settings::section()
         .title(fl!("options-logging"))
-        .add(settings::item(
+        .add(settings::flex_item(
             fl!("options-log-dir"),
             text(&config.log_dir, |c, v| c.log_dir = v),
         ))
-        .add(settings::item(
+        .add(settings::flex_item(
             fl!("options-log-template"),
             text(&config.log_template, |c, v| c.log_template = v),
         ))
         .add(widget::text::caption(fl!("options-log-hint")));
     let scripts = settings::section()
         .title(fl!("options-scripts"))
-        .add(settings::item(
+        .add(settings::flex_item(
             fl!("options-scripts-folder"),
             text(&config.scripts_folder, |c, v| c.scripts_folder = v),
         ))
-        .add(settings::item(
+        .add(settings::flex_item(
             fl!("options-startup-script"),
             text(&config.startup_script, |c, v| c.startup_script = v),
         ));
     let updates = settings::section()
         .title(fl!("options-updates"))
-        .add(settings::item(
+        .add(settings::flex_item(
             fl!("options-update-check"),
             widget::toggler(config.update_check).on_toggle(set(|c, on| c.update_check = on)),
         ));
     let zmodem = settings::section()
         .title(fl!("options-zmodem"))
-        .add(settings::item(
+        .add(settings::flex_item(
             fl!("options-zmodem-auto"),
             widget::toggler(config.zmodem_auto).on_toggle(set(|c, on| c.zmodem_auto = on)),
         ))
-        .add(settings::item(
+        .add(settings::flex_item(
             fl!("options-download-dir"),
             text(&config.download_dir, |c, v| c.download_dir = v),
         ));
+    // Installed monospace families (the first entry: the system's), and the sizes to pick from.
+    let mut fonts = vec![fl!("options-system")];
+    fonts.extend(crate::term::style::monospace_families());
+    if !config.font_family.is_empty()
+        && !fonts
+            .iter()
+            .any(|f| f.eq_ignore_ascii_case(&config.font_family))
+    {
+        fonts.push(config.font_family.clone());
+    }
+    let mut sizes: Vec<u16> = vec![
+        8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 22, 24, 28, 32, 40, 48,
+    ];
+    if !sizes.iter().any(|n| f32::from(*n) == config.font_px()) {
+        sizes.push(config.font_px() as u16);
+        sizes.sort_unstable();
+    }
     let terminal = settings::section()
         .title(fl!("options-terminal"))
-        .add(settings::item(
+        .add(settings::flex_item(
             fl!("options-font"),
-            text(&config.font_family, |c, v| c.font_family = v),
-        ))
-        .add(settings::item(
-            fl!("options-font-size"),
-            text(
-                &match config.font_size {
-                    0 => String::new(),
-                    n => n.to_string(),
+            widget::dropdown(
+                fonts.clone(),
+                Some(
+                    fonts
+                        .iter()
+                        .position(|f| f.eq_ignore_ascii_case(&config.font_family))
+                        .unwrap_or(0),
+                ),
+                {
+                    let c = config.clone();
+                    let fonts = fonts.clone();
+                    move |i| {
+                        let mut c = c.clone();
+                        // 0 = the system's monospace.
+                        c.font_family = if i == 0 {
+                            String::new()
+                        } else {
+                            fonts[i].clone()
+                        };
+                        Message::SetConfig(c)
+                    }
                 },
-                |c, v| c.font_size = v.trim().parse::<u32>().map_or(0, |n| n.min(48) as u16),
             ),
         ))
-        .add(settings::item(
+        .add(settings::flex_item(
+            fl!("options-font-size"),
+            widget::dropdown(
+                sizes.iter().map(u16::to_string).collect::<Vec<_>>(),
+                sizes.iter().position(|n| f32::from(*n) == config.font_px()),
+                {
+                    let c = config.clone();
+                    move |i| {
+                        let mut c = c.clone();
+                        c.font_size = sizes[i];
+                        Message::SetConfig(c)
+                    }
+                },
+            ),
+        ))
+        .add(settings::flex_item(
+            fl!("options-tab-height"),
+            text(&px(config.tab_height), |c, v| c.tab_height = parse_px(&v)),
+        ))
+        .add(settings::flex_item(
+            fl!("options-button-height"),
+            text(&px(config.button_height), |c, v| {
+                c.button_height = parse_px(&v)
+            }),
+        ))
+        .add(settings::flex_item(
             fl!("options-copy-on-select"),
             widget::toggler(config.copy_on_select).on_toggle(set(|c, on| c.copy_on_select = on)),
         ))
-        .add(settings::item(
+        .add(settings::flex_item(
             fl!("options-paste-on-middle"),
             widget::toggler(config.paste_on_middle_click)
                 .on_toggle(set(|c, on| c.paste_on_middle_click = on)),
@@ -307,7 +361,7 @@ pub fn view<'a>(
             .into(),
             master.into(),
         ]))
-        .add(settings::item(
+        .add(settings::flex_item(
             fl!("options-credentials"),
             widget::button::standard(fl!("options-open"))
                 .on_press(Message::Action(crate::menu::Action::Credentials)),
@@ -325,4 +379,16 @@ pub fn view<'a>(
     ])
     .spacing(16);
     context_drawer::context_drawer(content, Message::CloseDrawer).title(fl!("menu-global-options"))
+}
+
+/// A height box shows nothing for 0 (the theme's).
+fn px(n: u16) -> String {
+    match n {
+        0 => String::new(),
+        n => n.to_string(),
+    }
+}
+
+fn parse_px(v: &str) -> u16 {
+    v.trim().parse::<u32>().map_or(0, |n| n.min(64) as u16)
 }

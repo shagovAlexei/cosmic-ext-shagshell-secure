@@ -140,6 +140,8 @@ so-scheme-global = (the one of Global Options)
 options-terminal = Terminal
 options-font = Font (empty = system monospace)
 options-font-size = Font size
+options-tab-height = Tab header height, px (empty = default)
+options-button-height = Button Bar button height, px (empty = default)
 options-copy-on-select = Copy on select
 options-paste-on-middle = Paste with the middle mouse button
 term-disconnected = Disconnected — press Enter to reconnect
@@ -310,7 +312,18 @@ sm-sftp = Open SFTP
 sftp-connecting = Connecting…
 sftp-disconnected = Not connected: { $why }
 sftp-not-connected = Not connected
-sftp-keys = Tab panel · Enter open · Backspace up · Insert mark · F5 copy · F6 move · Shift+F6 rename · F7 folder · F8 delete · F4 edit · Ctrl+D bookmarks · Ctrl+Y sync · Alt+Enter rights · Ctrl+H hidden · Ctrl+R refresh
+sftp-fk-switch = Tab panel
+sftp-fk-edit = F4 Edit
+sftp-fk-copy = F5 Copy
+sftp-fk-move = F6 Move
+sftp-fk-rename = ⇧F6 Rename
+sftp-fk-mkdir = F7 Folder
+sftp-fk-delete = F8 Delete
+sftp-fk-rights = Alt+↵ Rights
+sftp-fk-bookmarks = ^D Bookmarks
+sftp-fk-sync = ^Y Sync
+sftp-fk-hidden = ^H Hidden
+sftp-fk-refresh = ^R Refresh
 sftp-n-items = { $count ->
     [one] { $count } item
    *[other] { $count } items
@@ -361,8 +374,6 @@ sftp-done = done
 sftp-skipped = skipped
 sftp-cancelled = cancelled
 sftp-retry = Retry
-sftp-goto-title = Go to folder
-sftp-go = Go
 sftp-goto-title = Go to folder
 sftp-go = Go
 
@@ -581,6 +592,7 @@ note-rename = Rename
 note-rename-ok = Rename
 note-open = Open…
 note-open-title = Open a note
+note-copy = Copy all
 note-edit = Edit
 note-view = View
 note-filter-text = Text and Markdown

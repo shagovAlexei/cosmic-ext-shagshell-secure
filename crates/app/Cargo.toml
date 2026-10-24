@@ -33,4 +33,4 @@ ashpd = { version = "0.12.3", default-features = false, features = ["tokio"] }
 git = "https://github.com/pop-os/libcosmic.git"
 rev = "ef490df50b0a05a21c494c3f75737581bf0b39d9"
 default-features = false
-features = ["tokio", "winit", "wayland", "wgpu", "multi-window", "about", "xdg-portal", "markdown"]
+features = ["tokio", "winit", "wayland", "wgpu", "multi-window", "about", "xdg-portal"]

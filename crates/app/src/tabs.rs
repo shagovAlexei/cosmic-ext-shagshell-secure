@@ -119,6 +119,8 @@ pub struct Launch {
     pub sftp: bool,
     /// A note: this file, not a program.
     pub note: Option<std::path::PathBuf>,
+    /// The Script Console: a tab drawn by the app, not a program.
+    pub console: bool,
     /// Logged from the start (the session says so).
     pub log: Option<LogSpec>,
     /// Connects again by itself when the connection drops.
@@ -142,6 +144,7 @@ impl Launch {
             protocol: Protocol::Local,
             sftp: false,
             note: None,
+            console: false,
             log: None,
             auto_reconnect: None,
             logon: None,
@@ -165,6 +168,7 @@ impl Launch {
             },
             sftp: true,
             note: None,
+            console: false,
             ..self.clone()
         })
     }
@@ -186,6 +190,8 @@ pub enum Body {
     Sftp(Box<SftpView>),
     /// A text / markdown file.
     Note(Box<crate::notes::NoteView>),
+    /// The Script Console (the app draws it: `Scripts::console_view`).
+    Console,
 }
 
 pub struct Tab {
@@ -213,6 +219,7 @@ impl Tab {
         };
         let mark = match (&self.body, self.live()) {
             (Body::Note(_), _) => "✎",
+            (Body::Console, _) => "▤",
             (_, true) => "✓",
             (_, false) => "✗",
         };
@@ -225,14 +232,14 @@ impl Tab {
             Body::Terminal(_) => self.alive,
             Body::Sftp(v) => v.connected,
             // Never «live»: closing it asks nothing, Reconnect does nothing.
-            Body::Note(_) => false,
+            Body::Note(_) | Body::Console => false,
         }
     }
 
     fn terminal(&self) -> Option<&Mutex<Terminal>> {
         match &self.body {
             Body::Terminal(t) => Some(t),
-            Body::Sftp(_) | Body::Note(_) => None,
+            Body::Sftp(_) | Body::Note(_) | Body::Console => None,
         }
     }
 }
@@ -412,6 +419,9 @@ impl Tabs {
         let Body::Note(v) = &mut tab.body else {
             return (false, Task::none());
         };
+        if matches!(msg, crate::notes::NoteMsg::Copy) {
+            return (false, iced::clipboard::write(v.text()));
+        }
         let rename = matches!(msg, crate::notes::NoteMsg::RenameStart);
         let field = v.rename_field();
         let before = v.path.clone();
@@ -529,7 +539,7 @@ impl Tabs {
     /// Active tab: (connected, protocol label, cols × rows of a terminal).
     pub fn status(&self) -> Option<crate::status_bar::Status> {
         let tab = self.tabs.get(&self.active_id()?)?;
-        if matches!(tab.body, Body::Note(_)) {
+        if matches!(tab.body, Body::Note(_) | Body::Console) {
             return None;
         }
         let label = tab.launch.label();
@@ -587,7 +597,7 @@ impl Tabs {
         self.tabs.get(&id).is_some_and(|t| match t.body {
             Body::Terminal(_) => t.alive,
             Body::Sftp(_) => true,
-            Body::Note(_) => false,
+            Body::Note(_) | Body::Console => false,
         })
     }
 
@@ -699,6 +709,9 @@ impl Tabs {
     }
 
     fn spawn(&self, id: TabId, launch: &Launch, look: &Look) -> Option<Body> {
+        if launch.console {
+            return Some(Body::Console);
+        }
         if let Some(path) = &launch.note {
             return crate::notes::NoteView::open(path)
                 .ok()
@@ -934,7 +947,7 @@ impl Tabs {
                 tab.stopped = true;
             }
             Body::Sftp(v) => v.disconnect(),
-            Body::Note(_) => {}
+            Body::Note(_) | Body::Console => {}
             // Already down, maybe waiting to reconnect by itself: that wait ends.
             Body::Terminal(_) => tab.stopped = true,
         }
@@ -951,7 +964,7 @@ impl Tabs {
         if self
             .tabs
             .get(&id)
-            .is_none_or(|t| t.live() || matches!(t.body, Body::Note(_)))
+            .is_none_or(|t| t.live() || matches!(t.body, Body::Note(_) | Body::Console))
         {
             return Task::none();
         }
@@ -1106,7 +1119,7 @@ impl Tabs {
                 Task::none()
             }
             TabCmd::Clone => match (self.tabs.get(&id).map(|tab| tab.launch.clone()))
-                .filter(|l| l.note.is_none())
+                .filter(|l| l.note.is_none() && !l.console)
             {
                 Some(launch) => self.open(launch, look),
                 None => Task::none(),
@@ -1139,13 +1152,14 @@ impl Tabs {
     }
 
     /// A tab's own window: a title bar with «back» and the tab.
-    pub fn window_view(
-        &self,
+    pub fn window_view<'a>(
+        &'a self,
         window: iced::window::Id,
         config: &Config,
         focused: bool,
         keys: bool,
-    ) -> Option<Element<'_, Message>> {
+        scripts: &'a crate::script::Scripts,
+    ) -> Option<Element<'a, Message>> {
         let id = self.tab_in(window)?;
         let tab = self.tabs.get(&id)?;
         let m = |x| Message::Tabs(x);
@@ -1162,6 +1176,7 @@ impl Tabs {
             config.copy_on_select,
             config.paste_on_middle_click,
             keys,
+            scripts,
         );
         let content = widget::column::with_children(vec![bar.into(), body]);
         Some(
@@ -1174,14 +1189,19 @@ impl Tabs {
     }
 
     /// What a tab shows: its terminal or its SFTP view (empty: no tab).
-    fn body(
-        &self,
+    fn body<'a>(
+        &'a self,
         id: Option<TabId>,
         copy: bool,
         middle: bool,
         keys: bool,
-    ) -> Element<'_, Message> {
+        scripts: &'a crate::script::Scripts,
+    ) -> Element<'a, Message> {
         match id.and_then(|id| self.tabs.get(&id)) {
+            Some(Tab {
+                body: Body::Console,
+                ..
+            }) => scripts.console_view(),
             Some(Tab {
                 body: Body::Sftp(v),
                 ..
@@ -1360,6 +1380,63 @@ impl Tabs {
         }
     }
 
+    /// The Script Console's tab.
+    fn console_id(&self) -> Option<TabId> {
+        (self.tabs.iter()).find_map(|(id, t)| matches!(t.body, Body::Console).then_some(*id))
+    }
+
+    /// The Script Console as a tab in the group at the right (a new one beside the focused when
+    /// there is only one); there already: shown when `raise`. The focus stays where it was.
+    pub fn open_console(&mut self, raise: bool, look: &Look) -> Task<Message> {
+        if let Some(id) = self.console_id() {
+            if raise {
+                self.show(id);
+            }
+            return Task::none();
+        }
+        let back = self.focus;
+        // The right-most group from the focused one.
+        if let (Some(grid), Some(mut p)) = (&self.grid, self.focus) {
+            while let Some(next) = grid.adjacent(p, pane_grid::Direction::Right) {
+                p = next;
+            }
+            self.focus = Some(p);
+        }
+        // What the target group shows now: an automatic open must not hide it.
+        let shown = (self.grid.as_ref().zip(self.focus))
+            .and_then(|(g, p)| g.get(p))
+            .map(|g| (self.focus, g.model.active()));
+        let mut launch = Launch::local_shell();
+        launch.title = fl!("console-title");
+        launch.console = true;
+        let task = self.open(launch, look);
+        let Some(id) = self.console_id() else {
+            return task;
+        };
+        // Alone in the only group: a group of its own, at its right.
+        let alone_group = self.grid.as_ref().is_some_and(|g| g.len() == 1);
+        let at = self.grid.as_ref().and_then(|g| {
+            g.iter()
+                .find_map(|(pane, group)| entity_of(&group.model, id).map(|e| (*pane, e, id)))
+        });
+        let split = match at {
+            Some(at) if alone_group => self.split(at, pane_grid::Axis::Vertical),
+            _ => Task::none(),
+        };
+        if raise {
+            return Task::batch([task, split]);
+        }
+        if let (Some((Some(p), e)), Some(grid)) = (shown, self.grid.as_mut())
+            && !alone_group
+            && let Some(g) = grid.get_mut(p)
+        {
+            g.model.activate(e);
+        }
+        self.focus = back.filter(|p| self.grid.as_ref().is_some_and(|g| g.get(*p).is_some()));
+        // Not `task` / `split`: their focus would take the keyboard from the terminal.
+        Task::none()
+    }
+
     /// That tab into a new group beside its own; refused when it is alone in its group.
     fn split(
         &mut self,
@@ -1406,7 +1483,7 @@ impl Tabs {
             TabCmd::Clone => {
                 self.focus = Some(t.0); // its group
                 match (self.tabs.get(&t.2).map(|tab| tab.launch.clone()))
-                    .filter(|l| l.note.is_none())
+                    .filter(|l| l.note.is_none() && !l.console)
                 {
                     Some(launch) => self.open(launch, look),
                     None => Task::none(),
@@ -1744,12 +1821,13 @@ impl Tabs {
     }
 
     /// `keys`: false while a dialog is up — its Enter / Esc must not go to the program.
-    pub fn view(
-        &self,
+    pub fn view<'a>(
+        &'a self,
         config: &Config,
         window: iced::window::Id,
         keys: bool,
-    ) -> Option<Element<'_, Message>> {
+        scripts: &'a crate::script::Scripts,
+    ) -> Option<Element<'a, Message>> {
         let grid = self.grid.as_ref()?;
         let focus = self.focus;
         let many = grid.len() > 1;
@@ -1765,7 +1843,7 @@ impl Tabs {
             };
             // The sides that have a group beside this one: the tab can move there.
             let neighbours = Side::ALL.map(|s| grid.adjacent(pane, s.direction()).is_some());
-            let bar = tab_bar::horizontal(&group.model)
+            let mut bar = tab_bar::horizontal(&group.model)
                 .on_activate(m(TabsMsg::Activate))
                 .on_close(m(TabsMsg::Close))
                 .on_middle_press(m(TabsMsg::Close))
@@ -1776,11 +1854,14 @@ impl Tabs {
                 .enable_tab_drag(TAB_MIME.to_string())
                 .on_reorder(move |ev| app(Message::Tabs(TabsMsg::Reorder(pane, ev))))
                 .on_dnd_drop::<TabDrop>(move |_, _, _| app(Message::Tabs(TabsMsg::Drop(pane))));
+            if let Some(h) = config.tab_px() {
+                bar = bar.button_height(h);
+            }
             let bar = Element::from(bar).map(|a| match a {
                 cosmic::Action::App(m) => m,
                 other => Message::Cosmic(Box::new(other)),
             });
-            let body = self.body(group.active_id(), copy, middle, keys);
+            let body = self.body(group.active_id(), copy, middle, keys, scripts);
             // A tab dropped on the body comes here too.
             let body: Element<'_, Message> =
                 cosmic::widget::dnd_destination::DndDestination::for_data::<TabDrop>(

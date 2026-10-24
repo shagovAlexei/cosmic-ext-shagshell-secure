@@ -140,6 +140,8 @@ so-scheme-global = (как в Общих параметрах)
 options-terminal = Терминал
 options-font = Шрифт (пусто = системный моноширинный)
 options-font-size = Размер шрифта
+options-tab-height = Высота заголовков вкладок, px (пусто = как в теме)
+options-button-height = Высота кнопок Button Bar, px (пусто = как в теме)
 options-copy-on-select = Копировать при выделении
 options-paste-on-middle = Вставлять средней кнопкой мыши
 term-disconnected = Отключено — Enter, чтобы подключиться заново
@@ -310,7 +312,18 @@ sm-sftp = Открыть SFTP
 sftp-connecting = Подключение…
 sftp-disconnected = Нет подключения: { $why }
 sftp-not-connected = Нет подключения
-sftp-keys = Tab панель · Enter открыть · Backspace вверх · Insert отметить · F5 копировать · F6 перенести · Shift+F6 переименовать · F7 папка · F8 удалить · F4 править · Ctrl+D закладки · Ctrl+Y синхронизация · Alt+Enter права · Ctrl+H скрытые · Ctrl+R обновить
+sftp-fk-switch = Tab панель
+sftp-fk-edit = F4 Правка
+sftp-fk-copy = F5 Копия
+sftp-fk-move = F6 Перенос
+sftp-fk-rename = ⇧F6 Имя
+sftp-fk-mkdir = F7 Папка
+sftp-fk-delete = F8 Удалить
+sftp-fk-rights = Alt+↵ Права
+sftp-fk-bookmarks = ^D Закладки
+sftp-fk-sync = ^Y Синхр.
+sftp-fk-hidden = ^H Скрытые
+sftp-fk-refresh = ^R Обновить
 sftp-n-items = { $count ->
     [one] { $count } объект
     [few] { $count } объекта
@@ -362,8 +375,6 @@ sftp-done = готово
 sftp-skipped = пропущено
 sftp-cancelled = отменено
 sftp-retry = Повтор
-sftp-goto-title = Перейти в папку
-sftp-go = Перейти
 sftp-goto-title = Перейти в папку
 sftp-go = Перейти
 
@@ -582,6 +593,7 @@ note-rename = Переименовать
 note-rename-ok = Переименовать
 note-open = Открыть…
 note-open-title = Открыть заметку
+note-copy = Копировать всё
 note-edit = Правка
 note-view = Просмотр
 note-filter-text = Текст и Markdown

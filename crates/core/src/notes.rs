@@ -29,7 +29,19 @@ pub fn ensure_default(dir: &Path, russian: bool) -> io::Result<PathBuf> {
         std::fs::create_dir_all(dir)?;
         std::fs::write(&path, text)?;
     }
-    Ok(path)
+    if path.exists() {
+        return Ok(path);
+    }
+    // Renamed: the newest note in the folder is the main one now.
+    let newest = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
+        .filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.path())))
+        .max()
+        .map(|(_, p)| p);
+    Ok(newest.unwrap_or(path))
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -105,11 +117,12 @@ mod tests {
         ensure_default(&d, false).unwrap();
         assert_eq!(std::fs::read_to_string(&p).unwrap(), "mine");
         // Something is in the folder: no second cheat sheet next to it.
-        let ru = ensure_default(&d, true).unwrap();
-        assert!(!ru.exists());
+        ensure_default(&d, true).unwrap();
+        assert!(!d.join("Заметки.md").exists());
         std::fs::remove_file(&p).unwrap();
         std::fs::write(d.join("Work.md"), "x").unwrap();
-        assert!(!ensure_default(&d, false).unwrap().exists());
+        assert!(ensure_default(&d, false).unwrap().ends_with("Work.md"));
+        assert!(!d.join("Notes.md").exists());
         let fresh = d.join("sub");
         assert!(
             ensure_default(&fresh, true)
@@ -175,5 +188,15 @@ mod tests {
         let t = rename(&c, "plan.txt").unwrap();
         assert_eq!(t, d.join("plan.txt"));
         let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn regression_a_renamed_main_note_is_still_the_main_note() {
+        let tmp = tempfile::tempdir().unwrap();
+        let first = ensure_default(tmp.path(), false).unwrap();
+        let renamed = rename(&first, "plan.md").unwrap();
+        // Was: «Notes.md: No such file» every time View → Notes was used.
+        assert_eq!(ensure_default(tmp.path(), false).unwrap(), renamed);
+        assert_eq!(std::fs::read_dir(tmp.path()).unwrap().count(), 1);
     }
 }

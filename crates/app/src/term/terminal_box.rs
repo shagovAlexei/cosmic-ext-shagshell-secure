@@ -1600,7 +1600,14 @@ where
             }
             Event::Mouse(MouseEvent::WheelScrolled { delta }) => {
                 if let Some(p) = cursor_position.position_in(layout.bounds()) {
-                    if is_mouse_mode {
+                    if state.modifiers.control() {
+                        // Ctrl+wheel: the font size, not the program's.
+                        let y = match delta {
+                            ScrollDelta::Lines { y, .. } | ScrollDelta::Pixels { y, .. } => *y,
+                        };
+                        terminal.zoom(if y > 0.0 { 1 } else { -1 });
+                        shell.capture_event();
+                    } else if is_mouse_mode {
                         let x = p.x - self.padding.left;
                         let y = p.y - self.padding.top;
                         //TODO: better calculation of position

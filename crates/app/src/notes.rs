@@ -4,9 +4,10 @@
 use crate::app::Message;
 use crate::fl;
 use cosmic::iced::Length;
+use cosmic::widget;
 use cosmic::widget::text_editor::{self, Action};
-use cosmic::widget::{self, markdown};
 use cosmic::{Element, theme};
+use shagshell_core::mdview::Look;
 use shagshell_core::notes;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -14,19 +15,24 @@ use std::time::{Duration, Instant};
 #[derive(Clone, Debug)]
 pub enum NoteMsg {
     Edit(Action),
+    /// The formatted view: moving and selecting only, never an edit.
+    Look(Action),
     Preview,
+    /// The whole text to the clipboard (the formatted view cannot be selected).
+    Copy,
     RenameStart,
     RenameEdit(String),
     RenameDo,
     RenameCancel,
     Open,
-    Link(String),
 }
 
 pub struct NoteView {
     pub path: PathBuf,
     text: text_editor::Content,
-    items: Vec<markdown::Item>,
+    /// The formatted view: the markdown as plain text a mouse can select, and its looks.
+    shown: text_editor::Content,
+    spans: Spans,
     preview: bool,
     /// Edited, not written yet: since when.
     dirty: Option<Instant>,
@@ -61,7 +67,8 @@ impl NoteView {
         let mut v = Self {
             path: path.to_path_buf(),
             text: text_editor::Content::with_text(&text),
-            items: Vec::new(),
+            shown: text_editor::Content::new(),
+            spans: Spans::default(),
             preview: false,
             dirty: None,
             rename: None,
@@ -86,7 +93,9 @@ impl NoteView {
     fn set_preview(&mut self, on: bool) {
         self.preview = on;
         if on {
-            self.items = markdown::parse(&self.text.text()).collect();
+            let v = shagshell_core::mdview::render(&self.text.text());
+            self.shown = text_editor::Content::with_text(&v.text);
+            self.spans = Spans(std::sync::Arc::new(v.lines));
         }
     }
 
@@ -121,6 +130,10 @@ impl NoteView {
     }
 
     /// `true`: the tab wants the file chooser.
+    pub fn text(&self) -> String {
+        self.text.text()
+    }
+
     pub fn update(&mut self, msg: NoteMsg) -> bool {
         match msg {
             NoteMsg::Edit(a) => {
@@ -131,7 +144,13 @@ impl NoteView {
                     self.error = None;
                 }
             }
+            NoteMsg::Look(a) => {
+                if !a.is_edit() {
+                    self.shown.perform(a);
+                }
+            }
             NoteMsg::Preview => self.set_preview(!self.preview),
+            NoteMsg::Copy => {}
             NoteMsg::RenameStart => self.rename = Some(self.name()),
             NoteMsg::RenameEdit(v) => self.rename = Some(v),
             NoteMsg::RenameCancel => self.rename = None,
@@ -152,19 +171,6 @@ impl NoteView {
                 }
             }
             NoteMsg::Open => return true,
-            NoteMsg::Link(url) => {
-                // Web and mail links only: a `file:` link in a file from elsewhere is not run.
-                if ["http://", "https://", "mailto:"]
-                    .iter()
-                    .any(|s| url.starts_with(s))
-                {
-                    match std::process::Command::new("xdg-open").arg(&url).spawn() {
-                        // Waited for, so it does not stay a zombie.
-                        Ok(mut c) => drop(std::thread::spawn(move || c.wait())),
-                        Err(e) => self.error = Some(format!("xdg-open: {e}")),
-                    }
-                }
-            }
         }
         false
     }
@@ -203,23 +209,22 @@ impl NoteView {
                 true => fl!("note-edit"),
                 false => fl!("note-view"),
             };
+            if self.preview {
+                bar =
+                    bar.push(widget::button::standard(fl!("note-copy")).on_press(m(NoteMsg::Copy)));
+            }
             bar = bar.push(widget::button::standard(label).on_press(m(NoteMsg::Preview)));
         }
         let body: Element<'_, Message> = match self.preview {
-            true => {
-                let base = match cosmic::theme::active().cosmic().is_dark {
-                    true => cosmic::iced::Theme::Dark,
-                    false => cosmic::iced::Theme::Light,
-                };
-                let style = markdown::Style::from(&base);
-                widget::scrollable(
-                    markdown::view(&self.items, markdown::Settings::with_style(style))
-                        .map(move |u| m(NoteMsg::Link(u.to_string()))),
-                )
-                .width(Length::Fill)
+            // iced's own editor: libcosmic's wrapper cannot take a highlighter.
+            // The tab's widget id too: the app's «focus the tab» then keeps it (and its selection).
+            true => cosmic::iced::widget::text_editor(&self.shown)
+                .id(editor_id)
+                .on_action(move |a| m(NoteMsg::Look(a)))
+                .highlight_with::<Looks>(self.spans.clone(), look_format)
+                .padding(8)
                 .height(Length::Fill)
-                .into()
-            }
+                .into(),
             false => text_editor::TextEditor::new(&self.text)
                 .id(editor_id)
                 .on_action(move |a| m(NoteMsg::Edit(a)))
@@ -229,6 +234,7 @@ impl NoteView {
         };
         let mut col = widget::column::with_capacity(3)
             .spacing(8)
+            .height(Length::Fill)
             .padding(8)
             .push(bar);
         if let Some(e) = &self.error {
@@ -257,4 +263,89 @@ pub async fn pick(title: String, dir: PathBuf) -> Option<PathBuf> {
     }
     let picked = r.send().await.ok()?.response().ok()?;
     picked.uris().first()?.to_file_path().ok()
+}
+
+/// The looks of every line of the formatted view (shared, compared by address).
+#[derive(Clone, Default)]
+struct Spans(std::sync::Arc<shagshell_core::mdview::Lines>);
+
+impl PartialEq for Spans {
+    fn eq(&self, other: &Self) -> bool {
+        std::sync::Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+/// Hands the editor the looks of the line it asks about, in order.
+struct Looks {
+    spans: Spans,
+    line: usize,
+}
+
+impl cosmic::iced::advanced::text::Highlighter for Looks {
+    type Settings = Spans;
+    type Highlight = Look;
+    type Iterator<'a> = std::vec::IntoIter<(std::ops::Range<usize>, Look)>;
+
+    fn new(spans: &Spans) -> Self {
+        Self {
+            spans: spans.clone(),
+            line: 0,
+        }
+    }
+
+    fn update(&mut self, spans: &Spans) {
+        self.spans = spans.clone();
+        self.line = 0;
+    }
+
+    fn change_line(&mut self, line: usize) {
+        self.line = self.line.min(line);
+    }
+
+    fn highlight_line(&mut self, _line: &str) -> Self::Iterator<'_> {
+        let at = self.line;
+        self.line += 1;
+        self.spans
+            .0
+            .get(at)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+    }
+
+    fn current_line(&self) -> usize {
+        self.line
+    }
+}
+
+/// Colour and font of a look: headings and links in the accent, code monospace.
+fn look_format(
+    look: &Look,
+    theme: &cosmic::Theme,
+) -> cosmic::iced::advanced::text::highlighter::Format<cosmic::iced::Font> {
+    use cosmic::iced::font::{Style, Weight};
+    let c = theme.cosmic();
+    let mut font = cosmic::iced::Font::default();
+    if look.code {
+        font = cosmic::font::mono();
+    }
+    if look.bold || look.heading > 0 {
+        font.weight = Weight::Bold;
+    }
+    if look.italic || look.quote {
+        font.style = Style::Italic;
+    }
+    let color = if look.heading > 0 || look.link {
+        Some(cosmic::iced::Color::from(c.accent_text_color()))
+    } else if look.mark || look.quote {
+        Some(cosmic::iced::Color::from(c.palette.neutral_7))
+    } else if look.code {
+        Some(cosmic::iced::Color::from(c.success_text_color()))
+    } else {
+        None
+    };
+    cosmic::iced::advanced::text::highlighter::Format {
+        color,
+        font: Some(font),
+    }
 }

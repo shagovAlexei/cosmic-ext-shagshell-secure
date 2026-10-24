@@ -89,8 +89,6 @@ pub enum ScMsg {
     ConsoleClear,
     ConsoleCopy,
     ConsoleDebug(bool),
-    ConsoleClose,
-    ConsoleDrag,
 }
 
 struct Run {
@@ -175,8 +173,6 @@ pub struct Scripts {
     /// Set when `Output` is queued, cleared when the window has taken it.
     dirty: Arc<AtomicBool>,
     pub debug: Arc<AtomicBool>,
-    /// The Script Console's window.
-    pub console_win: Option<cosmic::iced::window::Id>,
     /// The newest run the console opened for by itself (a closed console stays closed).
     shown_run: u64,
     tx: tokio::sync::mpsc::UnboundedSender<ScMsg>,
@@ -224,7 +220,6 @@ impl Scripts {
             console: Arc::default(),
             dirty: Arc::default(),
             debug: Arc::default(),
-            console_win: None,
             shown_run: 0,
             tx,
             rx: Arc::new(Mutex::new(Some(rx))),
@@ -469,7 +464,7 @@ impl Scripts {
                     .first()
                     .map_or(first, |l| l.run.max(first));
                 // Once per run: a console closed by hand stays closed for it.
-                if run > self.shown_run && self.console_win.is_none() {
+                if run > self.shown_run {
                     self.shown_run = run;
                     out.output = Some(run);
                 }
@@ -491,7 +486,6 @@ impl Scripts {
                 );
             }
             ScMsg::ConsoleDebug(on) => self.debug.store(on, Ordering::SeqCst),
-            ScMsg::ConsoleClose | ScMsg::ConsoleDrag => {}
             ScMsg::Picked(_) | ScMsg::Start(..) | ScMsg::StartOn(..) | ScMsg::Drag => {}
             ScMsg::Input(v) => {
                 if let Some(a) = self.asks.front_mut() {
@@ -568,14 +562,15 @@ impl Scripts {
                     input = input.password();
                 }
                 let text = widget::text::body(a.arg(0).to_string());
-                let top: Element<'_, Message> = match a.call.args.get(3).and_then(Value::as_bool) {
-                    Some(true) => widget::row::with_capacity(2)
-                        .spacing(16)
-                        .push(crate::dialog_icons::Kind::Lock.icon(48))
-                        .push(text)
-                        .into(),
-                    _ => text.into(),
+                let kind = match a.call.args.get(3).and_then(Value::as_bool) {
+                    Some(true) => crate::dialog_icons::Kind::Lock,
+                    _ => crate::dialog_icons::Kind::Edit,
                 };
+                let top: Element<'_, Message> = widget::row::with_capacity(2)
+                    .spacing(16)
+                    .push(kind.icon(48))
+                    .push(text)
+                    .into();
                 body = body.push(top).push(input);
                 buttons = buttons
                     .push(widget::button::standard(fl!("cancel")).on_press(m(ScMsg::Cancel)))
@@ -592,7 +587,12 @@ impl Scripts {
                     rows = rows.push(b.width(Length::Fill).on_press(m(ScMsg::Pick(i))));
                 }
                 body = body
-                    .push(widget::text::body(a.arg(0).to_string()))
+                    .push(
+                        widget::row::with_capacity(2)
+                            .spacing(16)
+                            .push(crate::dialog_icons::Kind::Question.icon(48))
+                            .push(widget::text::body(a.arg(0).to_string())),
+                    )
                     .push(
                         widget::text_input(fl!("script-list-filter"), a.filter.clone())
                             .id(self.input_id.clone())
@@ -608,7 +608,8 @@ impl Scripts {
                 let f = a.flags();
                 use crate::dialog_icons::Kind;
                 let icon = match f.icon {
-                    script::Icon::None => None,
+                    // A message with no icon of its own still gets one: every dialog of ours has it.
+                    script::Icon::None => Some(Kind::Info),
                     script::Icon::Stop => Some(Kind::Stop),
                     script::Icon::Question => Some(Kind::Question),
                     script::Icon::Warning => Some(Kind::Warning),
@@ -668,7 +669,7 @@ impl Scripts {
     }
 
     /// The Script Console window.
-    pub fn console_view(&self, focused: bool) -> Element<'_, Message> {
+    pub fn console_view(&self) -> Element<'_, Message> {
         use cosmic::iced::{Color, Length};
         use script::Kind;
         let m = Message::Script;
@@ -720,16 +721,7 @@ impl Scripts {
                 widget::toggler(self.debug.load(Ordering::SeqCst))
                     .on_toggle(move |on| m(ScMsg::ConsoleDebug(on))),
             );
-        let content = widget::column::with_children(vec![
-            widget::header_bar()
-                .title(fl!("console-title"))
-                .on_close(m(ScMsg::ConsoleClose))
-                .on_drag(m(ScMsg::ConsoleDrag))
-                .focused(focused)
-                .into(),
-            tools.into(),
-            body,
-        ]);
+        let content = widget::column::with_children(vec![tools.into(), body]);
         widget::container(content)
             .width(Length::Fill)
             .height(Length::Fill)
@@ -1140,6 +1132,31 @@ pub async fn save_script(title: String, dir: PathBuf) -> Option<PathBuf> {
         path.set_extension("py");
     }
     Some(path)
+}
+
+/// A script path typed by hand, or taken from a chooser: where the pick goes.
+#[derive(Clone, Copy, Debug)]
+pub enum Slot {
+    /// A Button Bar button's script.
+    Button,
+    /// A scheduled job's script.
+    Sched,
+    /// Session Options: the script before connecting / on opening.
+    Pre,
+    Open,
+}
+
+/// A script's field with a «Browse…» button beside it.
+pub fn with_browse<'a>(input: Element<'a, Message>, slot: Slot) -> Element<'a, Message> {
+    widget::row::with_children(vec![
+        input,
+        widget::button::standard(fl!("so-browse"))
+            .on_press(Message::ScriptFile(slot))
+            .into(),
+    ])
+    .spacing(8)
+    .align_y(cosmic::iced::Alignment::Center)
+    .into()
 }
 
 /// Script → Run…: the file from the portal's chooser, opened in `dir`.

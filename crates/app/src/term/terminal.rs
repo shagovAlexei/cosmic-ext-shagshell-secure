@@ -380,6 +380,21 @@ impl Terminal {
         self.zoom_adj
     }
 
+    /// Ctrl+wheel: the font `by` px bigger (kept to 6–48); `set_config` keeps it.
+    pub fn zoom(&mut self, by: i8) {
+        let now = self.buffer.metrics();
+        let size = (now.font_size + f32::from(by)).clamp(6.0, 48.0);
+        let applied = size - now.font_size;
+        if applied == 0.0 {
+            return;
+        }
+        self.zoom_adj = self.zoom_adj.saturating_add(applied as i8);
+        self.with_buffer_mut(|b| {
+            b.set_metrics(cosmic_text::Metrics::new(size, (size * 1.4).ceil()))
+        });
+        self.update_cell_size();
+    }
+
     pub fn set_zoom_adj(&mut self, value: i8) {
         self.zoom_adj = value;
     }
