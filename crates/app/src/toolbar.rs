@@ -51,3 +51,19 @@ pub fn view() -> Element<'static, Message> {
         .padding([4, 8])
         .into()
 }
+
+/// An icon button with a hint on hover: for strips that are often narrow (a note, a queue, a
+/// console), where a row of text buttons does not fit. `msg == None`: the button is disabled.
+pub fn tip_button<'a>(
+    icon: &'static str,
+    tip: String,
+    msg: Option<crate::app::Message>,
+) -> cosmic::Element<'a, crate::app::Message> {
+    use cosmic::widget;
+    widget::tooltip(
+        widget::button::icon(widget::icon::from_name(icon)).on_press_maybe(msg),
+        widget::text::caption(tip),
+        widget::tooltip::Position::Bottom,
+    )
+    .into()
+}
