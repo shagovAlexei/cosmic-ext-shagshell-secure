@@ -313,6 +313,8 @@ pub enum TabsMsg {
 
 #[derive(Default)]
 pub struct Tabs {
+    /// A recording whose tab was closed: to be saved.
+    closed_recording: Option<(String, shagshell_core::recorder::Recorder)>,
     grid: Option<pane_grid::State<Group>>,
     focus: Option<pane_grid::Pane>,
     tabs: HashMap<TabId, Tab>,
@@ -442,7 +444,10 @@ impl Tabs {
         let logging = tab
             .terminal()
             .is_some_and(|t| t.lock().unwrap_or_else(|e| e.into_inner()).log.active());
-        Some((tab.live(), label, size, logging))
+        let recording = tab
+            .terminal()
+            .is_some_and(|t| t.lock().unwrap_or_else(|e| e.into_inner()).log.recording());
+        Some((tab.live(), label, size, logging, recording))
     }
 
     /// The active tab, if it is an SFTP one (its keys are routed to it).
@@ -516,15 +521,15 @@ impl Tabs {
     }
 
     /// For the menu bar: (any tab, the active one ended, its group can be split).
-    pub fn menu_state(&self) -> (bool, bool, bool, bool) {
+    pub fn menu_state(&self) -> (bool, bool, bool, bool, bool) {
         let Some((pane, _, id)) = self.active() else {
-            return (false, false, false, false);
+            return (false, false, false, false, false);
         };
         let live = self.tabs.get(&id).is_some_and(Tab::live);
         let many = (self.grid.as_ref())
             .and_then(|g| g.get(pane))
             .is_some_and(|g| g.model.len() > 1);
-        (true, live, many, self.logging())
+        (true, live, many, self.logging(), self.recording())
     }
 
     fn tab_at(&self, pane: pane_grid::Pane, e: Entity) -> Option<(pane_grid::Pane, Entity, TabId)> {
@@ -739,6 +744,45 @@ impl Tabs {
     /// Scripts: what a terminal tab shows.
     pub fn screen(&self, id: TabId) -> Option<term::Screen> {
         self.terminal(id).map(term::screen)
+    }
+
+    /// The active tab is being recorded as a script.
+    fn recording(&self) -> bool {
+        self.active()
+            .and_then(|(_, _, id)| self.tap_of(id))
+            .is_some_and(|t| t.recording())
+    }
+
+    /// Script → Start / Stop Recording on the active terminal. Stopping gives the script text
+    /// and the tab's name.
+    pub fn toggle_recording(&mut self) -> Option<(String, shagshell_core::recorder::Recorder)> {
+        let (_, _, id) = self.active()?;
+        let tap = self.tap_of(id)?;
+        let title = self
+            .tabs
+            .get(&id)
+            .map(|t| t.launch.title.clone())
+            .unwrap_or_default();
+        if tap.recording() {
+            return tap.stop_recording().map(|r| (title, r));
+        }
+        // The prompt that is on the screen now is the first step's.
+        let line = self.screen(id).map(|s| {
+            let row = s.rows.get(s.row).map(String::as_str).unwrap_or_default();
+            row.chars().take(s.col).collect::<String>()
+        });
+        tap.start_recording();
+        if let Some(line) = line {
+            tap.record_output(line.as_bytes());
+        }
+        None
+    }
+
+    /// The recording of a tab that was closed meanwhile, once.
+    pub fn take_closed_recording(
+        &mut self,
+    ) -> Option<(String, shagshell_core::recorder::Recorder)> {
+        self.closed_recording.take()
     }
 
     /// The active tab is being logged.
@@ -962,6 +1006,19 @@ impl Tabs {
             return Task::none();
         };
         if let Some(id) = group.model.data::<TabId>(e).copied() {
+            let tap = self
+                .tabs
+                .get(&id)
+                .and_then(Tab::terminal)
+                .map(|t| t.lock().unwrap_or_else(|e| e.into_inner()).log.clone());
+            if let Some(r) = tap.and_then(|t| t.stop_recording()) {
+                let title = self
+                    .tabs
+                    .get(&id)
+                    .map(|t| t.launch.title.clone())
+                    .unwrap_or_default();
+                self.closed_recording = Some((title, r));
+            }
             self.tabs.remove(&id); // its Drop ends the program
             self.taps
                 .lock()

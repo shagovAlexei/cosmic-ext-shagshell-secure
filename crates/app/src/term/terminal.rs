@@ -418,6 +418,8 @@ impl Terminal {
             }
             return;
         }
+        let input = input.into();
+        self.log.record_input(&input);
         self.notifier.notify(input);
     }
 

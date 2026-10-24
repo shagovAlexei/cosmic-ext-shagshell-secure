@@ -58,6 +58,8 @@ bb-delete-bar = Delete bar…
 bb-unknown-function = Unknown function: { $name }
 bb-bad-command = The command can't be read (quotes)
 menu-log-session = Log Session
+menu-script-record = Record Script
+status-recording = REC SCRIPT
 status-logging = REC
 menu-toolbar = Toolbar
 menu-status-bar = Status Bar
@@ -512,3 +514,8 @@ up-latest = You have the latest version
 up-failed = Could not check for updates: { $error }
 options-updates = Updates
 options-update-check = Check for updates at startup
+
+rec-save-title = Save the recorded script
+rec-saved = Script saved: { $path }
+rec-failed = Could not save the script: { $error }
+rec-empty = Nothing was recorded
