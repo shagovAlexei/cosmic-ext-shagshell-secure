@@ -265,7 +265,8 @@ impl SchedWindow {
                         .iter()
                         .map(|e| {
                             let i = self.list.data::<usize>(e).copied().unwrap_or_default();
-                            let text = widget::text(self.list.text(e).unwrap_or_default().to_string());
+                            let text =
+                                widget::text(self.list.text(e).unwrap_or_default().to_string());
                             // Enabled: the normal colour; disabled: dimmed.
                             let text = match self.on.get(i) {
                                 Some(false) => text.class(theme::Text::Custom(|t| {
