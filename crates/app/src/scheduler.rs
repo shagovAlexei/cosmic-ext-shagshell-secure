@@ -29,6 +29,8 @@ pub enum SchMsg {
 pub struct SchedWindow {
     pub window: window::Id,
     list: segmented_button::SingleSelectModel,
+    /// Whether each job (by index) is enabled: a disabled one is drawn dimmed.
+    on: Vec<bool>,
     /// The job being edited (`None`: a new one).
     pub selected: Option<usize>,
     name: String,
@@ -47,6 +49,7 @@ impl SchedWindow {
         let mut w = Self {
             window,
             list: segmented_button::Model::default(),
+            on: Vec::new(),
             selected: None,
             name: String::new(),
             script: String::new(),
@@ -69,12 +72,14 @@ impl SchedWindow {
     /// The list again (after a save), `select` chosen.
     pub fn reload(&mut self, s: &Schedule, select: Option<usize>) {
         self.list = segmented_button::Model::default();
+        self.on.clear();
         for (i, j) in s.jobs.iter().enumerate() {
             let text = match j.enabled {
                 true => j.name.clone(),
                 false => format!("{} ({})", j.name, fl!("sch-off")),
             };
             let e = self.list.insert().text(text).data(i).id();
+            self.on.push(j.enabled);
             if Some(i) == select {
                 self.list.activate(e);
             }
@@ -255,9 +260,36 @@ impl SchedWindow {
         .width(Length::Fill);
         let left = widget::column::with_children(vec![
             widget::scrollable(
-                segmented_button::vertical(&self.list)
-                    .on_activate(move |e| m(SchMsg::Select(e)))
-                    .width(Length::Fixed(150.0)),
+                widget::column::with_children(
+                    self.list
+                        .iter()
+                        .map(|e| {
+                            let i = self.list.data::<usize>(e).copied().unwrap_or_default();
+                            let text = widget::text(self.list.text(e).unwrap_or_default().to_string());
+                            // Enabled: the normal colour; disabled: dimmed.
+                            let text = match self.on.get(i) {
+                                Some(false) => text.class(theme::Text::Custom(|t| {
+                                    cosmic::iced::widget::text::Style {
+                                        color: Some(t.cosmic().palette.neutral_7.into()),
+                                        ..Default::default()
+                                    }
+                                })),
+                                _ => text,
+                            };
+                            let class = match self.list.is_active(e) {
+                                true => theme::Button::Suggested,
+                                false => theme::Button::Text,
+                            };
+                            widget::button::custom(text)
+                                .class(class)
+                                .width(Length::Fill)
+                                .on_press(m(SchMsg::Select(e)))
+                                .into()
+                        })
+                        .collect::<Vec<Element<'_, Message>>>(),
+                )
+                .spacing(4)
+                .width(Length::Fixed(150.0)),
             )
             .height(Length::Fill)
             .into(),

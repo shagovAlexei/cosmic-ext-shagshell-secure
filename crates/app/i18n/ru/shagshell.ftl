@@ -377,8 +377,6 @@ sftp-cancelled = отменено
 sftp-retry = Повтор
 sftp-goto-title = Перейти в папку
 sftp-go = Перейти
-sftp-goto-title = Перейти в папку
-sftp-go = Перейти
 
 ## Скрипты
 script-title = Скрипт

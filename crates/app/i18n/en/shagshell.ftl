@@ -376,8 +376,6 @@ sftp-cancelled = cancelled
 sftp-retry = Retry
 sftp-goto-title = Go to folder
 sftp-go = Go
-sftp-goto-title = Go to folder
-sftp-go = Go
 
 ## Scripts
 script-title = Script
