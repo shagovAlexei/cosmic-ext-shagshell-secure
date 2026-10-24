@@ -14,7 +14,7 @@
 - [x] 7. Логирование сессий по шаблонам имён
 - [x] 8. ~~8a — jump host / port forwarding в UI, auto-reconnect~~; ~~8b — Telnet и Serial~~
 - [x] 9. ~~9a — Logon Actions (expect/send)~~; ~~9b — keyword highlighting, color schemes~~; ~~9c — импорт из SecureCRT `.ini` (сессии, кнопки)~~
-- [ ] 10. Скрипты на Python: ~~10a — модуль `crt` (API как в SecureCRT), меню Script, `--script`~~; 10b — запуск с Button Bar / клавиши / logon script, импорт кнопок Run Script
+- [x] 10. ~~Скрипты на Python~~: ~~10a — модуль `crt`, меню Script, `--script`~~; ~~10b — запуск с кнопки / из сессии, импорт кнопок Run Script~~
 
 ## Бэклог
 
@@ -24,7 +24,7 @@
 - Синхронизация папок в SFTP
 - X/Y/Zmodem (`rz`/`sz`)
 - Command Manager (дерево сохранённых команд)
-- Импорт Button Bar из SecureCRT: Run Script (после фазы 10) и кнопки Menu Function / Launch App (в настоящих файлах не встретились, формат строк неизвестен)
+- Импорт Button Bar из SecureCRT: кнопки Menu Function / Launch App (в настоящих файлах не встретились, формат строк неизвестен)
 - Перетаскивание вкладки между группами и в новое окно
 - Шрифт и его размер в Global Options
 - Запись скрипта (Script → Start Recording)

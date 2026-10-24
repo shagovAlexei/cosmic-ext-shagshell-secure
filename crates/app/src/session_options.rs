@@ -46,6 +46,7 @@ pub enum Field {
     Keepalive,
     Extra,
     LogFile,
+    Script,
     Jump,
     ReconnectDelay,
     ReconnectTries,
@@ -241,6 +242,7 @@ impl SessionOptions {
                 Field::Keepalive => f.keepalive = v,
                 Field::Extra => f.extra = v,
                 Field::LogFile => f.log_file = v,
+                Field::Script => f.script = v,
                 Field::Jump => f.jump = v,
                 Field::Device => f.device = v,
                 Field::Baud => f.baud = v,
@@ -410,6 +412,8 @@ impl SessionOptions {
                         .on_press(m(SoMsg::LogonAdd))
                         .into(),
                 );
+                rows.push(field(fl!("so-script"), Field::Script, &f.script, false));
+                rows.push(widget::text::caption(fl!("so-script-hint")).into());
                 rows.push(labelled(
                     fl!("so-logon-password"),
                     widget::secure_input("", self.password.0.clone(), None, true)

@@ -292,6 +292,8 @@ pub struct Tabs {
     context: Option<(pane_grid::Pane, Entity)>,
     /// Every terminal's tap, for the scripts running on other threads.
     pub taps: crate::script::Taps,
+    /// The tab `open` made last (none: it could not start).
+    last_opened: Option<TabId>,
 }
 
 impl Tabs {
@@ -488,8 +490,13 @@ impl Tabs {
         self.tabs.get(&id)?.terminal()
     }
 
+    pub fn last_opened(&self) -> Option<TabId> {
+        self.last_opened
+    }
+
     /// A new tab running `launch` in the focused group (the first group if none).
     pub fn open(&mut self, launch: Launch, look: &Look) -> Task<Message> {
+        self.last_opened = None;
         let taken: Vec<&str> = self.tabs.values().map(|t| t.base.as_str()).collect();
         let base = rules::numbered(&launch.title, &taken);
         let id = self.next_id;
@@ -497,6 +504,7 @@ impl Tabs {
             return Task::none();
         };
         self.next_id += 1;
+        self.last_opened = Some(id);
         let widget_id = widget::Id::unique();
         let tab = Tab {
             started: std::time::Instant::now(),

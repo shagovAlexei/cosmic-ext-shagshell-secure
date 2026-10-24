@@ -155,6 +155,14 @@ impl Buffer {
     }
 }
 
+/// `~/x` as the home folder's `x`; any other path as it is.
+pub fn expand_home(path: &std::path::Path) -> std::path::PathBuf {
+    match (path.strip_prefix("~"), std::env::home_dir()) {
+        (Ok(rest), Some(home)) => home.join(rest),
+        _ => path.to_path_buf(),
+    }
+}
+
 /// The first char boundary of `s` at or after `i` (`s.len()` past the end).
 fn boundary(s: &str, i: usize) -> usize {
     (i.min(s.len())..=s.len())
@@ -436,6 +444,15 @@ mod tests {
             &no(),
         );
         assert!(matches!(w, Wait::Found(0, _)));
+    }
+
+    #[test]
+    fn home_is_expanded_only_as_a_first_component() {
+        use std::path::Path;
+        let home = std::env::home_dir().unwrap();
+        assert_eq!(expand_home(Path::new("~/a.py")), home.join("a.py"));
+        assert_eq!(expand_home(Path::new("/x/~/a.py")), Path::new("/x/~/a.py"));
+        assert_eq!(expand_home(Path::new("~a/b.py")), Path::new("~a/b.py"));
     }
 
     #[test]

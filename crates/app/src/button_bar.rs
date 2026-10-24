@@ -27,6 +27,7 @@ pub enum BbMsg {
     Label(String),
     KindSel(usize),
     Arg(String),
+    Args(String),
     FunctionSel(usize),
     TargetSel(usize),
     /// A bar's name typed.
@@ -92,7 +93,12 @@ impl ButtonBar {
 
     /// The language may change.
     pub fn relabel(&mut self) {
-        self.kinds = vec![fl!("bb-send"), fl!("bb-menu"), fl!("bb-launch")];
+        self.kinds = vec![
+            fl!("bb-send"),
+            fl!("bb-menu"),
+            fl!("bb-launch"),
+            fl!("bb-script"),
+        ];
         self.targets = vec![fl!("cw-current"), fl!("cw-all")];
         self.functions = FUNCTIONS.iter().map(|(_, label)| label()).collect();
     }
@@ -223,6 +229,7 @@ impl ButtonBar {
             }
             BbMsg::Label(t) => self.map(|b| b.label = t),
             BbMsg::Arg(t) => self.map(|b| b.arg = t),
+            BbMsg::Args(t) => self.map(|b| b.args = t),
             BbMsg::KindSel(i) => self.map(|b| {
                 b.kind = Kind::ALL.get(i).copied().unwrap_or_default();
                 b.target = Target::Current;
@@ -231,6 +238,7 @@ impl ButtonBar {
                     Kind::Menu => FUNCTIONS[0].0.to_string(),
                     _ => String::new(),
                 };
+                b.args.clear();
             }),
             BbMsg::FunctionSel(i) => self.map(|b| {
                 if let Some((name, _)) = FUNCTIONS.get(i) {
@@ -436,6 +444,15 @@ impl ButtonBar {
                     Kind::Launch => col
                         .push(field(fl!("bb-command"), &button.arg, BbMsg::Arg, None))
                         .push(widget::text::caption(fl!("bb-command-hint"))),
+                    Kind::Script => col
+                        .push(field(fl!("bb-script-file"), &button.arg, BbMsg::Arg, None))
+                        .push(field(
+                            fl!("bb-script-args"),
+                            &button.args,
+                            BbMsg::Args,
+                            None,
+                        ))
+                        .push(widget::text::caption(fl!("bb-script-hint"))),
                 };
                 col = col.push(error(e));
                 let title = match at {

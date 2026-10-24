@@ -42,6 +42,7 @@ pub struct Form {
     pub flow: Flow,
     pub logon: Vec<crate::logon::Step>,
     pub color_scheme: String,
+    pub script: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -143,6 +144,7 @@ impl Form {
             flow: s.serial.flow,
             logon: s.logon.clone(),
             color_scheme: s.color_scheme.clone(),
+            script: s.script.clone(),
         }
     }
 
@@ -239,6 +241,7 @@ impl Form {
                 .cloned()
                 .collect(),
             color_scheme: self.color_scheme.clone(),
+            script: self.script.trim().to_string(),
             jump,
             forwards,
             reconnect: self.reconnect,
@@ -471,6 +474,17 @@ mod tests {
         };
         assert!(ok(ForwardKind::Remote, "0") && !ok(ForwardKind::Local, "0"));
         assert!(ok(ForwardKind::Local, "[::1]:8080"));
+    }
+
+    #[test]
+    fn script_is_kept_trimmed() {
+        let f = Form {
+            script: "  /home/u/login.py ".into(),
+            ..form("h")
+        };
+        let s = f.apply(&Session::default(), true).unwrap();
+        assert_eq!(s.script, "/home/u/login.py");
+        assert_eq!(Form::from_session("x", &s).script, "/home/u/login.py");
     }
 
     #[test]

@@ -313,9 +313,11 @@ pub struct BarsFound {
 
 /// `ButtonBarV5.ini`: `Z:"bar name"=<count>` and that many button lines
 /// ` KIND,arg,arg,,label,0,n,tooltip,`; for `SEND` the string is field 1 and the label field 2,
-/// for `RUN` the script is field 1 and the label field 4. Only `SEND` is imported (as Send String,
-/// to the current tab); the rest, with the bar settings lines (`D:`, `S:`), are reported.
-pub fn read_button_bars(text: &str) -> BarsFound {
+/// for `RUN` the script is field 1, its arguments field 2 and the label field 4. `SEND` is
+/// imported as Send String (to the current tab), `RUN` of a `.py` as Run Script (its Windows path
+/// put under the wine `prefix`, if there is one); the rest, with the bar settings lines (`D:`,
+/// `S:`), are reported.
+pub fn read_button_bars(text: &str, prefix: Option<&Path>) -> BarsFound {
     let mut found = BarsFound::default();
     let mut cur: Option<usize> = None;
     for line in text.trim_start_matches('\u{feff}').lines() {
@@ -338,6 +340,28 @@ pub fn read_button_bars(text: &str) -> BarsFound {
                         label,
                         kind: Kind::Send,
                         arg: get(1).to_string(),
+                        args: String::new(),
+                        target: Target::Current,
+                    });
+                }
+                "RUN" if is_python(get(1)) => {
+                    let label = match get(4).trim() {
+                        "" => get(1)
+                            .trim()
+                            .rsplit('\\')
+                            .next()
+                            .unwrap_or("")
+                            .rsplit('/')
+                            .next()
+                            .unwrap_or("")
+                            .to_string(),
+                        l => l.to_string(),
+                    };
+                    found.bars[i].buttons.push(Button {
+                        label,
+                        kind: Kind::Script,
+                        arg: windows_path(get(1), prefix),
+                        args: get(2).trim().to_string(),
                         target: Target::Current,
                     });
                 }
@@ -369,6 +393,40 @@ pub fn read_button_bars(text: &str) -> BarsFound {
         }
     }
     found
+}
+
+fn is_python(path: &str) -> bool {
+    path.trim().to_ascii_lowercase().ends_with(".py")
+}
+
+/// `C:\dir\a.py` (single or doubled backslashes) as a path under the wine `prefix`
+/// (`<prefix>/drive_c/dir/a.py`); no prefix or not a drive path: slashes only.
+fn windows_path(path: &str, prefix: Option<&Path>) -> String {
+    let p = path.trim();
+    let mut chars = p.chars();
+    let drive = match (chars.next(), chars.next(), chars.next()) {
+        (Some(d), Some(':'), Some('\\' | '/')) if d.is_ascii_alphabetic() => Some(d),
+        _ => None,
+    };
+    let (Some(d), Some(prefix)) = (drive, prefix) else {
+        return p.replace('\\', "/");
+    };
+    // Wine's Z: is the Linux root.
+    let mut out = match d.to_ascii_lowercase() {
+        'z' => std::path::PathBuf::from("/"),
+        d => prefix.join(format!("drive_{d}")),
+    };
+    for seg in p[2..].split(['\\', '/']).filter(|s| !s.is_empty()) {
+        out.push(seg);
+    }
+    out.display().to_string()
+}
+
+/// The wine prefix (the folder holding `drive_c`) that `root` lies in.
+fn wine_prefix(root: &Path) -> Option<std::path::PathBuf> {
+    root.ancestors()
+        .find(|a| a.join("drive_c").is_dir())
+        .map(Path::to_path_buf)
 }
 
 /// What an import did.
@@ -425,7 +483,7 @@ pub fn import(
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
             Err(e) => return Err(e),
         };
-        let f = read_button_bars(&text);
+        let f = read_button_bars(&text, wine_prefix(root).as_deref());
         r.buttons_skipped = f.skipped.len();
         for b in f.bars {
             match known.contains(&b.name) {
@@ -572,22 +630,44 @@ mod tests {
 
     #[test]
     fn button_bar_lines() {
-        let text = "\u{feff}D:\"Sort Alphabetically\"=00000000\nZ:\"Main\"=00000003\n SEND,conn\\\\n,conn,,,0,5,,\n RUN,C:\\\\x\\\\a.py,arg,,runit,0,5,tip,\n SEND,ls\\\\n\\r\\npwd\\\\n\\r\\n,,,,0,1,,\nZ:\"---\"=00000000\nZ:\"Other\"=00000001\n SEND,a\\,b,comma,,,0,1,,\n";
-        let f = read_button_bars(text);
+        let text = "\u{feff}D:\"Sort Alphabetically\"=00000000\nZ:\"Main\"=00000003\n SEND,conn\\\\n,conn,,,0,5,,\n RUN,C:\\\\x\\\\a.py,arg,,runit,0,5,tip,\n RUN,C:\\\\x\\\\b.vbs,,,vb,0,5,,\n SEND,ls\\\\n\\r\\npwd\\\\n\\r\\n,,,,0,1,,\nZ:\"---\"=00000000\nZ:\"Other\"=00000001\n SEND,a\\,b,comma,,,0,1,,\n";
+        let f = read_button_bars(text, None);
         assert_eq!(f.bars.len(), 2);
         let main = &f.bars[0].buttons;
-        assert_eq!(main.len(), 2);
+        assert_eq!(main.len(), 3);
         assert_eq!(
             (main[0].label.as_str(), main[0].arg.as_str()),
             ("conn", "conn\\n")
         ); // `\\n` in the ini is the escape `\n`
-        assert_eq!(main[1].arg, "ls\\n\r\npwd\\n\r\n"); // the line ends are real ones
-        assert_eq!(main[1].label, "ls\\n"); // no line end in a label
+        assert_eq!(main[1].kind, Kind::Script);
+        assert_eq!(
+            (main[1].label.as_str(), main[1].arg.as_str()),
+            ("runit", "C:/x/a.py")
+        );
+        assert_eq!(main[1].args, "arg");
+        assert_eq!(main[2].arg, "ls\\n\r\npwd\\n\r\n"); // the line ends are real ones
+        assert_eq!(main[2].label, "ls\\n"); // no line end in a label
         assert_eq!(f.bars[1].buttons[0].arg, "a,b");
         assert_eq!(
             f.skipped,
-            [("Main".to_string(), "runit".to_string(), "RUN".to_string())]
+            [("Main".to_string(), "vb".to_string(), "RUN".to_string())] // not Python
         );
+    }
+
+    #[test]
+    fn windows_paths_go_under_the_wine_prefix() {
+        let pre = Path::new("/home/u/.wine");
+        assert_eq!(
+            windows_path("C:\\Users\\u\\a b.py", Some(pre)),
+            "/home/u/.wine/drive_c/Users/u/a b.py"
+        );
+        assert_eq!(
+            windows_path("d:/x//y.py", Some(pre)),
+            "/home/u/.wine/drive_d/x/y.py"
+        );
+        assert_eq!(windows_path("Z:\\home\\u\\a.py", Some(pre)), "/home/u/a.py");
+        assert_eq!(windows_path("C:\\x\\a.py", None), "C:/x/a.py");
+        assert_eq!(windows_path("/opt/a.py", Some(pre)), "/opt/a.py");
     }
 
     /// Against a real SecureCRT folder (set `SECURECRT_CONFIG`); prints only counts.
@@ -626,7 +706,7 @@ mod tests {
             .count();
         println!("jump {with_jump}, log {with_log}, bar {with_bar}");
         let text = std::fs::read_to_string(root.join("ButtonBarV5.ini")).unwrap();
-        let b = read_button_bars(&text);
+        let b = read_button_bars(&text, None);
         let n: usize = b.bars.iter().map(|x| x.buttons.len()).sum();
         println!(
             "bars {} buttons {} skipped {}",
@@ -656,7 +736,7 @@ mod tests {
         .unwrap();
         std::fs::write(
             cfg.path().join("ButtonBarV5.ini"),
-            "Z:\"Kube\"=00000002\n SEND,get pods\\\\n,pods,,,0,1,,\n RUN,x.py,,,r,0,1,,\nZ:\"Mine\"=00000000\n",
+            "Z:\"Kube\"=00000002\n SEND,get pods\\\\n,pods,,,0,1,,\n RUN,x.vbs,,,r,0,1,,\nZ:\"Mine\"=00000000\n",
         )
         .unwrap();
         let store = crate::session::Store::new(out.path().to_path_buf());
