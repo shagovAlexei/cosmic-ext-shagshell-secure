@@ -28,6 +28,38 @@ impl AppTheme {
     }
 }
 
+/// Which side of the terminals a side pane sits on.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Side {
+    #[default]
+    Left,
+    Right,
+}
+
+impl Side {
+    pub const ALL: [Side; 2] = [Side::Left, Side::Right];
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Panel {
+    Sessions,
+    Commands,
+}
+
+/// The panes left and right of the terminals, in the order they are drawn (left to right). On one
+/// side the Session Manager is the outer one, at the window's edge.
+pub fn panels(sessions: (Side, bool), commands: (Side, bool)) -> (Vec<Panel>, Vec<Panel>) {
+    let (mut left, mut right) = (Vec::new(), Vec::new());
+    for (panel, (side, shown)) in [(Panel::Sessions, sessions), (Panel::Commands, commands)] {
+        match (shown, side) {
+            (false, _) => {}
+            (true, Side::Left) => left.push(panel),
+            (true, Side::Right) => right.insert(0, panel),
+        }
+    }
+    (left, right)
+}
+
 fn pinned(t: cosmic::Theme, dark: bool) -> cosmic::Theme {
     use cosmic::cosmic_theme::Theme as Palette;
     let mut p = t.cosmic().clone();
@@ -92,6 +124,10 @@ pub struct Config {
     pub copy_on_select: bool,
     /// Global Options → Terminal: the middle mouse button pastes.
     pub paste_on_middle_click: bool,
+    /// Options → Session Manager side.
+    pub session_manager_side: Side,
+    /// Options → Command Manager side.
+    pub command_manager_side: Side,
     /// Session Manager width, px (dragged).
     pub session_manager_width: u16,
     /// Open folders of the session tree (ids).
@@ -177,6 +213,8 @@ impl Default for Config {
             session_manager_visible: true,
             copy_on_select: true,
             paste_on_middle_click: true,
+            session_manager_side: Side::Left,
+            command_manager_side: Side::Right,
             session_manager_width: 240,
             expanded: Vec::new(),
             language: String::new(),
@@ -221,6 +259,25 @@ pub fn read(h: Option<&cosmic_config::Config>) -> Config {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn panels_by_side() {
+        use Panel::*;
+        use Side::*;
+        let p = |a, b, c, d| panels((a, b), (c, d));
+        assert_eq!(p(Left, true, Right, true), (vec![Sessions], vec![Commands]));
+        assert_eq!(p(Right, true, Left, true), (vec![Commands], vec![Sessions]));
+        assert_eq!(
+            p(Left, true, Left, true),
+            (vec![Sessions, Commands], vec![])
+        );
+        assert_eq!(
+            p(Right, true, Right, true),
+            (vec![], vec![Commands, Sessions])
+        );
+        assert_eq!(p(Right, false, Right, true), (vec![], vec![Commands]));
+        assert_eq!(p(Left, false, Left, false), (vec![], vec![]));
+    }
+
     use super::*;
 
     #[test]

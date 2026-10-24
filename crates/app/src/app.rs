@@ -236,6 +236,7 @@ impl Application for App {
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
+        self.sessions.right = self.config.session_manager_side == crate::config::Side::Right;
         let mut task = self.handle(message);
         // A tab went into a window of its own: titled.
         for (window, title) in self.tabs.take_new_windows() {
@@ -442,13 +443,27 @@ impl Application for App {
             .center(Length::Fill)
             .into(),
         };
-        let mut middle = widget::row::with_capacity(2).spacing(2);
-        if self.config.session_manager_visible {
-            middle = middle.push(self.sessions.view(window));
+        let (left, right) = crate::config::panels(
+            (
+                self.config.session_manager_side,
+                self.config.session_manager_visible,
+            ),
+            (
+                self.config.command_manager_side,
+                self.config.command_manager_visible,
+            ),
+        );
+        let panel = |p| match p {
+            crate::config::Panel::Sessions => self.sessions.view(window),
+            crate::config::Panel::Commands => self.commands.view(),
+        };
+        let mut middle = widget::row::with_capacity(4).spacing(2);
+        for p in left {
+            middle = middle.push(panel(p));
         }
-        let mut middle = middle.push(center);
-        if self.config.command_manager_visible {
-            middle = middle.push(self.commands.view());
+        middle = middle.push(center);
+        for p in right {
+            middle = middle.push(panel(p));
         }
         let mut col = widget::column::with_capacity(4)
             .push(toolbar::view())

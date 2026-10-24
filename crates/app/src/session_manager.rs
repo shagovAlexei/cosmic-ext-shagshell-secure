@@ -133,6 +133,10 @@ pub struct SessionManager {
     pub notice: Option<String>,
     pub width: f32,
     resizing: bool,
+    /// The pane is at the right of the terminals (set by the app from the config).
+    pub right: bool,
+    /// While the splitter is dragged: the cursor and the width at its first move.
+    drag_from: Option<(f32, f32)>,
     /// The tree was used last (Enter connects, not restarts a tab).
     pub focused: bool,
 }
@@ -159,6 +163,8 @@ impl SessionManager {
             notice: None,
             width: f32::from(width).clamp(MIN_WIDTH, MAX_WIDTH),
             resizing: false,
+            right: false,
+            drag_from: None,
             focused: false,
         };
         sm.reload();
@@ -330,10 +336,15 @@ impl SessionManager {
             }
             SmMsg::Cursor(x) => {
                 if self.resizing {
-                    self.width = x.clamp(MIN_WIDTH, MAX_WIDTH);
+                    let (x0, w0) = *self.drag_from.get_or_insert((x, self.width));
+                    let dx = if self.right { x0 - x } else { x - x0 };
+                    self.width = (w0 + dx).clamp(MIN_WIDTH, MAX_WIDTH);
                 }
             }
-            SmMsg::SplitStart => self.resizing = true,
+            SmMsg::SplitStart => {
+                self.resizing = true;
+                self.drag_from = None;
+            }
             SmMsg::Filter(f) => {
                 self.filter = f;
                 self.refresh();
@@ -660,7 +671,11 @@ impl SessionManager {
         .interaction(mouse::Interaction::ResizingHorizontally)
         .on_press(m(SmMsg::SplitStart));
         let pane = widget::mouse_area(pane).on_exit(m(SmMsg::Leave));
-        widget::row::with_children(vec![pane.into(), splitter.into()]).into()
+        let mut parts: Vec<Element<'_, Message>> = vec![pane.into(), splitter.into()];
+        if self.right {
+            parts.reverse();
+        }
+        widget::row::with_children(parts).into()
     }
 
     fn row(&self, r: &Row, window: iced::window::Id) -> Element<'_, Message> {
