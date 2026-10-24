@@ -1,5 +1,7 @@
 app-title = ShagShell Secure
-about-comments = Менеджер SSH/SFTP-сессий для COSMIC в духе SecureCRT
+about-comments = Менеджер SSH / SFTP / Telnet / serial-сессий для COSMIC, работает как SecureCRT: дерево сессий, вкладки, SFTP-вкладка, Button Bar, Python-скрипты и действия при входе. Сам SSH выполняет системный OpenSSH.
+about-version = Версия
+about-author = Автор:
 about-source = Исходный код
 about-issues = Сообщить о проблеме
 

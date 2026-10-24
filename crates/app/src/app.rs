@@ -13,7 +13,7 @@ use cosmic::app::{Core, Task};
 use cosmic::cosmic_config::CosmicConfigEntry;
 use cosmic::iced::keyboard::{self, Modifiers, key::Code, key::Physical};
 use cosmic::iced::{Length, Subscription, event};
-use cosmic::widget::{self, about::About};
+use cosmic::widget;
 use cosmic::{Application, Element};
 use shagshell_core::credentials::{self, Credentials, PutError};
 use shagshell_core::keyring::{Owner, Secret};
@@ -32,7 +32,6 @@ pub struct App {
     core: Core,
     config: Config,
     config_handler: Option<cosmic::cosmic_config::Config>,
-    about: About,
     drawer: Option<Drawer>,
     tabs: Tabs,
     sessions: SessionManager,
@@ -232,7 +231,6 @@ impl Application for App {
             core,
             config,
             config_handler,
-            about: about::about(),
             drawer: None,
             tabs,
             sessions,
@@ -456,7 +454,7 @@ impl Application for App {
 
     fn context_drawer(&self) -> Option<cosmic::app::context_drawer::ContextDrawer<'_, Message>> {
         match self.drawer? {
-            Drawer::About => Some(about::view(&self.about)),
+            Drawer::About => Some(about::view()),
             Drawer::Options => Some(options::view(&self.config, self.separate, &self.hl)),
         }
     }
@@ -732,7 +730,6 @@ impl App {
                         i18n_embed::DesktopLanguageRequester::requested_languages(),
                     ));
                     self.core.window.header_title = fl!("app-title");
-                    self.about = about::about();
                     self.command.relabel();
                     self.buttons.relabel();
                 }

@@ -1,5 +1,7 @@
 app-title = ShagShell Secure
-about-comments = SecureCRT-style SSH/SFTP session manager for COSMIC
+about-comments = SSH / SFTP / Telnet / serial session manager for COSMIC, built to work like SecureCRT: a session tree, tabs, an SFTP tab, a Button Bar, Python scripts and logon actions. SSH itself is done by the system OpenSSH.
+about-version = Version
+about-author = Author:
 about-source = Source code
 about-issues = Report an issue
 
