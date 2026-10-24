@@ -140,8 +140,9 @@ so-scheme-global = (the one of Global Options)
 options-terminal = Terminal
 options-font = Font (empty = system monospace)
 options-font-size = Font size
-options-tab-height = Tab header height, px (empty = default)
-options-button-height = Button Bar button height, px (empty = default)
+options-tab-height = Tab header height
+options-button-height = Button Bar button height
+options-height-default = Default (theme)
 options-copy-on-select = Copy on select
 options-paste-on-middle = Paste with the middle mouse button
 term-disconnected = Disconnected — press Enter to reconnect

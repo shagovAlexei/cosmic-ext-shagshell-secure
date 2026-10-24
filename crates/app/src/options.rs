@@ -284,6 +284,25 @@ pub fn view<'a>(
         sizes.push(config.font_px() as u16);
         sizes.sort_unstable();
     }
+    // A height is picked from a list, the first entry being the theme's own.
+    let heights = |now: u16, f: fn(&mut Config, u16)| -> cosmic::Element<'static, Message> {
+        let steps: Vec<u16> = HEIGHTS.to_vec();
+        let at = steps.iter().position(|n| *n == now).or(Some(0));
+        let labels: Vec<String> = steps
+            .iter()
+            .map(|n| match n {
+                0 => fl!("options-height-default"),
+                n => format!("{n} px"),
+            })
+            .collect();
+        let c = config.clone();
+        widget::dropdown(labels, at, move |i| {
+            let mut c = c.clone();
+            f(&mut c, steps[i]);
+            Message::SetConfig(c)
+        })
+        .into()
+    };
     let terminal = settings::section()
         .title(fl!("options-terminal"))
         .add(settings::flex_item(
@@ -329,13 +348,11 @@ pub fn view<'a>(
         ))
         .add(settings::flex_item(
             fl!("options-tab-height"),
-            text(&px(config.tab_height), |c, v| c.tab_height = parse_px(&v)),
+            heights(config.tab_height, |c, v| c.tab_height = v),
         ))
         .add(settings::flex_item(
             fl!("options-button-height"),
-            text(&px(config.button_height), |c, v| {
-                c.button_height = parse_px(&v)
-            }),
+            heights(config.button_height, |c, v| c.button_height = v),
         ))
         .add(settings::flex_item(
             fl!("options-copy-on-select"),
@@ -381,14 +398,5 @@ pub fn view<'a>(
     context_drawer::context_drawer(content, Message::CloseDrawer).title(fl!("menu-global-options"))
 }
 
-/// A height box shows nothing for 0 (the theme's).
-fn px(n: u16) -> String {
-    match n {
-        0 => String::new(),
-        n => n.to_string(),
-    }
-}
-
-fn parse_px(v: &str) -> u16 {
-    v.trim().parse::<u32>().map_or(0, |n| n.min(64) as u16)
-}
+/// The heights offered for tab headers and Button Bar buttons (0: the theme's).
+const HEIGHTS: [u16; 8] = [0, 24, 28, 32, 36, 40, 48, 56];

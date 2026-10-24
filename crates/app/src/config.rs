@@ -233,14 +233,18 @@ impl Config {
 }
 
 impl Config {
-    /// A tab header's height, kept to 20–64 (None = the theme's).
+    /// A tab header's height (None = the theme's; a value outside 20–64 is no height at all).
     pub fn tab_px(&self) -> Option<u16> {
-        (self.tab_height != 0).then(|| self.tab_height.clamp(20, 64))
+        (20..=64)
+            .contains(&self.tab_height)
+            .then_some(self.tab_height)
     }
 
-    /// A Button Bar button's height, kept to 20–64 (None = the theme's).
+    /// A Button Bar button's height (same rule).
     pub fn button_px(&self) -> Option<u16> {
-        (self.button_height != 0).then(|| self.button_height.clamp(20, 64))
+        (20..=64)
+            .contains(&self.button_height)
+            .then_some(self.button_height)
     }
 }
 
@@ -370,6 +374,8 @@ mod tests {
             ..Config::default()
         };
         assert_eq!((c(0).tab_px(), c(0).button_px()), (None, None));
-        assert_eq!((c(5).tab_px(), c(500).button_px()), (Some(20), Some(64)));
+        // Was: a «2» typed on the way to «24» gave 20 px tabs.
+        assert_eq!((c(2).tab_px(), c(500).button_px()), (None, None));
+        assert_eq!((c(24).tab_px(), c(64).button_px()), (Some(24), Some(64)));
     }
 }
