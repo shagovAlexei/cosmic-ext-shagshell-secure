@@ -133,6 +133,10 @@ pub struct SessionManager {
     pub notice: Option<String>,
     pub width: f32,
     resizing: bool,
+    /// The pane is at the right of the terminals (set by the app from the config).
+    pub right: bool,
+    /// While the splitter is dragged: the cursor and the width at its first move.
+    drag_from: Option<(f32, f32)>,
     /// The tree was used last (Enter connects, not restarts a tab).
     pub focused: bool,
 }
@@ -159,6 +163,8 @@ impl SessionManager {
             notice: None,
             width: f32::from(width).clamp(MIN_WIDTH, MAX_WIDTH),
             resizing: false,
+            right: false,
+            drag_from: None,
             focused: false,
         };
         sm.reload();
@@ -330,10 +336,15 @@ impl SessionManager {
             }
             SmMsg::Cursor(x) => {
                 if self.resizing {
-                    self.width = x.clamp(MIN_WIDTH, MAX_WIDTH);
+                    let (x0, w0) = *self.drag_from.get_or_insert((x, self.width));
+                    let dx = if self.right { x0 - x } else { x - x0 };
+                    self.width = (w0 + dx).clamp(MIN_WIDTH, MAX_WIDTH);
                 }
             }
-            SmMsg::SplitStart => self.resizing = true,
+            SmMsg::SplitStart => {
+                self.resizing = true;
+                self.drag_from = None;
+            }
             SmMsg::Filter(f) => {
                 self.filter = f;
                 self.refresh();
@@ -581,6 +592,16 @@ impl SessionManager {
         })
     }
 
+    /// The strip at the pane's inner edge that resizes it.
+    pub fn splitter(&self) -> Element<'_, Message> {
+        widget::mouse_area(widget::container(
+            widget::Space::new().width(6.0).height(Length::Fill),
+        ))
+        .interaction(mouse::Interaction::ResizingHorizontally)
+        .on_press(Message::Sessions(SmMsg::SplitStart))
+        .into()
+    }
+
     pub fn view(&self, window: iced::window::Id) -> Element<'_, Message> {
         let m = |x| Message::Sessions(x);
         let tool =
@@ -641,26 +662,14 @@ impl SessionManager {
                 .height(Length::Fill),
         )
         .on_enter(m(SmMsg::Hover(None)));
-        let body = widget::column::with_children(vec![
-            widget::text::heading(fl!("menu-session-manager")).into(),
-            toolbar.into(),
-            filter.into(),
-            list,
-            rest.into(),
-        ])
-        .spacing(6)
-        .padding(8);
+        let body =
+            widget::column::with_children(vec![toolbar.into(), filter.into(), list, rest.into()])
+                .spacing(6)
+                .padding(8);
         let pane = widget::container(body)
-            .width(self.width)
-            .height(Length::Fill)
-            .class(cosmic::theme::Container::Card);
-        let splitter = widget::mouse_area(widget::container(
-            widget::Space::new().width(6.0).height(Length::Fill),
-        ))
-        .interaction(mouse::Interaction::ResizingHorizontally)
-        .on_press(m(SmMsg::SplitStart));
-        let pane = widget::mouse_area(pane).on_exit(m(SmMsg::Leave));
-        widget::row::with_children(vec![pane.into(), splitter.into()]).into()
+            .width(Length::Fill)
+            .height(Length::Fill);
+        widget::mouse_area(pane).on_exit(m(SmMsg::Leave)).into()
     }
 
     fn row(&self, r: &Row, window: iced::window::Id) -> Element<'_, Message> {

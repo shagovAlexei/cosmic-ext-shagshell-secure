@@ -171,7 +171,9 @@ impl Application for App {
             .unwrap_or_else(|_| shagshell_core::launch::control_dir());
         let store =
             shagshell_core::session::Store::new(shagshell_core::session::store::default_root());
-        let sessions = SessionManager::new(store, &config.expanded, config.session_manager_width);
+        let mut sessions =
+            SessionManager::new(store, &config.expanded, config.session_manager_width);
+        sessions.right = config.session_manager_side == crate::config::Side::Right;
         let asks = crate::askpass::Asks::new(askpass_sock(&control_dir));
         let hl_path = shagshell_core::highlight::default_path();
         let (hl, hl_error) = match shagshell_core::highlight::Rules::load(&hl_path) {
@@ -236,6 +238,7 @@ impl Application for App {
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
+        self.sessions.right = self.config.session_manager_side == crate::config::Side::Right;
         let mut task = self.handle(message);
         // A tab went into a window of its own: titled.
         for (window, title) in self.tabs.take_new_windows() {
@@ -442,13 +445,24 @@ impl Application for App {
             .center(Length::Fill)
             .into(),
         };
-        let mut middle = widget::row::with_capacity(2).spacing(2);
-        if self.config.session_manager_visible {
-            middle = middle.push(self.sessions.view(window));
+        let (left, right) = crate::config::panels(
+            (
+                self.config.session_manager_side,
+                self.config.session_manager_visible,
+            ),
+            (
+                self.config.command_manager_side,
+                self.config.command_manager_visible,
+            ),
+            self.config.commands_above,
+        );
+        let mut middle = widget::row::with_capacity(3).spacing(2);
+        if let Some(c) = self.side_column(&left, window, false) {
+            middle = middle.push(c);
         }
-        let mut middle = middle.push(center);
-        if self.config.command_manager_visible {
-            middle = middle.push(self.commands.view());
+        middle = middle.push(center);
+        if let Some(c) = self.side_column(&right, window, true) {
+            middle = middle.push(c);
         }
         let mut col = widget::column::with_capacity(4)
             .push(toolbar::view())
@@ -468,6 +482,106 @@ impl Application for App {
 }
 
 impl App {
+    /// The panes of one side stacked in a column (and the Session Manager's splitter beside it).
+    fn side_column(
+        &self,
+        panes: &[crate::config::Panel],
+        window: cosmic::iced::window::Id,
+        right: bool,
+    ) -> Option<Element<'_, Message>> {
+        use crate::config::Panel;
+        if panes.is_empty() {
+            return None;
+        }
+        let stacked = panes.len() > 1;
+        let mut col = widget::column::with_capacity(2).spacing(2);
+        for (at, p) in panes.iter().enumerate() {
+            let (title, collapsed) = match p {
+                Panel::Sessions => (
+                    fl!("menu-session-manager"),
+                    self.config.session_manager_collapsed,
+                ),
+                Panel::Commands => (
+                    fl!("menu-command-manager"),
+                    self.config.command_manager_collapsed,
+                ),
+            };
+            let change = |f: fn(&mut crate::config::Config)| {
+                let mut c = self.config.clone();
+                f(&mut c);
+                Message::SetConfig(c)
+            };
+            let toggle = match p {
+                Panel::Sessions => change(|c| c.session_manager_collapsed ^= true),
+                Panel::Commands => change(|c| c.command_manager_collapsed ^= true),
+            };
+            let tip = |text: String, icon: &'static str, msg: Message| {
+                widget::tooltip(
+                    widget::button::icon(widget::icon::from_name(icon))
+                        .padding(2)
+                        .on_press(msg),
+                    widget::text::caption(text),
+                    widget::tooltip::Position::Bottom,
+                )
+            };
+            let mut head = widget::row::with_capacity(3)
+                .align_y(cosmic::iced::Alignment::Center)
+                .padding([4, 8, 0, 8])
+                .push(widget::text::heading(title).width(Length::Fill));
+            if stacked {
+                let (icon, text) = match at {
+                    0 => ("go-down-symbolic", fl!("panel-down")),
+                    _ => ("go-up-symbolic", fl!("panel-up")),
+                };
+                head = head.push(tip(text, icon, change(|c| c.commands_above ^= true)));
+            }
+            head = head.push(tip(
+                if collapsed {
+                    fl!("panel-expand")
+                } else {
+                    fl!("panel-collapse")
+                },
+                if collapsed {
+                    "pan-end-symbolic"
+                } else {
+                    "pan-down-symbolic"
+                },
+                toggle,
+            ));
+            let mut pane = widget::column::with_capacity(2).push(head);
+            if !collapsed {
+                pane = pane.push(match p {
+                    Panel::Sessions => self.sessions.view(window),
+                    Panel::Commands => self.commands.view(),
+                });
+            }
+            col = col.push(
+                widget::container(pane)
+                    .width(Length::Fill)
+                    .height(if collapsed {
+                        Length::Shrink
+                    } else {
+                        Length::Fill
+                    })
+                    .class(cosmic::theme::Container::Card),
+            );
+        }
+        let sessions = panes.contains(&Panel::Sessions);
+        let width = if sessions { self.sessions.width } else { 260.0 };
+        let col: Element<'_, Message> = widget::container(col)
+            .width(width)
+            .height(Length::Fill)
+            .into();
+        let mut parts = vec![col];
+        if sessions {
+            parts.push(self.sessions.splitter());
+        }
+        if right {
+            parts.reverse();
+        }
+        Some(widget::row::with_children(parts).into())
+    }
+
     fn handle(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::Action(a) => return self.act(a),

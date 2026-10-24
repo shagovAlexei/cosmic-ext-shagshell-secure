@@ -1,7 +1,7 @@
 //! Options → Global Options, in the context drawer. Each change is written at once.
 
 use crate::app::Message;
-use crate::config::{AppTheme, Config, ExistsRule, LANGUAGES};
+use crate::config::{AppTheme, Config, ExistsRule, LANGUAGES, Side};
 use crate::fl;
 use cosmic::app::context_drawer::{self, ContextDrawer};
 use cosmic::widget::{self, settings};
@@ -32,6 +32,19 @@ pub fn view<'a>(
         fl!("options-dark"),
     ];
     let theme = AppTheme::ALL.iter().position(|t| *t == config.app_theme);
+    let sides = vec![fl!("options-left"), fl!("options-right")];
+    let side = |get: fn(&Config) -> Side, set: fn(&mut Config, Side)| {
+        let c = config.clone();
+        widget::dropdown(
+            sides.clone(),
+            Side::ALL.iter().position(|s| *s == get(config)),
+            move |i| {
+                let mut c = c.clone();
+                set(&mut c, Side::ALL[i]);
+                Message::SetConfig(c)
+            },
+        )
+    };
     let interface = settings::section()
         .title(fl!("options-interface"))
         .add(settings::item(
@@ -46,6 +59,20 @@ pub fn view<'a>(
                     Message::SetConfig(c)
                 }
             }),
+        ))
+        .add(settings::item(
+            fl!("options-sessions-side"),
+            side(
+                |c| c.session_manager_side,
+                |c, s| c.session_manager_side = s,
+            ),
+        ))
+        .add(settings::item(
+            fl!("options-commands-side"),
+            side(
+                |c| c.command_manager_side,
+                |c, s| c.command_manager_side = s,
+            ),
         ))
         .add(settings::item(
             fl!("options-theme"),

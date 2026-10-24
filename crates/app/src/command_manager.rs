@@ -460,7 +460,6 @@ impl CommandManager {
         let mut body = widget::column::with_capacity(5)
             .spacing(6)
             .padding(8)
-            .push(widget::text::heading(fl!("menu-command-manager")))
             .push(toolbar)
             .push(filter)
             .push(list);
@@ -468,9 +467,8 @@ impl CommandManager {
             body = body.push(widget::text::caption(b.clone()).class(cosmic::theme::Text::Accent));
         }
         widget::container(body)
-            .width(Length::Fixed(260.0))
+            .width(Length::Fill)
             .height(Length::Fill)
-            .class(cosmic::theme::Container::Card)
             .into()
     }
 
