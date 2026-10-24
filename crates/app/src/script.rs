@@ -562,14 +562,15 @@ impl Scripts {
                     input = input.password();
                 }
                 let text = widget::text::body(a.arg(0).to_string());
-                let top: Element<'_, Message> = match a.call.args.get(3).and_then(Value::as_bool) {
-                    Some(true) => widget::row::with_capacity(2)
-                        .spacing(16)
-                        .push(crate::dialog_icons::Kind::Lock.icon(48))
-                        .push(text)
-                        .into(),
-                    _ => text.into(),
+                let kind = match a.call.args.get(3).and_then(Value::as_bool) {
+                    Some(true) => crate::dialog_icons::Kind::Lock,
+                    _ => crate::dialog_icons::Kind::Edit,
                 };
+                let top: Element<'_, Message> = widget::row::with_capacity(2)
+                    .spacing(16)
+                    .push(kind.icon(48))
+                    .push(text)
+                    .into();
                 body = body.push(top).push(input);
                 buttons = buttons
                     .push(widget::button::standard(fl!("cancel")).on_press(m(ScMsg::Cancel)))
@@ -586,7 +587,12 @@ impl Scripts {
                     rows = rows.push(b.width(Length::Fill).on_press(m(ScMsg::Pick(i))));
                 }
                 body = body
-                    .push(widget::text::body(a.arg(0).to_string()))
+                    .push(
+                        widget::row::with_capacity(2)
+                            .spacing(16)
+                            .push(crate::dialog_icons::Kind::Question.icon(48))
+                            .push(widget::text::body(a.arg(0).to_string())),
+                    )
                     .push(
                         widget::text_input(fl!("script-list-filter"), a.filter.clone())
                             .id(self.input_id.clone())
@@ -602,7 +608,8 @@ impl Scripts {
                 let f = a.flags();
                 use crate::dialog_icons::Kind;
                 let icon = match f.icon {
-                    script::Icon::None => None,
+                    // A message with no icon of its own still gets one: every dialog of ours has it.
+                    script::Icon::None => Some(Kind::Info),
                     script::Icon::Stop => Some(Kind::Stop),
                     script::Icon::Question => Some(Kind::Question),
                     script::Icon::Warning => Some(Kind::Warning),

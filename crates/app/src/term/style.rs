@@ -29,6 +29,27 @@ impl Default for Style {
     }
 }
 
+/// The installed monospace families, sorted (for the font choice).
+pub fn monospace_families() -> Vec<String> {
+    static ALL: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    ALL.get_or_init(|| {
+        let mut fs = cosmic::iced::advanced::graphics::text::font_system()
+            .write()
+            .unwrap();
+        let mut names: Vec<String> = fs
+            .raw()
+            .db()
+            .faces()
+            .filter(|f| f.monospaced)
+            .filter_map(|f| f.families.first().map(|(n, _)| n.clone()))
+            .collect();
+        names.sort_by_key(|n| n.to_lowercase());
+        names.dedup();
+        names
+    })
+    .clone()
+}
+
 impl Style {
     /// The family for `Attrs<'static>`: the system's monospace when empty or not installed (cosmic-text
     /// would otherwise pick any face, maybe a proportional one). An installed name is leaked once.
