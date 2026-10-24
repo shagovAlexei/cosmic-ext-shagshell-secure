@@ -480,6 +480,37 @@ pub fn serve<S: io::Read + io::Write>(
     }
 }
 
+/// What `Session.Create(name, host, user, port, folder)` asks for.
+#[derive(Debug, PartialEq, Eq)]
+pub struct NewSession {
+    pub folder: String,
+    pub name: String,
+    pub host: String,
+    pub user: Option<String>,
+    pub port: Option<u16>,
+}
+
+/// The arguments of `Session.Create`, checked (a port of 0 or above 65535 is refused).
+pub fn new_session(args: &[Value]) -> Result<NewSession, String> {
+    let text = |i: usize| args.get(i).and_then(Value::as_str).unwrap_or("").trim();
+    let (name, host) = (text(0), text(1));
+    if name.is_empty() || host.is_empty() {
+        return Err("Session.Create: name and host are required".into());
+    }
+    let port = match args.get(3).and_then(Value::as_i64) {
+        None | Some(22) => None,
+        Some(p @ 1..=65535) => Some(p as u16),
+        Some(p) => return Err(format!("Session.Create: bad port {p}")),
+    };
+    Ok(NewSession {
+        folder: text(4).trim_matches('/').to_string(),
+        name: name.to_string(),
+        host: host.to_string(),
+        user: Some(text(2).to_string()).filter(|u| !u.is_empty()),
+        port,
+    })
+}
+
 fn handle(req: &Value, host: &dyn Host, cancel: &AtomicBool) -> Result<Value, String> {
     let call = req["call"].as_str().ok_or("no call")?;
     let tab = req["tab"].as_u64().unwrap_or(0);
@@ -990,5 +1021,32 @@ mod tests {
         assert!(child.wait().unwrap().success());
         let sent = String::from_utf8(host.sent.lock().unwrap().clone()).unwrap();
         assert_eq!(sent, "ls\rwho? 1 True\rScriptError\r");
+    }
+
+    #[test]
+    fn new_session_arguments_are_checked() {
+        let ok = new_session(&[
+            json!("web"),
+            json!("h.example"),
+            json!("root"),
+            json!(2222),
+            json!("/Prod/"),
+        ]);
+        assert_eq!(
+            ok,
+            Ok(NewSession {
+                folder: "Prod".into(),
+                name: "web".into(),
+                host: "h.example".into(),
+                user: Some("root".into()),
+                port: Some(2222),
+            })
+        );
+        let d = new_session(&[json!("a"), json!("h")]).unwrap();
+        assert_eq!((d.user, d.port, d.folder.as_str()), (None, None, ""));
+        assert!(new_session(&[json!(""), json!("h")]).is_err());
+        assert!(new_session(&[json!("a"), json!(" ")]).is_err());
+        assert!(new_session(&[json!("a"), json!("h"), json!(""), json!(70000)]).is_err());
+        assert!(new_session(&[json!("a"), json!("h"), json!(""), json!(0)]).is_err());
     }
 }

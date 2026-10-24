@@ -1412,7 +1412,32 @@ impl App {
             tasks.push(self.open_sessions(&[name], false));
             reply.send(Ok(serde_json::Value::Null)); // the tab is there now
         }
+        if out.raise
+            && let Some(w) = self.core.main_window_id()
+        {
+            tasks.push(cosmic::iced::window::gain_focus(w));
+        }
+        if let Some((n, reply)) = out.create {
+            reply.send(self.script_create(&n));
+        }
         Task::batch(tasks)
+    }
+
+    /// `Session.Create`: a new SSH session from the Default template, no secrets; its path.
+    fn script_create(
+        &mut self,
+        n: &shagshell_core::script::NewSession,
+    ) -> Result<serde_json::Value, String> {
+        crate::session_manager::check(&n.name, n.folder.is_empty())?;
+        let store = &self.sessions.store;
+        let mut s = store.template();
+        (s.host, s.user, s.port) = (n.host.clone(), n.user.clone(), n.port);
+        let id =
+            (store.add(&n.folder, &n.name, &s)).map_err(|e| crate::session_manager::io_text(&e))?;
+        self.sessions.select(&id);
+        self.config.expanded = self.sessions.expanded.iter().cloned().collect();
+        self.save_config();
+        Ok(serde_json::json!(id))
     }
 
     /// The folder the Script menu lists.

@@ -61,6 +61,7 @@ class _Screen:
         self._tab = tab
         self.Synchronous = True  # always, as if set
         self.IgnoreEscape = True  # the output is always plain text
+        self.MatchIndex = 0  # the string the last WaitForStrings saw (1-based, 0: none)
 
     def _info(self):
         return _call("Screen.Info", self._tab)
@@ -121,7 +122,15 @@ class _Screen:
             if texts and isinstance(texts[-1], (int, float)):
                 timeout = texts.pop()
             items = texts
-        return _call("Screen.WaitForStrings", self._tab, items, timeout, fold)
+        self.MatchIndex = _call("Screen.WaitForStrings", self._tab, items, timeout, fold)
+        return self.MatchIndex
+
+    def SendKeys(self, text):
+        """Like Send, but `\\r`, `\\p`… are not escapes: the text goes as it is."""
+        _call("Screen.Send", self._tab, str(text).replace("\\", "\\\\"))
+
+    def Clear(self):
+        _call("Screen.Clear", self._tab)
 
     def ReadString(self, text, timeout=0, bCaseInsensitive=False):
         r = _call("Screen.ReadString", self._tab, text, timeout, bCaseInsensitive)
@@ -159,6 +168,13 @@ class _Session:
 
     def Disconnect(self):
         _call("Session.Disconnect", self._tab)
+
+    def SetStatusText(self, text):
+        _call("Session.SetStatusText", self._tab, str(text))
+
+    def Create(self, name, host, user="", port=22, folder=""):
+        """Saves a new SSH session (the Default template, no password); returns its path."""
+        return _call("Session.Create", self._tab, name, host, user, int(port), folder)
 
 
 class _Tab:
@@ -236,12 +252,22 @@ class _Arguments:
         return self._a[i]
 
 
+class _Window:
+    @property
+    def Caption(self):
+        return _call("Window.Caption", 0)
+
+    def Activate(self):
+        _call("Window.Activate", 0)
+
+
 class _Crt:
     def __init__(self):
         self._tab = int(os.environ.get("SHAGSHELL_SCRIPT_TAB", "0"))
         self.Screen = _Screen(self._tab)
         self.Session = _Session(self._tab)
         self.Dialog = _Dialog()
+        self.Window = _Window()
         self.Clipboard = _Clipboard()
         self.Arguments = _Arguments(sys.argv[1:])
         self.ScriptFullName = os.environ.get("SHAGSHELL_SCRIPT", "")
