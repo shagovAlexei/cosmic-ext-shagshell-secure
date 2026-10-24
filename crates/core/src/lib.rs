@@ -21,3 +21,4 @@ pub mod shell;
 pub mod sshconfig;
 pub mod tabs;
 pub mod uri;
+pub mod zmodem;

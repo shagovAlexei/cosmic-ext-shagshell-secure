@@ -22,6 +22,7 @@ mod status_bar;
 mod tabs;
 mod term;
 mod toolbar;
+mod transfer_pick;
 
 use shagshell_core::check;
 

@@ -300,6 +300,8 @@ pub struct Tabs {
     context: Option<(pane_grid::Pane, Entity)>,
     /// Every terminal's tap, for the scripts running on other threads.
     pub taps: crate::script::Taps,
+    /// Where a Zmodem send from the server is received (none: lrzsz is missing).
+    download: Option<std::path::PathBuf>,
     /// The tab `open` made last (none: it could not start).
     last_opened: Option<TabId>,
 }
@@ -578,6 +580,7 @@ impl Tabs {
         )
         .inspect_err(|e| log::error!("start {}: {e}", launch.program))
         .ok()?;
+        tap.set_auto_receive(self.download.clone());
         self.taps
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -622,6 +625,10 @@ impl Tabs {
 
     pub fn set_log_prefs(&mut self, config: &Config) {
         self.log_prefs = (config.log_dir(), config.log_template.clone());
+        self.download = crate::menu::has_lrzsz().then(|| config.download_dir());
+        for tap in self.taps.lock().unwrap_or_else(|e| e.into_inner()).values() {
+            tap.set_auto_receive(self.download.clone());
+        }
     }
 
     /// Log Session: the active tab's log on / off (a started one by the session's own template,
@@ -792,6 +799,25 @@ impl Tabs {
         let ids: Vec<TabId> = self.tabs.keys().copied().collect();
         for id in ids {
             self.retitle(id);
+        }
+    }
+
+    /// Transfer → …: lrzsz's `cmd` on the active terminal's connection.
+    pub fn start_transfer(&self, cmd: &shagshell_core::zmodem::Command) -> Result<(), String> {
+        let id = self.active_terminal().ok_or_else(|| fl!("zm-no-tab"))?;
+        let tap = (self.taps.lock().unwrap_or_else(|e| e.into_inner()))
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| fl!("zm-no-tab"))?;
+        tap.begin(cmd).map_err(|e| e.to_string())
+    }
+
+    /// Transfer → Cancel Transfer.
+    pub fn cancel_transfer(&self) {
+        if let Some(id) = self.active_terminal()
+            && let Some(tap) = (self.taps.lock().unwrap_or_else(|e| e.into_inner())).get(&id)
+        {
+            tap.cancel_transfer();
         }
     }
 

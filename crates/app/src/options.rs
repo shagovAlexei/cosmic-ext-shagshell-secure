@@ -205,6 +205,12 @@ pub fn view<'a>(
             text(&config.log_template, |c, v| c.log_template = v),
         ))
         .add(widget::text::caption(fl!("options-log-hint")));
+    let zmodem = settings::section()
+        .title(fl!("options-zmodem"))
+        .add(settings::item(
+            fl!("options-download-dir"),
+            text(&config.download_dir, |c, v| c.download_dir = v),
+        ));
     let terminal = settings::section()
         .title(fl!("options-terminal"))
         .add(settings::item(
@@ -241,6 +247,7 @@ pub fn view<'a>(
         terminal.into(),
         colours.into(),
         logging.into(),
+        zmodem.into(),
         sftp.into(),
         passwords.into(),
     ])

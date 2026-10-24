@@ -3,7 +3,7 @@
 use std::ffi::OsStr;
 
 /// Programs probed by `--check`: ssh is required, the rest enable Telnet, Serial and scripts.
-pub const TOOLS: [&str; 4] = ["ssh", "telnet", "picocom", "python3"];
+pub const TOOLS: [&str; 6] = ["ssh", "telnet", "picocom", "python3", "sz", "rz"];
 
 /// For each name in order: is it an executable file in a `path` (PATH-style) dir?
 /// An empty component (`a::b`) is skipped: the shell would read it as the current dir.

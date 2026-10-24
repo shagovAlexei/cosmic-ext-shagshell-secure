@@ -1,6 +1,7 @@
 //! A tab's session log: the PTY's output copied to `core::logfile::Logger` on its way to the
 //! terminal. The terminal's reader thread writes, the UI starts and stops it, so it is shared.
 
+use crate::fl;
 use alacritty_terminal::event::{OnResize, WindowSize};
 use alacritty_terminal::event_loop::{EventLoopSender, Msg};
 use alacritty_terminal::tty::{self, ChildEvent, EventedPty, EventedReadWrite};
@@ -8,9 +9,12 @@ use polling::{Event, PollMode, Poller};
 use shagshell_core::logfile::Logger;
 use shagshell_core::logon::{Automaton, Step};
 use shagshell_core::script::Buffer;
+use shagshell_core::zmodem::{self, Detector};
 use std::fs::File;
+use std::io::Write;
 use std::io::{self, Read};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::process::{ChildStdin, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -28,6 +32,11 @@ pub struct Tap {
     pty: Arc<Mutex<Option<EventLoopSender>>>,
     /// Scripts (`crt.Screen.WaitForString`): the output as text, while one runs.
     script: Arc<Buffer>,
+    /// A file transfer (lrzsz) is running: the output goes to its stdin, not to the terminal.
+    xfer: Arc<Mutex<Option<ChildStdin>>>,
+    /// Where a Zmodem send from the server is received (none: not noticed).
+    auto: Arc<Mutex<Option<PathBuf>>>,
+    detector: Arc<Mutex<Detector>>,
 }
 
 /// What the automaton's sends are handed to (the app expands and writes them).
@@ -75,6 +84,134 @@ impl Tap {
         if let Some(s) = self.pty.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
             let _ = s.send(Msg::Input(bytes.into()));
         }
+    }
+
+    /// Zmodem sends from the server are received into `dir` (none: ignored).
+    pub fn set_auto_receive(&self, dir: Option<PathBuf>) {
+        *self.auto.lock().unwrap_or_else(|e| e.into_inner()) = dir;
+    }
+
+    pub fn transferring(&self) -> bool {
+        self.xfer
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_some()
+    }
+
+    /// Runs lrzsz's `cmd` on this connection: what the server sends goes to its stdin, what it
+    /// says goes to the server. Ends by itself; the result is said once (`take_failure`).
+    pub fn begin(&self, cmd: &zmodem::Command) -> io::Result<()> {
+        let mut slot = self.xfer.lock().unwrap_or_else(|e| e.into_inner());
+        if slot.is_some() {
+            return Err(io::Error::other(fl!("zm-busy")));
+        }
+        let mut c = std::process::Command::new(cmd.program);
+        c.args(&cmd.args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        if let Some(dir) = &cmd.cwd {
+            std::fs::create_dir_all(dir)?;
+            c.current_dir(dir);
+        }
+        let mut child = c
+            .spawn()
+            .map_err(|e| io::Error::new(e.kind(), format!("{}: {e}", cmd.program)))?;
+        let (stdin, mut stdout, mut stderr) =
+            match (child.stdin.take(), child.stdout.take(), child.stderr.take()) {
+                (Some(i), Some(o), Some(e)) => (i, o, e),
+                _ => return Err(io::Error::other("pipes")),
+            };
+        *slot = Some(stdin);
+        drop(slot);
+        let me = self.clone();
+        let out = std::thread::spawn(move || {
+            let mut buf = [0; 8192];
+            while let Ok(n) = stdout.read(&mut buf) {
+                if n == 0 {
+                    break;
+                }
+                me.input(buf[..n].to_vec());
+            }
+        });
+        let err = std::thread::spawn(move || {
+            let mut s = String::new();
+            let mut buf = [0; 4096];
+            while let Ok(n) = stderr.read(&mut buf) {
+                if n == 0 {
+                    break;
+                }
+                s.push_str(&String::from_utf8_lossy(&buf[..n]));
+                let keep = s.len().saturating_sub(4000);
+                s.drain(..keep);
+            }
+            s
+        });
+        let me = self.clone();
+        let name = cmd.program;
+        std::thread::spawn(move || {
+            let status = child.wait();
+            let _ = out.join();
+            let said = err.join().unwrap_or_default();
+            *me.xfer.lock().unwrap_or_else(|e| e.into_inner()) = None;
+            let line = zmodem::last_line(&said).unwrap_or_default();
+            me.fail(match status {
+                Ok(s) if s.success() => fl!("zm-done", what = line),
+                Ok(s) => fl!(
+                    "zm-failed",
+                    why = if line.is_empty() { s.to_string() } else { line }
+                ),
+                Err(e) => fl!("zm-failed", why = format!("{name}: {e}")),
+            });
+        });
+        Ok(())
+    }
+
+    /// Stop the transfer: the server is told (CAN), the program's input ends.
+    pub fn cancel_transfer(&self) {
+        let sink = self.xfer.lock().unwrap_or_else(|e| e.into_inner()).take();
+        if sink.is_some() {
+            self.input(zmodem::CANCEL.to_vec());
+        }
+    }
+
+    /// The PTY gave `bytes`: a transfer takes them (`true`), or a server's Zmodem send starts one,
+    /// or they are for the terminal (`false`).
+    fn route(&self, bytes: &[u8]) -> bool {
+        if self.feed_transfer(bytes) {
+            return true;
+        }
+        let dir = self.auto.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let Some(dir) = dir else { return false };
+        let start = self
+            .detector
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .feed(bytes);
+        if !start {
+            return false;
+        }
+        match self.begin(&zmodem::receive(zmodem::Proto::Zmodem, &dir, None)) {
+            Ok(()) => {
+                self.feed_transfer(bytes);
+                true
+            }
+            Err(e) => {
+                self.fail(fl!("zm-failed", why = e.to_string()));
+                false
+            }
+        }
+    }
+
+    /// `true`: a transfer is running and has the bytes.
+    fn feed_transfer(&self, bytes: &[u8]) -> bool {
+        let mut g = self.xfer.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(w) = g.as_mut() else { return false };
+        if w.write_all(bytes).and_then(|()| w.flush()).is_err() {
+            // The program is gone (it ends the transfer itself); what is left is its.
+            *g = None;
+        }
+        true
     }
 
     /// The output as text for scripts.
@@ -159,11 +296,19 @@ pub struct TapReader {
 
 impl Read for TapReader {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let n = self.file.read(buf)?;
-        if n > 0 {
-            self.tap.output(&buf[..n]);
+        let mut n = self.file.read(buf)?;
+        loop {
+            if n == 0 {
+                return Ok(0);
+            }
+            if !self.tap.route(&buf[..n]) {
+                self.tap.output(&buf[..n]);
+                return Ok(n);
+            }
+            // A transfer has it. Read what else is waiting, so the event loop is not left with
+            // data it was not told about (`WouldBlock` ends it once the pipe is empty).
+            n = self.file.read(buf)?;
         }
-        Ok(n)
     }
 }
 

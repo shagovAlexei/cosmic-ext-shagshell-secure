@@ -410,6 +410,10 @@ impl Terminal {
     }
 
     pub fn input_no_scroll<I: Into<Cow<'static, [u8]>>>(&self, input: I) {
+        // A file transfer owns the line: keys typed meanwhile would corrupt it.
+        if self.log.transferring() {
+            return;
+        }
         self.notifier.notify(input);
     }
 

@@ -111,6 +111,8 @@ pub struct Config {
     pub log_dir: String,
     /// The log name when it is started by hand (File → Log Session).
     pub log_template: String,
+    /// Where Zmodem downloads go ("" = `~/Downloads`).
+    pub download_dir: String,
     /// SFTP tabs open with dot files shown (Ctrl+H flips it in a tab).
     pub sftp_show_hidden: bool,
     /// SFTP: the target is already there.
@@ -132,6 +134,21 @@ impl Config {
     }
 }
 
+impl Config {
+    /// The folder of Zmodem downloads (same spelling as `log_dir`).
+    pub fn download_dir(&self) -> std::path::PathBuf {
+        let home = std::env::home_dir().unwrap_or_else(std::env::temp_dir);
+        match self.download_dir.trim() {
+            "" => home.join("Downloads"),
+            "~" => home,
+            d => match d.strip_prefix("~/") {
+                Some(rest) => home.join(rest),
+                None => home.join(d),
+            },
+        }
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -147,6 +164,7 @@ impl Default for Config {
             color_scheme: String::new(),
             highlight_enabled: true,
             log_dir: String::new(),
+            download_dir: String::new(),
             log_template: "%S_%Y-%M-%D_%h%m%s.log".into(),
             sftp_show_hidden: true,
             sftp_overwrite: ExistsRule::Ask,
