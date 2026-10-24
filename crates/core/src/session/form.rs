@@ -1,6 +1,6 @@
 //! Session Options' fields as typed, and back into a `Session` (checked).
 
-use crate::session::{Forward, ForwardKind, Protocol, Session};
+use crate::session::{Flow, Forward, ForwardKind, Parity, Protocol, Serial, Session};
 
 /// A forward as typed.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -33,6 +33,13 @@ pub struct Form {
     pub reconnect: bool,
     pub reconnect_delay: String,
     pub reconnect_tries: String,
+    pub device: String,
+    pub baud: String,
+    /// 5…8, 8 when "".
+    pub data_bits: u8,
+    pub parity: Parity,
+    pub stop_bits: u8,
+    pub flow: Flow,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -45,6 +52,8 @@ pub enum FormError {
     /// The n-th forward.
     Forward(usize),
     Reconnect,
+    Device,
+    Baud,
 }
 
 /// A host ssh takes as one: not empty, no spaces, not an option (`-oProxyCommand=…`).
@@ -124,6 +133,12 @@ impl Form {
             reconnect: s.reconnect,
             reconnect_delay: s.reconnect_delay.map(|n| n.to_string()).unwrap_or_default(),
             reconnect_tries: s.reconnect_tries.map(|n| n.to_string()).unwrap_or_default(),
+            device: s.serial.device.clone(),
+            baud: s.serial.baud.map(|n| n.to_string()).unwrap_or_default(),
+            data_bits: s.serial.data_bits.unwrap_or(8),
+            parity: s.serial.parity,
+            stop_bits: s.serial.stop_bits.unwrap_or(1),
+            flow: s.serial.flow,
         }
     }
 
@@ -132,8 +147,29 @@ impl Form {
     pub fn apply(&self, base: &Session, need_host: bool) -> Result<Session, FormError> {
         let opt = |v: &str| Some(v.trim().to_string()).filter(|v| !v.is_empty());
         let host = self.host.trim();
-        // A local shell has no host.
-        let need_host = need_host && self.protocol == Protocol::Ssh2;
+        // A local shell and a serial line have no host.
+        let need_host_all = need_host;
+        let need_host = need_host && matches!(self.protocol, Protocol::Ssh2 | Protocol::Telnet);
+        let device = self.device.trim();
+        // (The Default template, `need_host` false, has no host and no device either.)
+        if self.protocol == Protocol::Serial
+            && need_host_all
+            && (device.is_empty()
+                || device.starts_with('-')
+                || device.contains(char::is_whitespace))
+        {
+            return Err(FormError::Device);
+        }
+        // What another protocol's page shows is not checked (its field may be hidden).
+        let baud = match opt(&self.baud).filter(|_| self.protocol == Protocol::Serial) {
+            None => None,
+            Some(b) => Some(
+                b.parse::<u32>()
+                    .ok()
+                    .filter(|&b| b >= 50)
+                    .ok_or(FormError::Baud)?,
+            ),
+        };
         if (need_host || !host.is_empty()) && !valid_host(host) {
             return Err(FormError::Host);
         }
@@ -185,6 +221,14 @@ impl Form {
             log_file: self.log_file.trim().to_string(),
             log_append: self.log_append,
             log_raw: self.log_raw,
+            serial: Serial {
+                device: device.to_string(),
+                baud,
+                data_bits: Some(self.data_bits).filter(|&b| b != 8 && (5..=8).contains(&b)),
+                parity: self.parity,
+                stop_bits: Some(self.stop_bits).filter(|&b| b == 2),
+                flow: self.flow,
+            },
             jump,
             forwards,
             reconnect: self.reconnect,
@@ -244,6 +288,65 @@ mod tests {
         let mut base = Session::default();
         base.rest.insert("future_field".into(), "x".into());
         assert_eq!(form("h").apply(&base, true).unwrap().rest, base.rest);
+    }
+
+    #[test]
+    fn telnet_needs_a_host_serial_a_device() {
+        let t = Form {
+            protocol: Protocol::Telnet,
+            ..Default::default()
+        };
+        assert_eq!(t.apply(&Session::default(), true), Err(FormError::Host));
+        let ok = Form {
+            host: "sw1".into(),
+            ..t
+        };
+        assert_eq!(
+            ok.apply(&Session::default(), true).unwrap().protocol,
+            Protocol::Telnet
+        );
+        let ser = |device: &str, baud: &str| Form {
+            protocol: Protocol::Serial,
+            device: device.into(),
+            baud: baud.into(),
+            data_bits: 8,
+            stop_bits: 1,
+            ..Default::default()
+        };
+        for bad in ["", "-x", "a b"] {
+            assert_eq!(
+                ser(bad, "").apply(&Session::default(), true),
+                Err(FormError::Device)
+            );
+        }
+        assert_eq!(
+            ser("/dev/ttyS0", "x").apply(&Session::default(), true),
+            Err(FormError::Baud)
+        );
+        assert_eq!(
+            ser("/dev/ttyS0", "9").apply(&Session::default(), true),
+            Err(FormError::Baud)
+        );
+        let s = ser("/dev/ttyS0", "115200")
+            .apply(&Session::default(), true)
+            .unwrap();
+        assert_eq!(
+            (s.serial.baud, s.serial.data_bits, s.serial.stop_bits),
+            (Some(115200), None, None)
+        );
+        assert_eq!(Form::from_session("n", &s).data_bits, 8);
+        let text = toml::to_string(&s).unwrap();
+        assert!(
+            text.contains("[serial]") && text.contains("device = \"/dev/ttyS0\""),
+            "{text}"
+        );
+        assert_eq!(toml::from_str::<Session>(&text).unwrap(), s);
+        // 9600 8N1 is all defaults: nothing but the device is written
+        assert!(
+            !toml::to_string(&ser("/dev/x", "").apply(&Session::default(), true).unwrap())
+                .unwrap()
+                .contains("baud")
+        );
     }
 
     #[test]

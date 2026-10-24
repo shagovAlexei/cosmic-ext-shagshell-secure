@@ -49,6 +49,37 @@ pub fn ssh_argv(s: &Session, control_dir: &Path, home: &Path) -> Result<Vec<Stri
     Ok(a)
 }
 
+/// `telnet host [port]`.
+pub fn telnet_argv(s: &Session) -> Vec<String> {
+    let mut a = vec!["telnet".to_string(), s.host.clone()];
+    a.extend(s.port.map(|p| p.to_string()));
+    a
+}
+
+/// `picocom -b … -d … -y … -p … -f … device`: every setting said (the defaults 9600 8N1).
+pub fn serial_argv(s: &Session) -> Vec<String> {
+    use crate::session::{Flow, Parity};
+    let c = &s.serial;
+    let parity = match c.parity {
+        Parity::None => "n",
+        Parity::Even => "e",
+        Parity::Odd => "o",
+    };
+    let flow = match c.flow {
+        Flow::None => "n",
+        Flow::Hardware => "h",
+        Flow::Software => "x",
+    };
+    let mut a: Vec<String> = ["picocom", "-b"].map(String::from).to_vec();
+    a.push(c.baud.unwrap_or(9600).to_string());
+    a.extend(["-d".into(), c.data_bits.unwrap_or(8).to_string()]);
+    a.extend(["-y".into(), parity.into()]);
+    a.extend(["-p".into(), c.stop_bits.unwrap_or(1).to_string()]);
+    a.extend(["-f".into(), flow.into()]);
+    a.push(c.device.clone());
+    a
+}
+
 /// `listen:host:port`; an IPv6 host goes in brackets.
 fn forward_spec(f: &crate::session::Forward) -> String {
     let host = match f.host.contains(':') && !f.host.starts_with('[') {
@@ -230,6 +261,44 @@ mod tests {
         want.extend(CTL);
         want.extend(["-A", "-o", "Compression=yes", "--", "h"]);
         assert_eq!(argv(&x), want);
+    }
+
+    #[test]
+    fn telnet_and_serial_argv() {
+        use crate::session::{Flow, Parity, Serial};
+        let t = Session {
+            host: "sw1".into(),
+            port: Some(2323),
+            ..Default::default()
+        };
+        assert_eq!(telnet_argv(&t), ["telnet", "sw1", "2323"]);
+        assert_eq!(telnet_argv(&s("sw1")), ["telnet", "sw1"]);
+        let x = Session {
+            serial: Serial {
+                device: "/dev/ttyUSB0".into(),
+                baud: Some(115200),
+                data_bits: Some(7),
+                parity: Parity::Even,
+                stop_bits: Some(2),
+                flow: Flow::Hardware,
+            },
+            ..Default::default()
+        };
+        assert_eq!(
+            serial_argv(&x).join(" "),
+            "picocom -b 115200 -d 7 -y e -p 2 -f h /dev/ttyUSB0"
+        );
+        let d = Session {
+            serial: Serial {
+                device: "/dev/ttyS0".into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert_eq!(
+            serial_argv(&d).join(" "),
+            "picocom -b 9600 -d 8 -y n -p 1 -f n /dev/ttyS0"
+        );
     }
 
     #[test]
