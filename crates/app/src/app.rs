@@ -96,6 +96,8 @@ pub enum Message {
     /// Global Options: a changed value, written to the config.
     SetConfig(Config),
     OpenUrl(String),
+    /// A recorded script and where the user put it (none: given up).
+    RecordSaved(String, Option<std::path::PathBuf>),
     CloseDrawer,
     Tabs(TabsMsg),
     TermTx(crate::term::Events),
@@ -234,7 +236,11 @@ impl Application for App {
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
-        let task = self.handle(message);
+        let mut task = self.handle(message);
+        // The tab being recorded was closed: what was recorded is still offered.
+        for (title, rec) in self.tabs.take_closed_recordings() {
+            task = Task::batch([task, self.save_recording(&title, rec)]);
+        }
         // A log that could not start, or stopped by itself (disk full): said in the status bar.
         if let Some(n) = self.tabs.take_notice() {
             self.sessions.notice.get_or_insert(n);
@@ -479,6 +485,14 @@ impl App {
                     );
                 }
                 return Task::batch(tasks);
+            }
+            Message::RecordSaved(text, path) => {
+                if let Some(path) = path {
+                    self.sessions.notice = Some(match std::fs::write(&path, text) {
+                        Ok(()) => fl!("rec-saved", path = path.display().to_string()),
+                        Err(e) => fl!("rec-failed", error = e.to_string()),
+                    });
+                }
             }
             Message::OpenUrl(url) => {
                 match std::process::Command::new("xdg-open").arg(url).spawn() {
@@ -1045,6 +1059,11 @@ impl App {
             }
             Action::About => self.toggle_drawer(Drawer::About),
             Action::CheckUpdates => return check_updates(true),
+            Action::ToggleRecording => {
+                if let Some((title, rec)) = self.tabs.toggle_recording() {
+                    return self.save_recording(&title, rec);
+                }
+            }
             Action::Donate => {
                 if let Some(url) = crate::updates::DONATE_URL {
                     return self.update(Message::OpenUrl(url.into()));
@@ -1173,6 +1192,26 @@ impl App {
             }
             _ => Task::none(),
         }
+    }
+
+    /// The end of a recording: the save dialog (nothing recorded: a notice).
+    fn save_recording(
+        &mut self,
+        title: &str,
+        rec: shagshell_core::recorder::Recorder,
+    ) -> Task<Message> {
+        if rec.is_empty() {
+            self.sessions.notice = Some(fl!("rec-empty"));
+            return Task::none();
+        }
+        let when = shagshell_core::logfile::now().strftime("%Y-%m-%d %H:%M");
+        let text = rec.script(&format!(
+            "Recorded by ShagShell Secure from «{title}», {when}"
+        ));
+        Task::perform(
+            crate::script::save_script(fl!("rec-save-title")),
+            move |p| cosmic::Action::App(Message::RecordSaved(text.clone(), p)),
+        )
     }
 
     /// The update window and the answers of the release check.

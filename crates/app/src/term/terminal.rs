@@ -421,7 +421,15 @@ impl Terminal {
         self.notifier.notify(input);
     }
 
+    /// What the user typed: to the program, and to a script being recorded.
     pub fn input_scroll<I: Into<Cow<'static, [u8]>>>(&self, input: I) {
+        let input = input.into();
+        self.log.record_input(&input);
+        self.send_scroll(input);
+    }
+
+    /// Bytes that are not the user's keys (the Command Window, the Button Bar): not recorded.
+    pub fn send_scroll<I: Into<Cow<'static, [u8]>>>(&self, input: I) {
         self.input_no_scroll(input);
         self.scroll(TerminalScroll::Bottom);
     }
@@ -432,10 +440,17 @@ impl Terminal {
             let term = self.term.lock();
             term.mode().contains(TermMode::BRACKETED_PASTE)
         };
+        self.log.record_input(
+            value
+                .replace('\x1b', "")
+                .replace("\r\n", "\r")
+                .replace('\n', "\r")
+                .as_bytes(),
+        );
         if bracketed_paste {
             self.input_no_scroll(&b"\x1b[200~"[..]);
             self.input_no_scroll(value.replace('\x1b', "").into_bytes());
-            self.input_scroll(&b"\x1b[201~"[..]);
+            self.send_scroll(&b"\x1b[201~"[..]);
         } else {
             // In non-bracketed (ie: normal) mode, terminal applications cannot distinguish
             // pasted data from keystrokes.
@@ -443,7 +458,7 @@ impl Terminal {
             // pasting... since that's neither practical nor sensible (and probably an impossible
             // task to solve in a general way), we'll just replace line breaks (windows and unix
             // style) with a single carriage return (\r, which is what the Enter key produces).
-            self.input_scroll(value.replace("\r\n", "\r").replace('\n', "\r").into_bytes());
+            self.send_scroll(value.replace("\r\n", "\r").replace('\n', "\r").into_bytes());
         }
     }
 

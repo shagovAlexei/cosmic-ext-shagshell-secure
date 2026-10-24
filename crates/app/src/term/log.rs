@@ -39,6 +39,9 @@ pub struct Tap {
     /// Where a Zmodem send from the server is received (none: not noticed).
     auto: Arc<Mutex<Option<PathBuf>>>,
     detector: Arc<Mutex<Detector>>,
+    /// Script → Start Recording: what is typed, as a script (asked by the UI: no lock).
+    rec: Arc<Mutex<Option<shagshell_core::recorder::Recorder>>>,
+    rec_on: Arc<AtomicBool>,
 }
 
 /// What the automaton's sends are handed to (the app expands and writes them).
@@ -92,6 +95,33 @@ impl Tap {
     /// The terminal's PTY input, for what Logon Actions answer.
     pub fn set_pty(&self, sender: EventLoopSender) {
         *self.pty.lock().unwrap_or_else(|e| e.into_inner()) = Some(sender);
+    }
+
+    /// `prompt`: what is on the screen's cursor line now (the first step's prompt).
+    pub fn start_recording(&self, prompt: &str) {
+        let mut r = shagshell_core::recorder::Recorder::new();
+        r.output(prompt.as_bytes());
+        *self.rec.lock().unwrap_or_else(|e| e.into_inner()) = Some(r);
+        self.rec_on.store(true, Ordering::SeqCst);
+    }
+
+    /// Ends the recording: what was recorded.
+    pub fn stop_recording(&self) -> Option<shagshell_core::recorder::Recorder> {
+        self.rec_on.store(false, Ordering::SeqCst);
+        self.rec.lock().unwrap_or_else(|e| e.into_inner()).take()
+    }
+
+    pub fn recording(&self) -> bool {
+        self.rec_on.load(Ordering::SeqCst)
+    }
+
+    /// What the user typed (not what a script or the Command Window sent).
+    pub fn record_input(&self, bytes: &[u8]) {
+        if self.rec_on.load(Ordering::SeqCst)
+            && let Some(r) = self.rec.lock().unwrap_or_else(|e| e.into_inner()).as_mut()
+        {
+            r.input(bytes);
+        }
     }
 
     /// Bytes to the program as if typed.
@@ -276,6 +306,11 @@ impl Tap {
     /// The PTY gave `bytes`: to the log, and to Logon Actions.
     fn output(&self, bytes: &[u8]) {
         self.write(bytes);
+        if self.rec_on.load(Ordering::SeqCst)
+            && let Some(r) = self.rec.lock().unwrap_or_else(|e| e.into_inner()).as_mut()
+        {
+            r.output(bytes);
+        }
         self.script.feed(bytes);
         let due = {
             let mut g = self.logon.lock().unwrap_or_else(|e| e.into_inner());

@@ -834,6 +834,22 @@ impl Host for RunHost {
     }
 }
 
+/// Stop Recording: where to put the script (`.py` is added when missing).
+pub async fn save_script(title: String) -> Option<PathBuf> {
+    use cosmic::dialog::file_chooser::{FileFilter, save::Dialog};
+    let r = Dialog::new()
+        .title(title)
+        .filter(FileFilter::new("Python").glob("*.py"))
+        .save_file()
+        .await
+        .ok()?;
+    let mut path = r.url()?.to_file_path().ok()?;
+    if path.extension().is_none() {
+        path.set_extension("py");
+    }
+    Some(path)
+}
+
 /// Script → Run…: the file from the portal's chooser.
 pub async fn pick(title: String) -> Option<PathBuf> {
     use cosmic::dialog::file_chooser::open::Dialog;

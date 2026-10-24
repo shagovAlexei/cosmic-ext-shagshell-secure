@@ -22,6 +22,7 @@
 - [x] 15. ~~Command Manager (панель справа, импорт из SecureCRT)~~
 - [x] 16. ~~Перенос вкладок между группами (меню и перетаскивание)~~
 - [x] 17. ~~Шрифт и его размер в Global Options~~
+- [x] 21. ~~Запись скрипта (Script → Record Script)~~
 - [x] 20. ~~Проверка версии при запуске (Обновить / Пропустить), кнопка доната~~
 - [x] 19. ~~Диалоги `crt` как в SecureCRT: отдельные окна, значки и кнопки MessageBox, List, FileOpen/SaveDialog~~
 - [x] 18. ~~Примеры скриптов (`Example/`) и дополнения `crt` (Clipboard, Screen.Get, Session.Log, MessageBox с кнопками)~~
@@ -32,6 +33,5 @@
 - Редактирование удалённого файла локально (SecureFX «Edit»)
 - Импорт Button Bar из SecureCRT: кнопки Menu Function / Launch App (в настоящих файлах не встретились, формат строк неизвестен)
 - Перетаскивание вкладки в новое окно (между группами готово)
-- Запись скрипта (Script → Start Recording)
 
 Не делаем: SSH1, RLogin, TAPI, TN3270/5250, VBScript/JScript, legacy-эмуляции.

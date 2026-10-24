@@ -14,6 +14,7 @@ pub mod logon;
 pub mod macros;
 pub mod panel;
 pub mod reconnect;
+pub mod recorder;
 pub mod script;
 pub mod securecrt;
 pub mod session;

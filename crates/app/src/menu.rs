@@ -22,6 +22,8 @@ pub enum Action {
     /// File → Log Session.
     ToggleLog,
     About,
+    /// Script → Record Script (start / stop).
+    ToggleRecording,
     /// Help → Check for Updates…
     CheckUpdates,
     /// Help → Support the Project.
@@ -74,7 +76,7 @@ pub enum Action {
 
 /// The functions a Button Bar button can call: the name in `buttonbars.toml` and its label.
 pub type NamedFn = (&'static str, fn() -> String);
-pub const NAMED: [NamedFn; 14] = [
+pub const NAMED: [NamedFn; 15] = [
     ("Connect", || fl!("menu-connect")),
     ("QuickConnect", || fl!("menu-quick-connect")),
     ("NewLocalShell", || fl!("menu-new-local-shell")),
@@ -88,6 +90,7 @@ pub const NAMED: [NamedFn; 14] = [
     ("ToggleSessionManager", || fl!("menu-session-manager")),
     ("ToggleCommandWindow", || fl!("menu-command-window")),
     ("ToggleCommandManager", || fl!("menu-command-manager")),
+    ("ToggleRecording", || fl!("menu-script-record")),
     ("GlobalOptions", || fl!("menu-global-options")),
 ];
 
@@ -108,6 +111,7 @@ impl Action {
             "ToggleSessionManager" => Action::ToggleSessionManager,
             "ToggleCommandWindow" => Action::ToggleCommandWindow,
             "ToggleCommandManager" => Action::ToggleCommandManager,
+            "ToggleRecording" => Action::ToggleRecording,
             "GlobalOptions" => Action::GlobalOptions,
             _ => return None,
         })
@@ -144,7 +148,7 @@ fn key_binds() -> HashMap<KeyBind, Action> {
 /// more than one tab (`Tabs::menu_state`).
 pub fn bar(
     (session_manager, command_window, button_bar, command_manager): (bool, bool, bool, bool),
-    (tabs, live, split, logging): (bool, bool, bool, bool),
+    (tabs, live, split, logging, recording): (bool, bool, bool, bool, bool),
 ) -> Element<'static, Message> {
     use menu::Item::{Button, ButtonDisabled, CheckBox, Divider};
     let off = |label: String| ButtonDisabled(label, None, Action::Pending);
@@ -265,6 +269,13 @@ pub fn bar(
             vec![
                 Button(fl!("menu-script-run"), None, Action::RunScript),
                 Button(fl!("menu-script-cancel"), None, Action::CancelScript),
+                Divider,
+                CheckBox(
+                    fl!("menu-script-record"),
+                    None,
+                    recording,
+                    Action::ToggleRecording,
+                ),
             ],
         ),
         (

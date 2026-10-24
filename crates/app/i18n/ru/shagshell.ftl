@@ -58,6 +58,8 @@ bb-delete-bar = Удалить панель…
 bb-unknown-function = Неизвестная функция: { $name }
 bb-bad-command = Команду не разобрать (кавычки)
 menu-log-session = Записывать лог сессии
+menu-script-record = Записать скрипт
+status-recording = ЗАПИСЬ СКРИПТА
 status-logging = ЗАПИСЬ
 menu-toolbar = Панель инструментов
 menu-status-bar = Строка состояния
@@ -513,3 +515,8 @@ up-latest = У вас последняя версия
 up-failed = Не удалось проверить обновления: { $error }
 options-updates = Обновления
 options-update-check = Проверять обновления при запуске
+
+rec-save-title = Сохранить записанный скрипт
+rec-saved = Скрипт сохранён: { $path }
+rec-failed = Не удалось сохранить скрипт: { $error }
+rec-empty = Ничего не записано
