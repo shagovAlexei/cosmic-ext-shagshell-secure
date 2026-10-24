@@ -4,6 +4,7 @@ mod config;
 mod i18n;
 mod menu;
 mod options;
+mod quick_connect;
 mod session_manager;
 mod status_bar;
 mod tabs;

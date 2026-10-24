@@ -64,7 +64,8 @@ We do **not** implement SSH. The system OpenSSH does it; we drive it.
 ### Workspace
 
 - **`crates/core` (`shagshell-core`)** has no libcosmic dependency. All logic lives here and is unit-tested:
-  - `session/{model,store}.rs` — `Session`, folder tree, load/save/rename/move, Default template;
+  - `session/{model,store,rows}.rs` — `Session` (every field defaulted, unknown ignored), the tree on disk (`Store`: load / create from Default / atomic save / rename / move / delete), the rows on screen (`rows::visible` with filter, Shift ranges, `sessions_under` for Connect all);
+  - `sshconfig.rs` — `~/.ssh/config` hosts → sessions (alias only; ssh applies the rest);
   - `launch.rs` — `Session` → argv + env (pure, tested against expected argv);
   - `askpass.rs` — prompt classification + socket protocol;
   - `keyring.rs` — Secret Service over zbus (from shagoff-commander, + `lookup` / `delete`);
@@ -78,6 +79,9 @@ We do **not** implement SSH. The system OpenSSH does it; we drive it.
   - `term/` is cosmic-term's terminal (via shagoff-commander `crates/app/src/term/`), driven by a local PTY. Events come through one channel tagged with `TabId`; `term::print` writes text on screen without the PTY (the exit line).
   - `tabs.rs`: tabs are kept by id (`HashMap<TabId, Tab>`); each group in the `pane_grid` has a `segmented_button` model holding the ids in order (moving a tab between groups = remove + insert the id). Exit leaves the tab (✗, Enter restarts), closing a live one asks. `app::key_action` is the one list of app keys (physical keys, any layout): the terminal lets exactly those through (`tabs::is_app_key`), everything else is the program's. Never bind Ctrl+Insert / Shift+Insert (the user's system uses them). The tab menu has its own `TabCmd`s, about the right-clicked tab; keys and the menu bar act on the active tab.
   - `options.rs`: Options → Global Options drawer.
+  - `session_manager.rs`: the tree pane (own `SmMsg`, `Outcome { open, save, new_session }` back to the app), dialogs for rename / new folder / delete, drag (press a row, enter another, release anywhere — mouse events subscribed only while held), splitter. A click in the tree takes the keys from the terminal (`unfocus`), so Enter / F2 / Delete reach it.
+  - `quick_connect.rs`: Alt+Q dialog; saving goes through `Store::create` (Default template).
+  - App keys (`key_action`) are handled whatever the event status: a text field would take Alt+Q as a letter. Enter and the tree's keys only when no widget took them.
   - Popups (menus) are windows: `App::view_window` returns an empty `Space` for them, or libcosmic panics ("no view for window"). A `segmented_button` context menu is one root whose children are one menu per tab.
   - `main.rs` also dispatches the `askpass` subcommand and `--check`.
 - Modularity = Rust modules. No plugin system.

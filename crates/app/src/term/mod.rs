@@ -10,7 +10,6 @@ pub mod terminal_theme;
 use crate::app::Message;
 use alacritty_terminal::{event::Event, term, tty};
 use cosmic::iced::{Subscription, futures::SinkExt};
-use std::path::Path;
 use std::sync::Mutex;
 use std::sync::atomic::Ordering;
 use terminal::Terminal;
@@ -22,12 +21,13 @@ pub type Events = UnboundedSender<(TabId, Event)>;
 /// Lines kept above the screen.
 const HISTORY: usize = 10_000;
 
-/// Start `program` in the home dir. `dark`: the COSMIC theme's colors; `bg`: the window's
+/// Start `program` with `args` in the home dir. `dark`: the COSMIC theme's colors; `bg`: the window's
 /// background (0xAARRGGBB), the terminal's own.
 pub fn start(
     id: TabId,
     tx: Events,
-    program: &Path,
+    program: &str,
+    args: &[String],
     dark: bool,
     bg: u32,
     style: &style::Style,
@@ -35,10 +35,7 @@ pub fn start(
     terminal::WINDOW_BG_COLOR.store(bg, Ordering::SeqCst);
     let colors = colors(dark);
     let options = tty::Options {
-        shell: Some(tty::Shell::new(
-            program.to_string_lossy().into_owned(),
-            Vec::new(),
-        )),
+        shell: Some(tty::Shell::new(program.to_string(), args.to_vec())),
         working_directory: std::env::home_dir(),
         env: [("TERM".to_string(), "xterm-256color".to_string())].into(),
         ..tty::Options::default()

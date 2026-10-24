@@ -2,8 +2,10 @@
 
 use crate::config::{self, Config};
 use crate::menu::Action;
+use crate::quick_connect::{QcMsg, QuickConnect};
+use crate::session_manager::{SessionManager, SmMsg, TreeKey};
 use crate::tabs::{self, Tabs, TabsMsg};
-use crate::{about, fl, menu, options, session_manager, status_bar, toolbar};
+use crate::{about, fl, menu, options, status_bar, toolbar};
 use cosmic::app::{Core, Task};
 use cosmic::cosmic_config::CosmicConfigEntry;
 use cosmic::iced::keyboard::{self, Modifiers, key::Code, key::Physical};
@@ -27,6 +29,10 @@ pub struct App {
     about: About,
     drawer: Option<Drawer>,
     tabs: Tabs,
+    sessions: SessionManager,
+    quick: Option<QuickConnect>,
+    /// ssh's ControlMaster sockets (`launch::ensure_control_dir`).
+    control_dir: std::path::PathBuf,
 }
 
 #[derive(Clone, Debug)]
@@ -43,6 +49,8 @@ pub enum Message {
     /// Enter while the active tab's program has ended.
     EnterKey,
     Surface(cosmic::surface::Action),
+    Sessions(SmMsg),
+    QuickConnect(QcMsg),
 }
 
 impl Application for App {
@@ -62,13 +70,23 @@ impl Application for App {
     fn init(mut core: Core, _: ()) -> (Self, Task<Message>) {
         core.window.header_title = fl!("app-title");
         let config_handler = config::handler();
+        let config: Config = config::read(config_handler.as_ref());
+        let control_dir = shagshell_core::launch::ensure_control_dir()
+            .inspect_err(|e| log::warn!("ssh control dir: {e}"))
+            .unwrap_or_else(|_| shagshell_core::launch::control_dir());
+        let store =
+            shagshell_core::session::Store::new(shagshell_core::session::store::default_root());
+        let sessions = SessionManager::new(store, &config.expanded, config.session_manager_width);
         let app = Self {
             core,
-            config: config::read(config_handler.as_ref()),
+            config,
             config_handler,
             about: about::about(),
             drawer: None,
             tabs: Tabs::default(),
+            sessions,
+            quick: None,
+            control_dir,
         };
         (app, Task::none())
     }
@@ -89,9 +107,16 @@ impl Application for App {
                 }
             }
             Message::CloseDrawer => self.set_drawer(None),
-            Message::Tabs(m) => return self.tabs.update(m, &look()),
+            Message::Tabs(m) => {
+                self.sessions.focused = false; // a terminal is used: Enter is its again
+                return self.tabs.update(m, &look());
+            }
             Message::TermTx(tx) => self.tabs.set_sender(tx),
             Message::Term(id, e) => return self.tabs.on_term(id, e),
+            Message::EnterKey if self.sessions.focused => {
+                let ids = self.sessions.connect();
+                return self.open_sessions(&ids);
+            }
             Message::EnterKey if self.tabs.enter_on_dead() => return self.act(Action::Reconnect),
             Message::EnterKey => {}
             Message::Surface(a) => {
@@ -99,23 +124,76 @@ impl Application for App {
                     cosmic::app::Action::Surface(a),
                 ));
             }
+            Message::Sessions(m) => {
+                let out = self.sessions.update(m);
+                if out.save {
+                    self.config.expanded = self.sessions.expanded.iter().cloned().collect();
+                    self.config.session_manager_width = self.sessions.width as u16;
+                    self.save_config();
+                }
+                let mut tasks: Vec<_> = out.task.into_iter().collect();
+                tasks.push(self.open_sessions(&out.open));
+                if let Some(folder) = out.new_session {
+                    tasks.push(self.quick_connect(Some(folder)));
+                }
+                return Task::batch(tasks);
+            }
+            Message::QuickConnect(QcMsg::Cancel) => self.quick = None,
+            Message::QuickConnect(m) => {
+                let Some(req) = self.quick.as_mut().and_then(|q| q.update(m)) else {
+                    return Task::none();
+                };
+                return self.quick_connected(req);
+            }
         }
         Task::none()
     }
 
     fn subscription(&self) -> Subscription<Message> {
         Subscription::batch([
-            // Not a key a focused widget took (the terminal takes all but `tabs::is_app_key`),
-            // not a held key's repeat.
+            // Not a held key's repeat. Keys no widget took: all of the app's (the terminal lets
+            // them through). Taken by a text field: only the Alt / Ctrl+Tab ones (Alt+Q would be a
+            // «q» there), never Ctrl+Shift+C / V / W — the field's paste must not paste into the
+            // terminal too. Enter and the tree's keys only when no widget took them.
             event::listen_with(|e, status, _| match e {
                 cosmic::iced::Event::Keyboard(keyboard::Event::KeyPressed {
                     physical_key,
                     modifiers,
                     repeat: false,
                     ..
-                }) if status == event::Status::Ignored => route_key(&physical_key, modifiers),
+                }) => match key_action(&physical_key, modifiers) {
+                    Some(a) if status == event::Status::Ignored || over_fields(a) => {
+                        Some(Message::Action(a))
+                    }
+                    Some(_) => None,
+                    None if status == event::Status::Ignored => route_key(&physical_key, modifiers),
+                    None => None,
+                },
                 _ => None,
             }),
+            // Ctrl / Shift for clicks in the session tree.
+            event::listen_with(|e, _, _| match e {
+                cosmic::iced::Event::Keyboard(keyboard::Event::ModifiersChanged(m)) => {
+                    Some(Message::Sessions(SmMsg::Mods(m)))
+                }
+                _ => None,
+            }),
+            // A row (drag) or the splitter is held: where the pointer goes, where it comes up.
+            match self.sessions.holding() {
+                true => event::listen_with(|e, _, _| {
+                    use cosmic::iced::mouse::{Button, Event as M};
+                    match e {
+                        cosmic::iced::Event::Mouse(M::ButtonReleased(Button::Left)) => {
+                            Some(Message::Sessions(SmMsg::Release))
+                        }
+                        cosmic::iced::Event::Mouse(M::CursorMoved { position }) => {
+                            Some(Message::Sessions(SmMsg::Cursor(position.x)))
+                        }
+                        _ => None,
+                    }
+                }),
+                false => Subscription::none(),
+            },
             crate::term::subscription(),
             self.core()
                 .watch_config::<Config>(APP_ID)
@@ -154,7 +232,9 @@ impl Application for App {
     }
 
     fn dialog(&self) -> Option<Element<'_, Message>> {
-        self.tabs.dialog()
+        (self.tabs.dialog())
+            .or_else(|| self.quick.as_ref().map(QuickConnect::view))
+            .or_else(|| self.sessions.dialog())
     }
 
     fn header_start(&self) -> Vec<Element<'_, Message>> {
@@ -165,12 +245,8 @@ impl Application for App {
     }
 
     fn view(&self) -> Element<'_, Message> {
-        let center = match self.tabs.view(
-            &self.config,
-            self.core
-                .main_window_id()
-                .unwrap_or(cosmic::iced::window::Id::RESERVED),
-        ) {
+        let window = (self.core.main_window_id()).unwrap_or(cosmic::iced::window::Id::RESERVED);
+        let center = match self.tabs.view(&self.config, window) {
             Some(tabs) => tabs,
             None => widget::container(
                 widget::column::with_children(vec![
@@ -183,9 +259,9 @@ impl Application for App {
             .center(Length::Fill)
             .into(),
         };
-        let mut middle = widget::row::with_capacity(2).spacing(8);
+        let mut middle = widget::row::with_capacity(2).spacing(2);
         if self.config.session_manager_visible {
-            middle = middle.push(session_manager::view());
+            middle = middle.push(self.sessions.view(window));
         }
         widget::column::with_children(vec![
             toolbar::view(),
@@ -207,11 +283,133 @@ impl App {
                 self.config.session_manager_visible = !self.config.session_manager_visible;
                 self.save_config();
             }
+            // Alt+C, as SecureCRT's Connect dialog: the tree, with the filter focused.
+            Action::Connect => {
+                if !self.config.session_manager_visible {
+                    self.config.session_manager_visible = true;
+                    self.save_config();
+                }
+                return widget::text_input::focus(self.sessions.filter_id.clone());
+            }
+            Action::QuickConnect if self.quick.is_some() => {} // open: keep what is typed
+            Action::QuickConnect => return self.quick_connect(None),
+            Action::ImportSshConfig => self.import_ssh_config(),
             Action::About => self.toggle_drawer(Drawer::About),
             Action::GlobalOptions => self.toggle_drawer(Drawer::Options),
             _ => {}
         }
         Task::none()
+    }
+
+    /// Each session in a tab of its own; one that can't start says why under the tree.
+    fn open_sessions(&mut self, ids: &[String]) -> Task<Message> {
+        let mut tasks = Vec::new();
+        for id in ids {
+            match self.sessions.store.get(id) {
+                Ok(s) => {
+                    let name = id.rsplit_once('/').map_or(id.as_str(), |(_, n)| n);
+                    match self.ssh_launch(&s, name.to_string()) {
+                        Ok(l) => tasks.push(self.tabs.open(l, &look())),
+                        Err(e) => self.sessions.notice = Some(e),
+                    }
+                }
+                Err(e) => self.sessions.notice = Some(format!("{id}: {e}")),
+            }
+        }
+        Task::batch(tasks)
+    }
+
+    fn ssh_launch(
+        &self,
+        s: &shagshell_core::session::Session,
+        title: String,
+    ) -> Result<tabs::Launch, String> {
+        let home = std::env::home_dir().unwrap_or_default();
+        let mut argv = shagshell_core::launch::ssh_argv(s, &self.control_dir, &home)
+            .map_err(|_| fl!("bad-extra"))?;
+        let program = argv.remove(0);
+        Ok(tabs::Launch {
+            program,
+            args: argv,
+            title,
+            protocol: tabs::Protocol::Ssh {
+                host: s.host.clone(),
+            },
+        })
+    }
+
+    fn quick_connect(&mut self, folder: Option<String>) -> Task<Message> {
+        let q = QuickConnect::new(folder);
+        let focus = q.focus();
+        self.quick = Some(q);
+        focus
+    }
+
+    /// Quick Connect's Connect: save if asked (from the Default template), then open.
+    fn quick_connected(&mut self, req: crate::quick_connect::Request) -> Task<Message> {
+        let mut title = match &req.session.user {
+            Some(u) => format!("{u}@{}", req.session.host),
+            None => req.session.host.clone(),
+        };
+        let mut session = req.session.clone();
+        if let Some((folder, name)) = &req.save_as {
+            if let Err(e) = crate::session_manager::check(name, folder.is_empty()) {
+                if let Some(q) = &mut self.quick {
+                    q.error = Some(e);
+                }
+                return Task::none();
+            }
+            let store = &self.sessions.store;
+            let saved = store
+                .create(folder, name, &req.session.host)
+                .and_then(|id| {
+                    let mut s = store.get(&id)?;
+                    (s.port, s.user) = (req.session.port, req.session.user.clone());
+                    store.save(&id, &s).map(|()| (id, s))
+                });
+            match saved {
+                // Opened as saved: the Default template's key / keepalive / options too.
+                Ok((id, s)) => {
+                    self.sessions.select(&id);
+                    self.config.expanded = self.sessions.expanded.iter().cloned().collect();
+                    self.save_config();
+                    title = name.clone();
+                    session = s;
+                }
+                Err(e) => {
+                    if let Some(q) = &mut self.quick {
+                        q.error = Some(crate::session_manager::io_text(&e));
+                    }
+                    return Task::none();
+                }
+            }
+        }
+        self.quick = None;
+        match self.ssh_launch(&session, title) {
+            Ok(l) => self.tabs.open(l, &look()),
+            Err(e) => {
+                self.sessions.notice = Some(e);
+                Task::none()
+            }
+        }
+    }
+
+    fn import_ssh_config(&mut self) {
+        let path = std::env::home_dir().unwrap_or_default().join(".ssh/config");
+        let notice = match std::fs::read_to_string(&path) {
+            Ok(text) => {
+                let (done, skipped) =
+                    shagshell_core::sshconfig::import(&self.sessions.store, &text);
+                self.sessions.reload();
+                fl!(
+                    "import-done",
+                    done = done.to_string(),
+                    skipped = skipped.to_string()
+                )
+            }
+            Err(e) => format!("{}: {e}", path.display()),
+        };
+        self.sessions.notice = Some(notice);
     }
 
     fn save_config(&self) {
@@ -244,13 +442,39 @@ fn look() -> tabs::Look {
     (Default::default(), c.is_dark, bg)
 }
 
-/// Keys reaching the app (the terminal took none of them): Enter restarts an ended tab.
+/// App keys that act even when a text field took the key.
+fn over_fields(a: Action) -> bool {
+    matches!(
+        a,
+        Action::QuickConnect
+            | Action::Connect
+            | Action::ToggleSessionManager
+            | Action::SelectTab(_)
+            | Action::NextTab
+            | Action::PrevTab
+    )
+}
+
+/// Keys no widget took, other than the app's (`key_action`): Enter connects from the tree or
+/// restarts an ended tab; the tree's own keys.
 fn route_key(key: &Physical, mods: Modifiers) -> Option<Message> {
     match (key, mods) {
         (Physical::Code(Code::Enter | Code::NumpadEnter), m) if m.is_empty() => {
             Some(Message::EnterKey)
         }
-        _ => key_action(key, mods).map(Message::Action),
+        // The tree's own keys: only when nothing else (a terminal, a text field) took them.
+        (Physical::Code(code), m) if m.is_empty() => {
+            let k = match code {
+                Code::ArrowUp => TreeKey::Up,
+                Code::ArrowDown => TreeKey::Down,
+                Code::Delete => TreeKey::Delete,
+                Code::F2 => TreeKey::Rename,
+                Code::Escape => TreeKey::Clear,
+                _ => return None,
+            };
+            Some(Message::Sessions(SmMsg::Key(k)))
+        }
+        _ => None,
     }
 }
 
@@ -274,6 +498,8 @@ pub fn key_action(key: &Physical, mods: Modifiers) -> Option<Action> {
     ];
     Some(match (code, mods) {
         (Code::KeyM, Modifiers::ALT) => Action::ToggleSessionManager,
+        (Code::KeyQ, Modifiers::ALT) => Action::QuickConnect,
+        (Code::KeyC, Modifiers::ALT) => Action::Connect,
         (Code::KeyT, m) if m == ctrl_shift => Action::NewLocalShell,
         (Code::KeyW, m) if m == ctrl_shift => Action::CloseTab,
         (Code::KeyC, m) if m == ctrl_shift => Action::Copy,
