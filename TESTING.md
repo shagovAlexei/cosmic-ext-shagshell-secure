@@ -280,6 +280,7 @@
 | `sftp::sync::tests::regression_links_are_never_written_through` | синхронизация не пишет через символическую ссылку: файл против ссылки — «не трогается», одинокая ссылка не копируется |
 | `sftp::sync::tests::regression_inside_a_file_folder_clash_nothing_is_done` | внутри пары «файл / папка с одним именем» ничего не копируется |
 | `securecrt::tests::command_manager_folders` | импорт команд не идёт за `..` и ссылками (петля), порядок папок как в SecureCRT |
+| `notes::tests::regression_a_renamed_main_note_is_still_the_main_note` | View → Заметки после переименования главной заметки открывает её же, а не ошибку «Notes.md: No such file» |
 
 ## Command Window: многострочный ввод
 - [ ] Enter отправляет; Ctrl+Enter и Shift+Enter переводят строку, поле растёт до 6 строк, дальше прокрутка
@@ -357,5 +358,3 @@
 - [ ] Диалоги скриптов: у `Dialog.Prompt`, `Dialog.List` и `MessageBox` без значка есть значок
 
 - [ ] Заметка `.md` в просмотре: текст выделяется мышью (протяжка, двойной клик — слово), Ctrl+C копирует; кнопка «Копировать всё» кладёт весь текст; заголовки / код / ссылки цветные, ссылка показывает адрес в скобках
-| `notes::tests::regression_a_renamed_main_note_is_still_the_main_note` | View → Заметки после переименования главной заметки открывает её же, а не ошибку «Notes.md: No such file» |
-
