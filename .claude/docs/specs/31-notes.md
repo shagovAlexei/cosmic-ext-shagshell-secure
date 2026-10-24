@@ -14,7 +14,7 @@
 
 ## Как
 - `core::notes`: `dir()`, `ensure_default(lang) -> PathBuf` (создаёт файл со шпаргалкой, если его нет), `read(path) -> Result<String, ReadError>` (размер, UTF-8), `rename(path, name) -> io::Result<PathBuf>` (имя через `session::store::check_name`, расширение `.md` сохраняется), `is_markdown(path)`; тесты на всё.
-- App: `notes.rs` (`NoteView`, `NoteMsg`: `text_editor::Content`, режим), `tabs::Body::Note` (`Launch.note: Option<PathBuf>`), отложенное сохранение — таймер раз в секунду, пока есть несохранённое; просмотр — `cosmic::widget::markdown` (feature `markdown` у libcosmic); выбор файла — `portal` из `script.rs`; Config: `notes_on_start: bool`, `notes_open: Vec<String>`.
+- App: `notes.rs` (`NoteView`, `NoteMsg`: `text_editor::Content`, режим), `tabs::Body::Note` (`Launch.note: Option<PathBuf>`), отложенное сохранение — таймер раз в секунду, пока есть несохранённое; просмотр — `core::mdview` (markdown → текст + вид каждого куска) в read-only `text_editor` с подсветкой, текст выделяется мышью (ссылки не кликаются, адрес виден в скобках); выбор файла — `portal` из `script.rs`; Config: `notes_on_start: bool`, `notes_open: Vec<String>`.
 - Строки `fl!` en+ru, TESTING.md, раздел в `CLAUDE.md`.
 
 ## Не делаем
