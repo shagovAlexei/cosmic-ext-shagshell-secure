@@ -50,6 +50,10 @@ pub enum Action {
     CreateKey,
     /// Tools → Upload Public Key….
     UploadKey,
+    /// Tools → Keymap Editor….
+    KeyMap,
+    /// A key of the user's own (`keymap.toml`): the n-th binding.
+    Bound(u16),
     /// Script → Run….
     RunScript,
     /// Script → Cancel.
@@ -219,7 +223,7 @@ pub fn bar(
                 Button(fl!("menu-credentials"), None, Action::Credentials),
                 Button(fl!("menu-create-key"), None, Action::CreateKey),
                 Button(fl!("menu-upload-key"), None, Action::UploadKey),
-                off(fl!("menu-keymap")),
+                Button(fl!("menu-keymap"), None, Action::KeyMap),
             ],
         ),
         (

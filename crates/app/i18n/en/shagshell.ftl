@@ -395,3 +395,23 @@ ku-run = Upload
 ku-no-keys = No public keys in ~/.ssh: create one first (Tools → Create Public Key…)
 ku-tab = Upload key — { $name }
 ku-bad-host = The session's host name starts with “-”: not uploaded
+
+## Keymap
+km-title = Keymap Editor
+km-edit-title = Key
+km-hint = Your own keys: each runs what a Button Bar button runs. Built-in keys and the terminal's (Ctrl+C…) cannot be taken.
+km-empty = No keys yet
+km-add = Add…
+km-edit = Edit…
+km-delete = Delete
+km-key = Key
+km-record = Click and press the keys
+km-press = Press the keys… (Esc: leave it)
+km-no-key = Record a key first
+km-modifier = A modifier alone is not a key
+km-reserved = Ctrl+Insert and Shift+Insert belong to the system
+km-terminal = Keys the terminal needs (letters and digits alone or with Ctrl / Shift, Ctrl+C…) cannot be taken: use Alt, Ctrl+Alt, an F key
+km-builtin = The program uses this key itself
+km-taken-own = Another binding has this key
+km-broken = keymap.toml could not be read: the keys are not saved so that it is not overwritten
+km-ui = F2–F8 on their own are used by the file manager and the session tree: add Shift / Ctrl / Alt, or take another key
