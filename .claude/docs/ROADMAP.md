@@ -31,6 +31,13 @@
 - [x] 19. ~~Диалоги `crt` как в SecureCRT: отдельные окна, значки и кнопки MessageBox, List, FileOpen/SaveDialog~~
 - [x] 18. ~~Примеры скриптов (`Example/`) и дополнения `crt` (Clipboard, Screen.Get, Session.Log, MessageBox с кнопками)~~
 
+## Скриптинг, дальше (по порядку)
+
+- [ ] 26. Консоль скрипта и режим отладки (spec 26)
+- [ ] 27. Меню Script со списком скриптов, «Недавние», скрипт при запуске
+- [ ] 28. Расширение `crt` (Screen.Clear / SendKeys / MatchIndex, Session.Lock / SetStatusText, crt.Window, создание сессии, FileTransfer)
+- [ ] 29. Планировщик скриптов
+
 ## Бэклог
 
 - Flatpak
