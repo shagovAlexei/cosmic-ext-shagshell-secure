@@ -1167,6 +1167,7 @@ impl App {
                                 log: Some(log_spec(&s)),
                                 logon: logon_spec(&s, Some(id)),
                                 scheme: s.color_scheme.clone(),
+                                label: s.label.clone(),
                                 ..tabs::Launch::local_shell()
                             };
                             tasks.push(self.open_tab(l, if scripts { &s.script } else { "" }));
@@ -1486,6 +1487,7 @@ impl App {
                 }
             }
         }
+        self.tabs.retitle_all();
     }
 
     fn quick_connect(&mut self) -> Task<Message> {
@@ -1903,6 +1905,7 @@ fn ssh_launch(
         log: Some(log_spec(s)),
         logon: logon_spec(s, session),
         scheme: s.color_scheme.clone(),
+        label: s.label.clone(),
     })
 }
 
@@ -1974,6 +1977,7 @@ fn program_launch(
         auto_reconnect: None,
         logon: logon_spec(s, id),
         scheme: s.color_scheme.clone(),
+        label: s.label.clone(),
     })
 }
 

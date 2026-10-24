@@ -125,6 +125,8 @@ pub struct Launch {
     pub logon: Option<LogonSpec>,
     /// The terminal colour scheme of the session ("": the global one).
     pub scheme: String,
+    /// The session's tab label: shown instead of the program's title.
+    pub label: String,
 }
 
 impl Launch {
@@ -141,6 +143,7 @@ impl Launch {
             auto_reconnect: None,
             logon: None,
             scheme: String::new(),
+            label: String::new(),
         }
     }
 
@@ -153,6 +156,10 @@ impl Launch {
         Some(Self {
             args,
             title: format!("SFTP · {}", self.title),
+            label: match self.label.is_empty() {
+                true => String::new(),
+                false => format!("SFTP · {}", self.label),
+            },
             sftp: true,
             ..self.clone()
         })
@@ -193,9 +200,10 @@ pub struct Tab {
 
 impl Tab {
     fn title(&self) -> String {
-        let t = match self.program_title.is_empty() {
-            true => &self.base,
-            false => &self.program_title,
+        let t = match (self.launch.label.is_empty(), self.program_title.is_empty()) {
+            (false, _) => &self.launch.label,
+            (_, true) => &self.base,
+            (_, false) => &self.program_title,
         };
         format!("{} {t}", if self.live() { "✓" } else { "✗" })
     }
@@ -770,10 +778,21 @@ impl Tabs {
     /// A tab's title without the ✓ / ✗.
     pub fn caption(&self, id: TabId) -> Option<String> {
         let t = self.tabs.get(&id)?;
-        Some(match t.program_title.is_empty() {
-            true => t.base.clone(),
-            false => t.program_title.clone(),
-        })
+        Some(
+            match (t.launch.label.is_empty(), t.program_title.is_empty()) {
+                (false, _) => t.launch.label.clone(),
+                (_, true) => t.base.clone(),
+                (_, false) => t.program_title.clone(),
+            },
+        )
+    }
+
+    /// Every tab's text again (a session's label changed).
+    pub fn retitle_all(&mut self) {
+        let ids: Vec<TabId> = self.tabs.keys().copied().collect();
+        for id in ids {
+            self.retitle(id);
+        }
     }
 
     pub fn disconnect_tab(&mut self, id: TabId) {

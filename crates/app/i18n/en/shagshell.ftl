@@ -415,3 +415,5 @@ km-builtin = The program uses this key itself
 km-taken-own = Another binding has this key
 km-broken = keymap.toml could not be read: the keys are not saved so that it is not overwritten
 km-ui = F2–F8 on their own are used by the file manager and the session tree: add Shift / Ctrl / Alt, or take another key
+so-label = Tab label (empty: the program's title, else the session name)
+so-label-hint = Shown in the tab instead of a long title such as user@host:~/dir.

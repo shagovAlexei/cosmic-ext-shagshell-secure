@@ -42,6 +42,7 @@ pub struct Form {
     pub flow: Flow,
     pub logon: Vec<crate::logon::Step>,
     pub color_scheme: String,
+    pub label: String,
     pub script: String,
 }
 
@@ -144,6 +145,7 @@ impl Form {
             flow: s.serial.flow,
             logon: s.logon.clone(),
             color_scheme: s.color_scheme.clone(),
+            label: s.label.clone(),
             script: s.script.clone(),
         }
     }
@@ -241,6 +243,7 @@ impl Form {
                 .cloned()
                 .collect(),
             color_scheme: self.color_scheme.clone(),
+            label: self.label.trim().to_string(),
             script: self.script.trim().to_string(),
             jump,
             forwards,
@@ -474,6 +477,17 @@ mod tests {
         };
         assert!(ok(ForwardKind::Remote, "0") && !ok(ForwardKind::Local, "0"));
         assert!(ok(ForwardKind::Local, "[::1]:8080"));
+    }
+
+    #[test]
+    fn label_is_kept_trimmed() {
+        let f = Form {
+            label: "  web-01 ".into(),
+            ..form("h")
+        };
+        let s = f.apply(&Session::default(), true).unwrap();
+        assert_eq!(s.label, "web-01");
+        assert_eq!(Form::from_session("x", &s).label, "web-01");
     }
 
     #[test]
