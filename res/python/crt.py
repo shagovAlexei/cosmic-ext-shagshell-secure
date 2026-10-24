@@ -10,7 +10,12 @@ import socket
 import sys
 
 __all__ = ["crt", "ScriptError"]
-Version = "1.0"
+Version = "1.1"
+
+# MessageBox buttons and results, as in SecureCRT.
+BUTTON_OK, BUTTON_OKCANCEL, BUTTON_ABORTRETRYIGNORE = 0, 1, 2
+BUTTON_YESNOCANCEL, BUTTON_YESNO, BUTTON_RETRYCANCEL = 3, 4, 5
+IDOK, IDCANCEL, IDABORT, IDRETRY, IDIGNORE, IDYES, IDNO = 1, 2, 3, 4, 5, 6, 7
 
 
 class ScriptError(Exception):
@@ -23,6 +28,7 @@ class Cancelled(SystemExit):
 
 _conn = None
 _next = 0
+_last_error = [""]
 
 
 def _call(call, tab, *args):
@@ -43,6 +49,7 @@ def _call(call, tab, *args):
         raise Cancelled(1)
     reply = json.loads(line)
     if "err" in reply:
+        _last_error[0] = reply["err"]
         raise ScriptError(reply["err"])
     return reply.get("ok")
 
@@ -51,6 +58,46 @@ class _Screen:
     def __init__(self, tab):
         self._tab = tab
         self.Synchronous = True  # always, as if set
+        self.IgnoreEscape = True  # the output is always plain text
+
+    def _info(self):
+        return _call("Screen.Info", self._tab)
+
+    @property
+    def CurrentRow(self):
+        return self._info()[0]
+
+    @property
+    def CurrentColumn(self):
+        return self._info()[1]
+
+    @property
+    def Rows(self):
+        return self._info()[2]
+
+    @property
+    def Columns(self):
+        return self._info()[3]
+
+    @property
+    def Selection(self):
+        return _call("Screen.Selection", self._tab) or ""
+
+    def Get(self, row1, col1, row2, col2):
+        """The text of a block of the screen (1-based, ends included), lines joined by \\n."""
+        return _call("Screen.Get", self._tab, int(row1), int(col1), int(row2), int(col2)) or ""
+
+    def WaitForCursor(self, timeout=0):
+        """True when the cursor moved within `timeout` seconds, False when it kept still."""
+        import time
+
+        start = self._info()[:2]
+        end = time.time() + timeout
+        while time.time() < end:
+            time.sleep(0.05)
+            if self._info()[:2] != start:
+                return True
+        return False
 
     def Send(self, text):
         _call("Screen.Send", self._tab, text)
@@ -91,6 +138,19 @@ class _Session:
     def Path(self):
         return _call("Session.Path", self._tab) or ""
 
+    @property
+    def LogFileName(self):
+        """The file of the log that is on ("" when it is off)."""
+        return _call("Session.LogFileName", self._tab) or ""
+
+    def LogText(self, text):
+        """Writes `text` into the tab's log (it must be on), in order with the output."""
+        _call("Session.LogText", self._tab, str(text))
+
+    def Log(self, on=True, append=None):
+        """Starts / stops the tab's log (name template of the session or Global Options)."""
+        _call("Session.Log", self._tab, bool(on), None if append is None else bool(append))
+
     def Connect(self, cmd):
         """`/S "name"` — a saved session — opens a new tab."""
         _call("Session.Connect", self._tab, cmd)
@@ -119,12 +179,26 @@ class _Tab:
 
 class _Dialog:
     def MessageBox(self, text, title="", buttons=0):
-        _call("Dialog.MessageBox", 0, str(text), str(title))
-        return 1
+        if int(buttons) in (BUTTON_ABORTRETRYIGNORE, BUTTON_RETRYCANCEL):
+            raise ScriptError("MessageBox: only BUTTON_OK / OKCANCEL / YESNO / YESNOCANCEL")
+        r = _call("Dialog.MessageBox", 0, str(text), str(title), int(buttons))
+        return IDOK if r is None else r
 
     def Prompt(self, message, title="", default="", bPassword=False):
         r = _call("Dialog.Prompt", 0, str(message), str(title), str(default), bool(bPassword))
         return "" if r is None else r
+
+
+class _Clipboard:
+    @property
+    def Text(self):
+        return _call("Clipboard.Get", 0) or ""
+
+    @Text.setter
+    def Text(self, value):
+        _call("Clipboard.Set", 0, str(value))
+
+    Format = "CF_TEXT"  # accepted, ignored
 
 
 class _Arguments:
@@ -154,6 +228,7 @@ class _Crt:
         self.Screen = _Screen(self._tab)
         self.Session = _Session(self._tab)
         self.Dialog = _Dialog()
+        self.Clipboard = _Clipboard()
         self.Arguments = _Arguments(sys.argv[1:])
         self.ScriptFullName = os.environ.get("SHAGSHELL_SCRIPT", "")
         self.Version = Version
@@ -172,6 +247,9 @@ class _Crt:
 
     def Sleep(self, ms):
         _call("Sleep", 0, ms)
+
+    def GetLastErrorMessage(self):
+        return _last_error[0]
 
     def Quit(self):
         raise Cancelled(0)
@@ -193,6 +271,9 @@ def main():
     sys.argv = sys.argv[1:]
     crt.Arguments = _Arguments(sys.argv[1:])
     builtins.crt = crt
+    for k, v in list(globals().items()):  # BUTTON_YESNO, IDYES … as in SecureCRT
+        if k.startswith(("BUTTON_", "ID")) and k.isupper():
+            setattr(builtins, k, v)
     code = 0
     try:
         runpy.run_path(path, run_name="__main__")

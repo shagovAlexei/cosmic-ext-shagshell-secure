@@ -639,7 +639,7 @@ impl Tabs {
         tap: &term::log::Tap,
         launch: &Launch,
         spec: &LogSpec,
-    ) -> Result<(), String> {
+    ) -> Result<std::path::PathBuf, String> {
         use shagshell_core::logfile::{Ctx, resolve};
         let host = match &launch.protocol {
             Protocol::Ssh { host, .. } => host.as_str(),
@@ -656,7 +656,8 @@ impl Tabs {
         let home = std::env::home_dir().unwrap_or_default();
         let path = resolve(&self.log_prefs.0, &spec.file, &ctx, &home);
         tap.start(&path, spec.append, spec.raw)
-            .map_err(|e| format!("{}: {e}", path.display()))
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+        Ok(path)
     }
 
     pub fn set_log_prefs(&mut self, config: &Config) {
@@ -685,13 +686,59 @@ impl Tabs {
             tap.stop();
             return Ok(());
         }
-        // The session's own name template, else the one of Global Options; the port and user are
-        // the session's either way.
+        self.log_on(id, None).map(|_| ())
+    }
+
+    /// Starts the log of tab `id` (`append` overrides the session's): the session's own name
+    /// template, else the one of Global Options; the port and user are the session's either way.
+    fn log_on(&self, id: TabId, append: Option<bool>) -> Result<std::path::PathBuf, String> {
+        let tab = self.tabs.get(&id).ok_or("no such tab")?;
+        let t = tab.terminal().ok_or("not a terminal tab")?;
+        let tap = t.lock().unwrap_or_else(|e| e.into_inner()).log.clone();
         let mut spec = tab.launch.log.clone().unwrap_or_default();
         if spec.file.is_empty() {
             spec.file = self.log_prefs.1.clone();
         }
+        if let Some(a) = append {
+            spec.append = a;
+        }
         self.begin_log(&tap, &tab.launch, &spec)
+    }
+
+    /// Scripts: `Session.Log(on[, append])`.
+    pub fn script_log(&self, id: TabId, on: bool, append: Option<bool>) -> Result<(), String> {
+        let tap = self.tap_of(id).ok_or("no such tab")?;
+        match on {
+            true if tap.active() => Ok(()),
+            true => self.log_on(id, append).map(|_| ()),
+            false => {
+                tap.stop();
+                Ok(())
+            }
+        }
+    }
+
+    /// Scripts: `Session.LogText(text)`.
+    pub fn script_log_text(&self, id: TabId, text: &str) -> Result<(), String> {
+        let tap = self.tap_of(id).ok_or("no such tab")?;
+        tap.log_text(text).map_err(|e| e.to_string())
+    }
+
+    /// Scripts: the file of the tab's log ("" when it is off).
+    pub fn log_file(&self, id: TabId) -> String {
+        self.tap_of(id)
+            .and_then(|t| t.path())
+            .map_or_else(String::new, |p| p.display().to_string())
+    }
+
+    fn tap_of(&self, id: TabId) -> Option<term::log::Tap> {
+        let t = self.terminal(id)?;
+        Some(t.lock().unwrap_or_else(|e| e.into_inner()).log.clone())
+    }
+
+    /// Scripts: what a terminal tab shows.
+    pub fn screen(&self, id: TabId) -> Option<term::Screen> {
+        self.terminal(id).map(term::screen)
     }
 
     /// The active tab is being logged.

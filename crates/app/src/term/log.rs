@@ -67,6 +67,19 @@ impl Tap {
         drop(old);
     }
 
+    /// A script's own text into the log (through the logger, in order with the output).
+    pub fn log_text(&self, text: &str) -> io::Result<()> {
+        match self.lock().as_mut() {
+            Some(l) => l.write(text.as_bytes()),
+            None => Err(io::Error::other("the log is off")),
+        }
+    }
+
+    /// The file of the log that is on.
+    pub fn path(&self) -> Option<PathBuf> {
+        self.lock().as_ref().map(|l| l.path.clone())
+    }
+
     pub fn active(&self) -> bool {
         self.on.load(Ordering::SeqCst)
     }

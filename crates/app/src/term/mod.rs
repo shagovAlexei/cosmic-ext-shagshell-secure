@@ -67,6 +67,50 @@ fn colors(dark: bool, scheme: &str) -> term::color::Colors {
     }
 }
 
+/// What a script sees of a terminal: the screen's rows as text, the cursor (0-based), the selection.
+pub struct Screen {
+    pub rows: Vec<String>,
+    pub row: usize,
+    pub col: usize,
+    pub cols: usize,
+    pub selection: String,
+}
+
+pub fn screen(t: &Mutex<Terminal>) -> Screen {
+    use alacritty_terminal::grid::Dimensions;
+    use alacritty_terminal::index::{Column, Line};
+    use alacritty_terminal::term::cell::Flags;
+    let t = t.lock().unwrap_or_else(|e| e.into_inner());
+    let term = t.term.lock();
+    let grid = term.grid();
+    let rows = (0..grid.screen_lines())
+        .map(|i| {
+            let line = &grid[Line(i as i32)];
+            (0..grid.columns())
+                .map(|j| &line[Column(j)])
+                // One char per grid column (a wide char's second cell is a blank), so that
+                // column numbers are the screen's.
+                .map(|c| {
+                    match c
+                        .flags
+                        .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER)
+                    {
+                        true => ' ',
+                        false => c.c,
+                    }
+                })
+                .collect()
+        })
+        .collect();
+    Screen {
+        rows,
+        row: usize::try_from(grid.cursor.point.line.0).unwrap_or(0),
+        col: grid.cursor.point.column.0,
+        cols: grid.columns(),
+        selection: term.selection_to_string().unwrap_or_default(),
+    }
+}
+
 /// A new text size or theme for a running terminal.
 pub fn restyle(t: &Mutex<Terminal>, style: &style::Style, dark: bool, bg: u32, scheme: &str) {
     terminal::WINDOW_BG_COLOR.store(bg, Ordering::SeqCst);
