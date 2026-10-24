@@ -26,6 +26,7 @@ const RMDIR: u8 = 15;
 const REALPATH: u8 = 16;
 const STAT: u8 = 17;
 const RENAME: u8 = 18;
+const SETSTAT: u8 = 9;
 const STATUS: u8 = 101;
 const HANDLE: u8 = 102;
 const DATA: u8 = 103;
@@ -341,6 +342,13 @@ impl<R: Read, W: Write> Client<R, W> {
         self.expect_ok(Msg::new(MKDIR, id).path(p).u32(0))
     }
 
+    /// Permission bits (`0o755`) of a file or folder.
+    pub fn chmod(&mut self, p: &Path, mode: u32) -> io::Result<()> {
+        let id = self.id();
+        // attrs: flags = PERMISSIONS (0x04), then the bits.
+        self.expect_ok(Msg::new(SETSTAT, id).path(p).u32(0x04).u32(mode & 0o7777))
+    }
+
     pub fn rmdir(&mut self, p: &Path) -> io::Result<()> {
         let id = self.id();
         self.expect_ok(Msg::new(RMDIR, id).path(p))
@@ -356,6 +364,33 @@ impl<R: Read, W: Write> Client<R, W> {
         self.expect_ok(Msg::new(RENAME, id).path(from).path(to))
     }
 
+    /// Up to `len` bytes at `off` (fewer at the end of the file).
+    pub fn read_range(&mut self, p: &Path, off: u64, len: u32) -> io::Result<Vec<u8>> {
+        let handle = self.open(p, READ_FLAG)?;
+        let id = self.id();
+        let sent = self.send(Msg::new(READ, id).bytes(&handle).u64(off).u32(len));
+        let got = sent.and_then(|()| {
+            self.w.flush()?;
+            let (kind, rid, body) = self.recv()?;
+            if rid != id {
+                return Err(bad());
+            }
+            let mut b = Body(&body);
+            match kind {
+                DATA => b.bytes(),
+                STATUS => match b.u32()? {
+                    FX_EOF => Ok(Vec::new()),
+                    code => Err(status_error(code, &b.bytes().unwrap_or_default())),
+                },
+                _ => Err(bad()),
+            }
+        });
+        let closed = self.close(&handle);
+        let data = got?;
+        closed?;
+        Ok(data)
+    }
+
     fn open(&mut self, p: &Path, flags: u32) -> io::Result<Vec<u8>> {
         let id = self.id();
         let body = self.expect(Msg::new(OPEN, id).path(p).u32(flags).u32(0), HANDLE)?;
@@ -367,10 +402,22 @@ impl<R: Read, W: Write> Client<R, W> {
         &mut self,
         p: &Path,
         out: &mut impl Write,
+        progress: impl FnMut(u64) -> bool,
+    ) -> io::Result<u64> {
+        self.download_from(p, 0, out, progress)
+    }
+
+    /// From byte `start` on (a resumed copy); `out` takes what follows, `progress` counts from 0
+    /// of the file.
+    pub fn download_from(
+        &mut self,
+        p: &Path,
+        start: u64,
+        out: &mut impl Write,
         mut progress: impl FnMut(u64) -> bool,
     ) -> io::Result<u64> {
         let handle = self.open(p, READ_FLAG)?;
-        let r = self.pull(&handle, out, &mut progress);
+        let r = self.pull(&handle, start, out, &mut progress);
         let closed = self.close(&handle);
         let n = r?;
         closed?;
@@ -380,12 +427,13 @@ impl<R: Read, W: Write> Client<R, W> {
     fn pull(
         &mut self,
         handle: &[u8],
+        start: u64,
         out: &mut impl Write,
         progress: &mut impl FnMut(u64) -> bool,
     ) -> io::Result<u64> {
         let mut inflight: HashMap<u32, (u64, u32)> = HashMap::new();
         let mut ready: BTreeMap<u64, Vec<u8>> = BTreeMap::new();
-        let (mut next, mut written) = (0u64, 0u64);
+        let (mut next, mut written) = (start, start);
         let mut eof: Option<u64> = None;
         let mut failure: Option<io::Error> = None;
         loop {
@@ -454,10 +502,33 @@ impl<R: Read, W: Write> Client<R, W> {
         &mut self,
         input: &mut impl Read,
         p: &Path,
-        mut progress: impl FnMut(u64) -> bool,
+        progress: impl FnMut(u64) -> bool,
     ) -> io::Result<u64> {
         let handle = self.open(p, WRITE_FLAG | CREAT | TRUNC)?;
-        let r = self.push(&handle, input, &mut progress);
+        self.upload_to(handle, input, 0, progress)
+    }
+
+    /// `input` (already at byte `start`) onto the end of the remote file that has `start` bytes
+    /// (a resumed copy); `progress` counts from 0 of the file.
+    pub fn upload_from(
+        &mut self,
+        input: &mut impl Read,
+        p: &Path,
+        start: u64,
+        progress: impl FnMut(u64) -> bool,
+    ) -> io::Result<u64> {
+        let handle = self.open(p, WRITE_FLAG)?;
+        self.upload_to(handle, input, start, progress)
+    }
+
+    fn upload_to(
+        &mut self,
+        handle: Vec<u8>,
+        input: &mut impl Read,
+        start: u64,
+        mut progress: impl FnMut(u64) -> bool,
+    ) -> io::Result<u64> {
+        let r = self.push(&handle, start, input, &mut progress);
         let closed = self.close(&handle);
         let n = r?;
         closed?;
@@ -467,11 +538,12 @@ impl<R: Read, W: Write> Client<R, W> {
     fn push(
         &mut self,
         handle: &[u8],
+        start: u64,
         input: &mut impl Read,
         progress: &mut impl FnMut(u64) -> bool,
     ) -> io::Result<u64> {
         let mut inflight: HashMap<u32, u64> = HashMap::new();
-        let (mut sent, mut acked) = (0u64, 0u64);
+        let (mut sent, mut acked) = (start, start);
         let mut done_reading = false;
         let mut failure: Option<io::Error> = None;
         let mut buf = vec![0; CHUNK as usize];

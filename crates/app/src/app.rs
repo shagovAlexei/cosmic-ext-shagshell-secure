@@ -117,13 +117,15 @@ impl Application for App {
             shagshell_core::session::Store::new(shagshell_core::session::store::default_root());
         let sessions = SessionManager::new(store, &config.expanded, config.session_manager_width);
         let asks = crate::askpass::Asks::new(askpass_sock(&control_dir));
+        let mut tabs = Tabs::default();
+        tabs.set_sftp_prefs(&config);
         let app = Self {
             core,
             config,
             config_handler,
             about: about::about(),
             drawer: None,
-            tabs: Tabs::default(),
+            tabs,
             sessions,
             quick: None,
             options: None,
@@ -146,6 +148,7 @@ impl Application for App {
                 );
                 self.config = c;
                 self.save_config();
+                self.tabs.set_sftp_prefs(&self.config);
                 let mut tasks = Vec::new();
                 if lang {
                     crate::i18n::init(&config::languages(

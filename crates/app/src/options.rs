@@ -1,7 +1,7 @@
 //! Options → Global Options, in the context drawer. Each change is written at once.
 
 use crate::app::Message;
-use crate::config::{AppTheme, Config, LANGUAGES};
+use crate::config::{AppTheme, Config, ExistsRule, LANGUAGES};
 use crate::fl;
 use cosmic::app::context_drawer::{self, ContextDrawer};
 use cosmic::widget::{self, settings};
@@ -53,6 +53,33 @@ pub fn view(config: &Config, separate: Option<bool>) -> ContextDrawer<'_, Messag
                 }
             }),
         ));
+    let rules = vec![
+        fl!("options-ow-ask"),
+        fl!("sftp-overwrite"),
+        fl!("sftp-newer"),
+        fl!("sftp-skip"),
+    ];
+    let rule = ExistsRule::ALL
+        .iter()
+        .position(|r| *r == config.sftp_overwrite);
+    let sftp = settings::section()
+        .title(fl!("options-sftp"))
+        .add(settings::item(
+            fl!("options-sftp-exists"),
+            widget::dropdown(rules, rule, {
+                let c = config.clone();
+                move |i| {
+                    let mut c = c.clone();
+                    c.sftp_overwrite = ExistsRule::ALL[i];
+                    Message::SetConfig(c)
+                }
+            }),
+        ))
+        .add(settings::item(
+            fl!("options-sftp-hidden"),
+            widget::toggler(config.sftp_show_hidden)
+                .on_toggle(set(|c, on| c.sftp_show_hidden = on)),
+        ));
     let terminal = settings::section()
         .title(fl!("options-terminal"))
         .add(settings::item(
@@ -84,8 +111,12 @@ pub fn view(config: &Config, separate: Option<bool>) -> ContextDrawer<'_, Messag
             widget::button::standard(fl!("options-open"))
                 .on_press(Message::Action(crate::menu::Action::Credentials)),
         ));
-    let content =
-        widget::column::with_children(vec![interface.into(), terminal.into(), passwords.into()])
-            .spacing(16);
+    let content = widget::column::with_children(vec![
+        interface.into(),
+        terminal.into(),
+        sftp.into(),
+        passwords.into(),
+    ])
+    .spacing(16);
     context_drawer::context_drawer(content, Message::CloseDrawer).title(fl!("menu-global-options"))
 }

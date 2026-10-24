@@ -180,6 +180,8 @@ pub struct Tabs {
     next_id: TabId,
     tx: Option<Events>,
     sftp_tx: Option<crate::sftp_worker::Events>,
+    /// Global Options → SFTP: the answer to a conflict, dot files shown in a new tab.
+    sftp_prefs: (Option<shagshell_core::sftp::queue::Choice>, bool),
     /// A live tab asked to close: waits for the dialog.
     confirm: Option<(pane_grid::Pane, Entity)>,
     /// The tab right-clicked last: `TabCmd`s are about it.
@@ -189,6 +191,20 @@ pub struct Tabs {
 impl Tabs {
     pub fn set_sender(&mut self, tx: Events) {
         self.tx = Some(tx);
+    }
+
+    pub fn set_sftp_prefs(&mut self, config: &Config) {
+        let hidden_changed = self.sftp_prefs.1 != config.sftp_show_hidden;
+        self.sftp_prefs = (config.sftp_overwrite.choice(), config.sftp_show_hidden);
+        for tab in self.tabs.values_mut() {
+            if let Body::Sftp(v) = &mut tab.body {
+                v.set_rule(self.sftp_prefs.0);
+                // The option flips every tab; a Ctrl+H in a tab lasts until it does.
+                if hidden_changed {
+                    v.set_show_hidden(self.sftp_prefs.1);
+                }
+            }
+        }
     }
 
     pub fn set_sftp_sender(&mut self, tx: crate::sftp_worker::Events) {
@@ -348,7 +364,7 @@ impl Tabs {
                 args: launch.args.clone(),
                 env: launch.env.clone(),
             };
-            let v = SftpView::new(id, connect, self.sftp_tx.clone()?);
+            let v = SftpView::new(id, connect, self.sftp_tx.clone()?, self.sftp_prefs);
             return Some(Body::Sftp(Box::new(v)));
         }
         let tx = self.tx.clone()?;

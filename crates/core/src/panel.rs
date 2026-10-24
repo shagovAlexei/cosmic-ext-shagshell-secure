@@ -16,6 +16,8 @@ pub struct Entry {
     pub size: u64,
     /// Seconds since the epoch.
     pub mtime: Option<i64>,
+    /// Permission bits (the server's: `rwxr-xr-x`).
+    pub mode: Option<u32>,
 }
 
 impl Entry {
@@ -25,6 +27,7 @@ impl Entry {
             dir: true,
             size: 0,
             mtime: None,
+            mode: None,
         }
     }
 
@@ -33,22 +36,104 @@ impl Entry {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SortKey {
+    #[default]
+    Name,
+    Size,
+    Date,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Sort {
+    pub key: SortKey,
+    pub asc: bool,
+}
+
+impl Default for Sort {
+    fn default() -> Self {
+        Self {
+            key: SortKey::Name,
+            asc: true,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Panel {
     cwd: PathBuf,
-    /// `..` first (unless at `/`), folders, then files, by name.
+    /// As the folder was read.
+    raw: Vec<Entry>,
+    sort: Sort,
+    /// Files with a leading dot shown.
+    show_hidden: bool,
+    /// `..` first (unless at `/`), folders, then files, in `sort` order, minus hidden ones.
     entries: Vec<Entry>,
     cursor: usize,
     marked: BTreeSet<OsString>,
 }
 
-/// Folders first, then by name ignoring case (as a file manager does).
-fn order(a: &Entry, b: &Entry) -> std::cmp::Ordering {
-    let key = |e: &Entry| e.name.to_string_lossy().to_lowercase();
-    b.dir
-        .cmp(&a.dir)
-        .then_with(|| key(a).cmp(&key(b)))
-        .then_with(|| a.name.cmp(&b.name))
+/// Case-insensitive, digit runs as numbers (`file2` before `file10`); never `Equal` for different
+/// names.
+pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    let (x, y) = (a.as_bytes(), b.as_bytes());
+    let (mut i, mut j) = (0, 0);
+    loop {
+        let (c, d) = match (x.get(i), y.get(j)) {
+            (None, None) => return a.cmp(b),
+            (None, Some(_)) => return Ordering::Less,
+            (Some(_), None) => return Ordering::Greater,
+            (Some(&c), Some(&d)) => (c, d),
+        };
+        let ord = if c.is_ascii_digit() && d.is_ascii_digit() {
+            let (n, m) = (digits(x, &mut i), digits(y, &mut j));
+            n.len().cmp(&m.len()).then_with(|| n.cmp(m))
+        } else if c.is_ascii() && d.is_ascii() {
+            i += 1;
+            j += 1;
+            c.to_ascii_lowercase().cmp(&d.to_ascii_lowercase())
+        } else {
+            let (Some(c), Some(d)) = (a[i..].chars().next(), b[j..].chars().next()) else {
+                return a.cmp(b);
+            };
+            i += c.len_utf8();
+            j += d.len_utf8();
+            c.to_lowercase().cmp(d.to_lowercase())
+        };
+        if ord != Ordering::Equal {
+            return ord;
+        }
+    }
+}
+
+/// The digit run at `*k` without leading zeros; `*k` moves past it.
+fn digits<'a>(s: &'a [u8], k: &mut usize) -> &'a [u8] {
+    let start = *k;
+    while s.get(*k).is_some_and(u8::is_ascii_digit) {
+        *k += 1;
+    }
+    let run = &s[start..*k];
+    &run[run.iter().take_while(|&&b| b == b'0').count()..]
+}
+
+/// Folders first (in both directions), then by `sort`, ties by name.
+fn order(sort: Sort) -> impl Fn(&Entry, &Entry) -> std::cmp::Ordering {
+    move |a, b| {
+        let name = |a: &Entry, b: &Entry| {
+            natural_cmp(&a.name.to_string_lossy(), &b.name.to_string_lossy())
+                .then_with(|| a.name.cmp(&b.name))
+        };
+        let by = match sort.key {
+            SortKey::Name => name(a, b),
+            SortKey::Size => a.size.cmp(&b.size).then_with(|| name(a, b)),
+            SortKey::Date => a.mtime.cmp(&b.mtime).then_with(|| name(a, b)),
+        };
+        b.dir.cmp(&a.dir).then(match sort.asc {
+            true => by,
+            false => by.reverse(),
+        })
+    }
 }
 
 impl Panel {
@@ -64,27 +149,77 @@ impl Panel {
         self.cursor
     }
 
+    pub fn sort(&self) -> Sort {
+        self.sort
+    }
+
+    pub fn show_hidden(&self) -> bool {
+        self.show_hidden
+    }
+
+    /// A click on a column's header: that column, ascending; the same again: descending.
+    pub fn sort_by(&mut self, key: SortKey) {
+        self.sort = match self.sort.key == key {
+            true => Sort {
+                key,
+                asc: !self.sort.asc,
+            },
+            false => Sort { key, asc: true },
+        };
+        self.rebuild(None);
+    }
+
+    /// Ctrl+H: files with a leading dot shown or not.
+    pub fn set_show_hidden(&mut self, on: bool) {
+        self.show_hidden = on;
+        self.rebuild(None);
+    }
+
     /// A new listing of `cwd`; the cursor on `focus` if there (the folder just left by `..`),
     /// else on the same place. Marks of names no longer there go.
     pub fn set_listing(&mut self, cwd: PathBuf, mut entries: Vec<Entry>, focus: Option<&OsStr>) {
         entries.retain(|e| !e.is_parent());
-        entries.sort_by(order);
-        if cwd.parent().is_some() {
-            entries.insert(0, Entry::parent());
-        }
         let same_dir = cwd == self.cwd;
-        let at = focus.and_then(|f| entries.iter().position(|e| e.name == f));
-        self.cursor = match (at, same_dir) {
-            (Some(i), _) => i,
-            (None, true) => self.cursor.min(entries.len().saturating_sub(1)),
-            (None, false) => 0,
-        };
         if !same_dir {
             self.marked.clear();
         }
-        self.marked.retain(|m| entries.iter().any(|e| e.name == *m));
         self.cwd = cwd;
-        self.entries = entries;
+        self.raw = entries;
+        // Same folder: the cursor stays on its name if it can, else on the same row.
+        let keep = match same_dir {
+            true => self.current().map(|e| e.name.clone()),
+            false => None,
+        };
+        let row = self.cursor;
+        self.rebuild(focus.map(OsStr::to_os_string).or(keep.clone()));
+        if focus.is_none()
+            && same_dir
+            && keep.is_none_or(|k| self.current().is_none_or(|e| e.name != k))
+        {
+            self.cursor = row.min(self.entries.len().saturating_sub(1));
+        } else if !same_dir && focus.is_none_or(|f| self.current().is_none_or(|e| e.name != f)) {
+            self.cursor = 0;
+        }
+    }
+
+    /// `entries` from `raw`; the cursor to `name` if given and there, else kept in range.
+    fn rebuild(&mut self, name: Option<OsString>) {
+        let name = name.or_else(|| self.current().map(|e| e.name.clone()));
+        let mut v: Vec<Entry> = (self.raw.iter())
+            .filter(|e| self.show_hidden || !e.name.as_encoded_bytes().starts_with(b"."))
+            .cloned()
+            .collect();
+        v.sort_by(order(self.sort));
+        if self.cwd.parent().is_some() {
+            v.insert(0, Entry::parent());
+        }
+        // A mark of a hidden name waits for it to come back (it is never acted on unseen:
+        // `targets` goes by the rows shown).
+        self.marked
+            .retain(|m| self.raw.iter().any(|e| e.name == *m));
+        self.entries = v;
+        let at = name.and_then(|n| self.entries.iter().position(|e| e.name == n));
+        self.cursor = at.unwrap_or(self.cursor.min(self.entries.len().saturating_sub(1)));
     }
 
     pub fn current(&self) -> Option<&Entry> {
@@ -153,6 +288,20 @@ impl Panel {
     }
 }
 
+/// `drwxr-xr-x` for a mode (a link `l`, else folder `d` or `-`).
+pub fn mode_text(mode: u32, dir: bool) -> String {
+    let kind = match (mode & 0o170000, dir) {
+        (0o120000, _) => 'l',
+        (_, true) => 'd',
+        _ => '-',
+    };
+    let mut s = String::from(kind);
+    for (i, ch) in "rwxrwxrwx".chars().enumerate() {
+        s.push(if mode & (0o400 >> i) != 0 { ch } else { '-' });
+    }
+    s
+}
+
 /// `1 234 567` bytes; with a unit from a megabyte on (`1.2 MB`).
 pub fn size_text(n: u64) -> String {
     const UNITS: [&str; 5] = ["KB", "MB", "GB", "TB", "PB"];
@@ -197,6 +346,7 @@ mod tests {
             dir,
             size: 1,
             mtime: None,
+            mode: None,
         }
     }
 
@@ -266,5 +416,63 @@ mod tests {
         assert_eq!(size_text(999_999), "999 999");
         assert_eq!(size_text(5 << 20), "5.0 MB");
         assert_eq!(size_text(3 << 30), "3.0 GB");
+    }
+
+    fn sized(name: &str, size: u64, dir: bool) -> Entry {
+        Entry {
+            size,
+            ..e(name, dir)
+        }
+    }
+
+    #[test]
+    fn natural_order_and_columns() {
+        assert!(natural_cmp("file2", "file10").is_lt());
+        assert!(natural_cmp("File", "file").is_ne());
+        let mut p = Panel::default();
+        p.set_listing(
+            "/h".into(),
+            vec![
+                sized("b", 5, false),
+                sized("a10", 9, false),
+                sized("a2", 1, false),
+                sized("d", 0, true),
+            ],
+            None,
+        );
+        assert_eq!(names(&p), ["..", "d", "a2", "a10", "b"]);
+        p.sort_by(SortKey::Size);
+        assert_eq!(names(&p), ["..", "d", "a2", "b", "a10"]);
+        p.sort_by(SortKey::Size); // again: descending, folders still first
+        assert_eq!(names(&p), ["..", "d", "a10", "b", "a2"]);
+        p.sort_by(SortKey::Name); // another column: ascending
+        assert_eq!(names(&p), ["..", "d", "a2", "a10", "b"]);
+    }
+
+    #[test]
+    fn hidden_files_toggle_and_cursor_stays_on_its_name() {
+        let mut p = Panel::default();
+        p.set_show_hidden(true);
+        p.set_listing(
+            "/h".into(),
+            vec![e(".a", false), e("b", false), e("c", false)],
+            None,
+        );
+        p.set_mark(1, true);
+        p.set_cursor(3); // c
+        p.set_show_hidden(false);
+        assert_eq!(names(&p), ["..", "b", "c"]);
+        assert_eq!(p.current().unwrap().name, "c");
+        assert_eq!(p.targets().len(), 1); // a hidden mark is not acted on
+        p.set_show_hidden(true);
+        assert!(p.is_marked(&e(".a", false))); // back with its row
+        assert_eq!(names(&p), ["..", ".a", "b", "c"]);
+        assert_eq!(p.current().unwrap().name, "c");
+    }
+
+    #[test]
+    fn mode_text_shows_rights() {
+        assert_eq!(mode_text(0o755, true), "drwxr-xr-x");
+        assert_eq!(mode_text(0o640, false), "-rw-r-----");
     }
 }

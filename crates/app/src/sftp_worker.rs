@@ -48,6 +48,13 @@ pub enum Cmd {
         job: Job,
         choice: Option<Choice>,
     },
+    /// Permission bits: `set` on, `clear` off (only these), in folders too if `recursive`.
+    Chmod {
+        paths: Vec<PathBuf>,
+        set: u32,
+        clear: u32,
+        recursive: bool,
+    },
     /// A move done: its source folders, deepest first (only empty ones go).
     RemoveDirs(Dir, Vec<PathBuf>),
 }
@@ -75,8 +82,8 @@ pub enum Event {
         error: Option<String>,
     },
     Progress(u64, u64),
-    /// The target exists: ask (then `Run` again with the answer).
-    Conflict(u64),
+    /// The target exists: ask (then `Run` again with the answer). Its size, if known.
+    Conflict(u64, Option<u64>),
     /// `Ok(true)`: skipped.
     Finished(u64, Result<bool, String>),
     Disconnected(String),
@@ -251,7 +258,9 @@ fn handle(c: &mut Sftp, cmd: Cmd, send: &impl Fn(Event), cancel: &AtomicBool) ->
                 !cancel.load(Ordering::SeqCst)
             };
             match ops::transfer(c, &job, choice, progress) {
-                Ok(ops::Copied::Exists) => send(Event::Conflict(job.id)),
+                Ok(ops::Copied::Exists) => {
+                    send(Event::Conflict(job.id, ops::target_size(c, &job)));
+                }
                 Ok(done) => send(Event::Finished(job.id, Ok(done == ops::Copied::Skipped))),
                 Err(e) => {
                     send(Event::Finished(job.id, Err(e.to_string())));
@@ -260,6 +269,15 @@ fn handle(c: &mut Sftp, cmd: Cmd, send: &impl Fn(Event), cancel: &AtomicBool) ->
                     }
                 }
             }
+        }
+        Cmd::Chmod {
+            paths,
+            set,
+            clear,
+            recursive,
+        } => {
+            let r = ops::chmod_remote(c, &paths, set, clear, recursive);
+            send(Event::Changed(soft(r)?));
         }
         Cmd::RemoveDirs(dir, dirs) => {
             for d in dirs {
