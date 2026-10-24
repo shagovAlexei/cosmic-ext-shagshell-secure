@@ -549,3 +549,6 @@ options-scripts = Scripts
 options-scripts-folder = Scripts folder (empty: ~/.config/shagshell/scripts)
 options-startup-script = Script at startup, on a local shell
 script-filter-all = All files
+so-pre-script = Script run before connecting (.py, empty: none)
+so-pre-script-hint = Runs first, with no tab: it can ask, bring up a VPN, load a key (crt.Dialog, os, subprocess). If it fails or calls sys.exit(1), the session is not opened.
+pre-script-failed = Pre-script of { $name } did not finish: not connecting

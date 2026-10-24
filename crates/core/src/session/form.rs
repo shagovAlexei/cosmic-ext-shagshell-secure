@@ -44,6 +44,7 @@ pub struct Form {
     pub color_scheme: String,
     pub label: String,
     pub script: String,
+    pub pre_script: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -147,6 +148,7 @@ impl Form {
             color_scheme: s.color_scheme.clone(),
             label: s.label.clone(),
             script: s.script.clone(),
+            pre_script: s.pre_script.clone(),
         }
     }
 
@@ -245,6 +247,7 @@ impl Form {
             color_scheme: self.color_scheme.clone(),
             label: self.label.trim().to_string(),
             script: self.script.trim().to_string(),
+            pre_script: self.pre_script.trim().to_string(),
             jump,
             forwards,
             reconnect: self.reconnect,
@@ -499,6 +502,22 @@ mod tests {
         let s = f.apply(&Session::default(), true).unwrap();
         assert_eq!(s.script, "/home/u/login.py");
         assert_eq!(Form::from_session("x", &s).script, "/home/u/login.py");
+    }
+
+    #[test]
+    fn pre_script_is_kept_trimmed_and_written() {
+        let f = Form {
+            pre_script: "  /home/u/vpn.py ".into(),
+            ..form("h")
+        };
+        let s = f.apply(&Session::default(), true).unwrap();
+        assert_eq!(s.pre_script, "/home/u/vpn.py");
+        assert!(toml::to_string(&s).unwrap().contains("pre_script"));
+        assert!(
+            !toml::to_string(&Session::default())
+                .unwrap()
+                .contains("pre_script")
+        );
     }
 
     #[test]

@@ -201,6 +201,8 @@ pub struct Outcome {
     pub output: Option<u64>,
     /// The console's text for the clipboard.
     pub copy: Option<String>,
+    /// A run ended: its id, and whether it finished well (a pre-script's session opens or not).
+    pub ended: Option<(u64, bool)>,
 }
 
 impl Scripts {
@@ -250,7 +252,7 @@ impl Scripts {
     }
 
     /// Starts `script` on tab `tab`.
-    pub fn run(&mut self, script: &Path, args: &[String], tab: u64) -> Result<(), String> {
+    pub fn run(&mut self, script: &Path, args: &[String], tab: u64) -> Result<u64, String> {
         if !script.is_file() {
             return Err(fl!("script-missing", name = script.display().to_string()));
         }
@@ -335,7 +337,7 @@ impl Scripts {
             let _ = std::fs::remove_file(&sock);
             let _ = tx.send(ScMsg::Ended(n, end));
         });
-        Ok(())
+        Ok(n)
     }
 
     fn sink(&self, run: u64) -> Sink {
@@ -430,6 +432,7 @@ impl Scripts {
                     }
                 }
                 let failed = matches!(end, End::Failed(_));
+                out.ended = Some((n, matches!(end, End::Done)));
                 let notice = match end {
                     End::Done => fl!("script-done", name = name),
                     End::Cancelled => fl!("script-stopped", name = name),

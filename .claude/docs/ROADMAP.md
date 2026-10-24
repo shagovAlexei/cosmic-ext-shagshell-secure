@@ -35,8 +35,9 @@
 
 - [x] 26. ~~Консоль скрипта и режим отладки (spec 26)~~
 - [x] 27. ~~Меню Script со списком скриптов, «Недавние», папка скриптов, скрипт при запуске~~
-- [ ] 28. Расширение `crt` (Screen.Clear / SendKeys / MatchIndex, Session.Lock / SetStatusText, crt.Window, создание сессии, FileTransfer)
-- [ ] 29. Планировщик скриптов
+- [x] 28. ~~Pre-script сессии (до подключения, с отменой)~~
+- [ ] 29. Расширение `crt` (Screen.Clear / SendKeys / MatchIndex, Session.Lock / SetStatusText, crt.Window, создание сессии, FileTransfer)
+- [ ] 30. Планировщик скриптов
 
 ## Бэклог
 

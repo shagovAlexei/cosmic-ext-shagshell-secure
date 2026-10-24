@@ -47,6 +47,7 @@ pub enum Field {
     Extra,
     LogFile,
     Script,
+    PreScript,
     Label,
     Jump,
     ReconnectDelay,
@@ -244,6 +245,7 @@ impl SessionOptions {
                 Field::Extra => f.extra = v,
                 Field::LogFile => f.log_file = v,
                 Field::Script => f.script = v,
+                Field::PreScript => f.pre_script = v,
                 Field::Label => f.label = v,
                 Field::Jump => f.jump = v,
                 Field::Device => f.device = v,
@@ -414,6 +416,13 @@ impl SessionOptions {
                         .on_press(m(SoMsg::LogonAdd))
                         .into(),
                 );
+                rows.push(field(
+                    fl!("so-pre-script"),
+                    Field::PreScript,
+                    &f.pre_script,
+                    false,
+                ));
+                rows.push(widget::text::caption(fl!("so-pre-script-hint")).into());
                 rows.push(field(fl!("so-script"), Field::Script, &f.script, false));
                 rows.push(widget::text::caption(fl!("so-script-hint")).into());
                 rows.push(labelled(
