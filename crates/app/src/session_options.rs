@@ -416,14 +416,15 @@ impl SessionOptions {
                         .on_press(m(SoMsg::LogonAdd))
                         .into(),
                 );
-                rows.push(field(
-                    fl!("so-pre-script"),
-                    Field::PreScript,
-                    &f.pre_script,
-                    false,
+                rows.push(crate::script::with_browse(
+                    field(fl!("so-pre-script"), Field::PreScript, &f.pre_script, false),
+                    crate::script::Slot::Pre,
                 ));
                 rows.push(widget::text::caption(fl!("so-pre-script-hint")).into());
-                rows.push(field(fl!("so-script"), Field::Script, &f.script, false));
+                rows.push(crate::script::with_browse(
+                    field(fl!("so-script"), Field::Script, &f.script, false),
+                    crate::script::Slot::Open,
+                ));
                 rows.push(widget::text::caption(fl!("so-script-hint")).into());
                 rows.push(labelled(
                     fl!("so-logon-password"),

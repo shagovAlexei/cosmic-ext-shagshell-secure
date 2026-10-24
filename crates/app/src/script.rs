@@ -1127,6 +1127,31 @@ pub async fn save_script(title: String, dir: PathBuf) -> Option<PathBuf> {
     Some(path)
 }
 
+/// A script path typed by hand, or taken from a chooser: where the pick goes.
+#[derive(Clone, Copy, Debug)]
+pub enum Slot {
+    /// A Button Bar button's script.
+    Button,
+    /// A scheduled job's script.
+    Sched,
+    /// Session Options: the script before connecting / on opening.
+    Pre,
+    Open,
+}
+
+/// A script's field with a «Browse…» button beside it.
+pub fn with_browse<'a>(input: Element<'a, Message>, slot: Slot) -> Element<'a, Message> {
+    widget::row::with_children(vec![
+        input,
+        widget::button::standard(fl!("so-browse"))
+            .on_press(Message::ScriptFile(slot))
+            .into(),
+    ])
+    .spacing(8)
+    .align_y(cosmic::iced::Alignment::Center)
+    .into()
+}
+
 /// Script → Run…: the file from the portal's chooser, opened in `dir`.
 pub async fn pick(title: String, dir: PathBuf) -> Option<PathBuf> {
     portal::open(&title, &dir, false).await

@@ -59,6 +59,8 @@ pub struct ButtonBar {
     broken: Option<String>,
     /// The bar picked on the bar itself.
     pub selected: usize,
+    /// The active session (its id) when a bar was picked: the pick beats that session's own bar.
+    pub picked_for: Option<Option<String>>,
     /// A bar renamed (`Some(new)`) or deleted (`None`) — `(old name, …)`: the sessions follow
     /// (the app takes it).
     pub relink: Option<(String, Option<String>)>,
@@ -80,6 +82,7 @@ impl ButtonBar {
             bars,
             broken,
             selected: 0,
+            picked_for: None,
             relink: None,
             dialog: None,
             input_id: widget::Id::unique(),
@@ -454,7 +457,10 @@ impl ButtonBar {
                         .push(field(fl!("bb-command"), &button.arg, BbMsg::Arg, None))
                         .push(widget::text::caption(fl!("bb-command-hint"))),
                     Kind::Script => col
-                        .push(field(fl!("bb-script-file"), &button.arg, BbMsg::Arg, None))
+                        .push(crate::script::with_browse(
+                            field(fl!("bb-script-file"), &button.arg, BbMsg::Arg, None).into(),
+                            crate::script::Slot::Button,
+                        ))
                         .push(field(
                             fl!("bb-script-args"),
                             &button.args,
@@ -568,15 +574,14 @@ impl ButtonBar {
                 );
             }
         }
-        row = row
-            .push(widget::tooltip(
-                widget::button::icon(widget::icon::from_name("list-add-symbolic"))
-                    .on_press(m(BbMsg::AddButton)),
-                widget::text(fl!("bb-add")),
-                widget::tooltip::Position::Top,
-            ))
-            .push(widget::Space::new().width(Length::Fill));
-        // Bars are managed from the menu of the empty space.
+        row = row.push(widget::tooltip(
+            widget::button::icon(widget::icon::from_name("list-add-symbolic"))
+                .on_press(m(BbMsg::AddButton)),
+            widget::text(fl!("bb-add")),
+            widget::tooltip::Position::Top,
+        ));
+        // Bars are managed from the menu of the empty space. Not around the whole row: a menu
+        // inside a menu never opens, the outer one takes the click (a button had no «Edit»).
         let has = shown.is_some();
         let bar_item = |label: String, cmd: BarCmd, on: bool| match on {
             true => menu::Item::Button(label, None, cmd),
@@ -589,13 +594,20 @@ impl ButtonBar {
             menu::Item::Divider,
             bar_item(fl!("bb-add"), BarCmd::AddButton, true),
         ];
-        widget::context_menu(
-            widget::container(row).padding([4, 12]).width(Length::Fill),
-            Some(menu::items(&std::collections::HashMap::new(), items)),
-        )
-        .window_id(window)
-        .on_surface_action(Message::Surface)
-        .into()
+        row = row.push(
+            widget::context_menu(
+                widget::Space::new()
+                    .width(Length::Fill)
+                    .height(Length::Fill),
+                Some(menu::items(&std::collections::HashMap::new(), items)),
+            )
+            .window_id(window)
+            .on_surface_action(Message::Surface),
+        );
+        widget::container(row)
+            .padding([4, 12])
+            .width(Length::Fill)
+            .into()
     }
 }
 

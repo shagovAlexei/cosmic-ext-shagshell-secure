@@ -153,6 +153,9 @@ pub enum Message {
     NoteTick,
     /// The note chooser answered.
     NotePicked(Option<std::path::PathBuf>),
+    /// A «Browse…» beside a script field was pressed / its pick came back.
+    ScriptFile(crate::script::Slot),
+    ScriptFileDone(crate::script::Slot, Option<std::path::PathBuf>),
     /// The scheduler's clock.
     SchedTick,
     /// Global Options: the master-password keyring wanted on / off.
@@ -837,6 +840,9 @@ impl App {
                         | crate::button_bar::BbMsg::NewBar
                         | crate::button_bar::BbMsg::RenameBar
                 );
+                if matches!(m, crate::button_bar::BbMsg::Select(_)) {
+                    self.buttons.picked_for = Some(self.tabs.active_session());
+                }
                 let (run, notice) = self.buttons.update(m, self.shown_bar());
                 if notice.is_some() {
                     self.sessions.notice = notice;
@@ -1052,6 +1058,29 @@ impl App {
                 }
                 return task;
             }
+            Message::ScriptFile(slot) => {
+                return Task::perform(
+                    crate::script::pick(fl!("script-pick"), self.script_start_dir()),
+                    move |p| cosmic::Action::App(Message::ScriptFileDone(slot, p)),
+                );
+            }
+            Message::ScriptFileDone(slot, Some(p)) => {
+                use crate::script::Slot;
+                let s = p.to_string_lossy().into_owned();
+                self.remember_script_dir(&p);
+                return match slot {
+                    Slot::Button => {
+                        self.update(Message::ButtonBar(crate::button_bar::BbMsg::Arg(s)))
+                    }
+                    Slot::Sched => self.scheduler(crate::scheduler::SchMsg::Script(s)),
+                    Slot::Pre => self
+                        .session_options(SoMsg::Field(crate::session_options::Field::PreScript, s)),
+                    Slot::Open => {
+                        self.session_options(SoMsg::Field(crate::session_options::Field::Script, s))
+                    }
+                };
+            }
+            Message::ScriptFileDone(_, None) => {}
             Message::NotePicked(p) => {
                 if let Some(p) = p {
                     return self.open_note(&p);
@@ -1138,7 +1167,12 @@ impl App {
 
     /// The bar on screen: the active session's own, else the one picked on the bar.
     fn shown_bar(&self) -> Option<usize> {
-        let own = (self.tabs.active_session())
+        let active = self.tabs.active_session();
+        // A bar picked on the bar itself wins over the session's own while that tab is up.
+        if self.buttons.picked_for.as_ref() == Some(&active) {
+            return self.buttons.shown(None);
+        }
+        let own = active
             .and_then(|id| self.sessions.store.get(&id).ok())
             .and_then(|s| s.button_bar);
         self.buttons.shown(own.as_deref())

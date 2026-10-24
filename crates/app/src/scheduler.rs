@@ -206,7 +206,10 @@ impl SchedWindow {
             ),
             field(
                 fl!("sch-script"),
-                input(&self.script, SchMsg::Script).into(),
+                crate::script::with_browse(
+                    input(&self.script, SchMsg::Script).into(),
+                    crate::script::Slot::Sched,
+                ),
             ),
             field(fl!("sch-args"), input(&self.args, SchMsg::Args).into()),
             widget::row::with_children(vec![
@@ -230,21 +233,26 @@ impl SchedWindow {
         if let Some(e) = &self.error {
             right = right.push(widget::text::body(e.clone()).class(theme::Text::Accent));
         }
-        right = right.push(
-            widget::row::with_children(vec![
-                widget::button::standard(fl!("sch-run-now"))
-                    .on_press_maybe(self.selected.map(|_| m(SchMsg::RunNow)))
-                    .into(),
-                widget::Space::new().width(Length::Fill).into(),
-                widget::button::destructive(fl!("sm-delete"))
-                    .on_press_maybe(self.selected.map(|_| m(SchMsg::Delete)))
-                    .into(),
-                widget::button::suggested(fl!("cw-save"))
-                    .on_press(m(SchMsg::Save))
-                    .into(),
-            ])
-            .spacing(8),
-        );
+        let buttons = widget::row::with_children(vec![
+            widget::button::standard(fl!("sch-run-now"))
+                .on_press_maybe(self.selected.map(|_| m(SchMsg::RunNow)))
+                .into(),
+            widget::Space::new().width(Length::Fill).into(),
+            widget::button::destructive(fl!("sm-delete"))
+                .on_press_maybe(self.selected.map(|_| m(SchMsg::Delete)))
+                .into(),
+            widget::button::suggested(fl!("cw-save"))
+                .on_press(m(SchMsg::Save))
+                .into(),
+        ])
+        .spacing(8);
+        // The fields scroll, the buttons stay in sight (Russian labels are wider, the form taller).
+        let right = widget::column::with_children(vec![
+            widget::scrollable(right).height(Length::Fill).into(),
+            buttons.into(),
+        ])
+        .spacing(12)
+        .width(Length::Fill);
         let left = widget::column::with_children(vec![
             widget::scrollable(
                 segmented_button::vertical(&self.list)
@@ -283,7 +291,7 @@ impl SchedWindow {
 
 pub fn settings() -> window::Settings {
     window::Settings {
-        size: cosmic::iced::Size::new(720.0, 460.0),
+        size: cosmic::iced::Size::new(760.0, 560.0),
         min_size: Some(cosmic::iced::Size::new(560.0, 360.0)),
         decorations: false,
         exit_on_close_request: false,
