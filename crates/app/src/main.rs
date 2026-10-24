@@ -15,6 +15,7 @@ mod script;
 mod securecrt_import;
 mod session_manager;
 mod session_options;
+mod sftp_sync;
 mod sftp_view;
 mod sftp_worker;
 mod status_bar;

@@ -3,3 +3,4 @@
 pub mod ops;
 pub mod proto;
 pub mod queue;
+pub mod sync;

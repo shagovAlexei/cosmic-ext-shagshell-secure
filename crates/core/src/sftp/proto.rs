@@ -349,6 +349,19 @@ impl<R: Read, W: Write> Client<R, W> {
         self.expect_ok(Msg::new(SETSTAT, id).path(p).u32(0x04).u32(mode & 0o7777))
     }
 
+    /// Access and modification time (seconds since the epoch) of a file or folder.
+    pub fn set_times(&mut self, p: &Path, mtime: u32) -> io::Result<()> {
+        let id = self.id();
+        // attrs: flags = ACMODTIME (0x08), then atime and mtime.
+        self.expect_ok(
+            Msg::new(SETSTAT, id)
+                .path(p)
+                .u32(0x08)
+                .u32(mtime)
+                .u32(mtime),
+        )
+    }
+
     pub fn rmdir(&mut self, p: &Path) -> io::Result<()> {
         let id = self.id();
         self.expect_ok(Msg::new(RMDIR, id).path(p))
