@@ -218,6 +218,16 @@ pub fn view<'a>(
     let terminal = settings::section()
         .title(fl!("options-terminal"))
         .add(settings::item(
+            fl!("options-font"),
+            text(&config.font_family, |c, v| c.font_family = v),
+        ))
+        .add(settings::item(
+            fl!("options-font-size"),
+            text(&config.font_size.to_string(), |c, v| {
+                c.font_size = v.trim().parse().unwrap_or(0)
+            }),
+        ))
+        .add(settings::item(
             fl!("options-copy-on-select"),
             widget::toggler(config.copy_on_select).on_toggle(set(|c, on| c.copy_on_select = on)),
         ))

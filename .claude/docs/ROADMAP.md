@@ -21,6 +21,7 @@
 - [x] 14. ~~X/Y/Zmodem через lrzsz (автоприём Zmodem, отправка и приём Y/X из меню Transfer)~~
 - [x] 15. ~~Command Manager (панель справа, импорт из SecureCRT)~~
 - [x] 16. ~~Перенос вкладок между группами (меню и перетаскивание)~~
+- [x] 17. ~~Шрифт и его размер в Global Options~~
 
 ## Бэклог
 
@@ -28,7 +29,6 @@
 - Редактирование удалённого файла локально (SecureFX «Edit»)
 - Импорт Button Bar из SecureCRT: кнопки Menu Function / Launch App (в настоящих файлах не встретились, формат строк неизвестен)
 - Перетаскивание вкладки в новое окно (между группами готово)
-- Шрифт и его размер в Global Options
 - Запись скрипта (Script → Start Recording)
 
 Не делаем: SSH1, RLogin, TAPI, TN3270/5250, VBScript/JScript, legacy-эмуляции.
