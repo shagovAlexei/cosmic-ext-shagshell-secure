@@ -1352,6 +1352,10 @@ impl App {
                 .map_or_else(Task::none, cosmic::iced::window::drag);
         }
         let out = self.scripts.update(m, &mut self.tabs);
+        if out.notice.is_some() {
+            self.sessions.notice = out.notice.clone();
+        }
+        // After the run's own notice: that the session was not opened is what matters.
         let mut pre_task = Task::none();
         if let Some((run, ok)) = out.ended
             && let Some((launch, post)) = self.pre_runs.remove(&run)
@@ -1359,13 +1363,9 @@ impl App {
             match ok {
                 true => pre_task = self.open_tab(launch, &post),
                 false => {
-                    self.sessions.notice =
-                        Some(fl!("pre-script-failed", name = launch.title.clone()));
+                    self.sessions.notice = Some(fl!("pre-script-failed", name = launch.title));
                 }
             }
-        }
-        if out.notice.is_some() {
-            self.sessions.notice = out.notice;
         }
         let mut tasks = vec![pre_task];
         if out.focus {
@@ -1749,7 +1749,8 @@ impl App {
             s.host.clone(),
             s.user.clone().unwrap_or_default(),
         ];
-        match self.scripts.run(&path, &args, 0) {
+        // No tab: an id nothing has, so `crt.Screen` calls fail instead of hitting tab 0.
+        match self.scripts.run(&path, &args, u64::MAX) {
             Ok(run) => {
                 self.pre_runs.insert(run, (launch, post.to_string()));
                 Task::none()
