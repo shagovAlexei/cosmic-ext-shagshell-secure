@@ -10,9 +10,8 @@ use shagshell_core::update::Status;
 
 pub use shagshell_core::update::REPO;
 /// The Payment Link of the project's own Stripe account (amount of the donor's choice, EUR).
-/// None until that account exists: then the donate button, its text and the menu item are hidden.
-// TODO: the Payment Link of the separate Stripe account.
-pub const DONATE_URL: Option<&str> = None;
+/// None hides the donate button, its text and the menu item.
+pub const DONATE_URL: Option<&str> = Some("https://donate.stripe.com/eVqaEYdZz0Ot3bc1F567S05");
 
 #[derive(Clone, Debug)]
 pub enum UpMsg {

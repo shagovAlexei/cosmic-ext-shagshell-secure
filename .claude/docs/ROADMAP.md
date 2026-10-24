@@ -26,10 +26,6 @@
 - [x] 19. ~~Диалоги `crt` как в SecureCRT: отдельные окна, значки и кнопки MessageBox, List, FileOpen/SaveDialog~~
 - [x] 18. ~~Примеры скриптов (`Example/`) и дополнения `crt` (Clipboard, Screen.Get, Session.Log, MessageBox с кнопками)~~
 
-## Приоритет (следующее после текущего)
-
-- Отдельный Stripe-аккаунт проекта и его Payment Link вместо заглушки `DONATE_URL` (`updates.rs`): аккаунт создаёт владелец (как у shagoff-commander «Shagoff Commander»).
-
 ## Бэклог
 
 - Flatpak

@@ -12,5 +12,5 @@
 - `app/updates.rs`: диалог и сообщения (`UpMsg`); проверка через `off_ui`; `DONATE_URL`.
 - Иконка `heart.svg` в `res/icons/dialog` для окна.
 
-## Открыто
-- **`DONATE_URL`**: Payment Link отдельного Stripe-аккаунта проекта (как у shagoff-commander аккаунт «Shagoff Commander»). Аккаунт создаёт владелец (доступен только Fluent.lt); пока `DONATE_URL = None`, и кнопка доната, текст с просьбой и пункт Help скрыты; когда ссылка есть — `Some("https://donate.stripe.com/…")` одной строкой.
+## Ссылка
+`DONATE_URL` — Payment Link аккаунта «Shagov Alexei Donate» (сумма по выбору донора). `None` скрыл бы кнопку, текст и пункт Help.
