@@ -197,6 +197,11 @@ impl Application for App {
         let mut sessions =
             SessionManager::new(store, &config.expanded, config.session_manager_width);
         sessions.right = config.session_manager_side == crate::config::Side::Right;
+        sessions.cmd_width = f32::from(config.command_manager_width).clamp(
+            crate::session_manager::MIN_WIDTH,
+            crate::session_manager::MAX_WIDTH,
+        );
+        sessions.cmd_right = config.command_manager_side == crate::config::Side::Right;
         let asks = crate::askpass::Asks::new(askpass_sock(&control_dir));
         let hl_path = shagshell_core::highlight::default_path();
         let (hl, hl_error) = match shagshell_core::highlight::Rules::load(&hl_path) {
@@ -303,6 +308,7 @@ impl Application for App {
 
     fn update(&mut self, message: Message) -> Task<Message> {
         self.sessions.right = self.config.session_manager_side == crate::config::Side::Right;
+        self.sessions.cmd_right = self.config.command_manager_side == crate::config::Side::Right;
         let tabs_changed = matches!(
             message,
             Message::Tabs(_) | Message::Note(_, crate::notes::NoteMsg::RenameDo)
@@ -663,15 +669,20 @@ impl App {
             );
         }
         let sessions = panes.contains(&Panel::Sessions);
-        let width = if sessions { self.sessions.width } else { 260.0 };
+        let width = if sessions {
+            self.sessions.width
+        } else {
+            self.sessions.cmd_width
+        };
         let col: Element<'_, Message> = widget::container(col)
             .width(width)
             .height(Length::Fill)
             .into();
         let mut parts = vec![col];
-        if sessions {
-            parts.push(self.sessions.splitter());
-        }
+        parts.push(match sessions {
+            true => self.sessions.splitter(),
+            false => self.sessions.splitter_cmd(),
+        });
         if right {
             parts.reverse();
         }
@@ -948,6 +959,7 @@ impl App {
                 if out.save {
                     self.config.expanded = self.sessions.expanded.iter().cloned().collect();
                     self.config.session_manager_width = self.sessions.width as u16;
+                    self.config.command_manager_width = self.sessions.cmd_width as u16;
                     self.save_config();
                 }
                 let mut tasks: Vec<_> = out.task.into_iter().collect();

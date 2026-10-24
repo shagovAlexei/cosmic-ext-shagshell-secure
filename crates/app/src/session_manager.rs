@@ -56,6 +56,7 @@ pub enum SmMsg {
     Submit,
     Cancel,
     SplitStart,
+    SplitStartCmd,
     Key(TreeKey),
 }
 
@@ -133,6 +134,10 @@ pub struct SessionManager {
     pub notice: Option<String>,
     pub width: f32,
     resizing: bool,
+    /// The Command Manager alone on its side has a width of its own, resized the same way.
+    pub cmd_width: f32,
+    pub cmd_right: bool,
+    resizing_cmd: bool,
     /// The pane is at the right of the terminals (set by the app from the config).
     pub right: bool,
     /// While the splitter is dragged: the cursor and the width at its first move.
@@ -163,6 +168,9 @@ impl SessionManager {
             notice: None,
             width: f32::from(width).clamp(MIN_WIDTH, MAX_WIDTH),
             resizing: false,
+            cmd_width: 260.0,
+            cmd_right: true,
+            resizing_cmd: false,
             right: false,
             drag_from: None,
             focused: false,
@@ -206,7 +214,7 @@ impl SessionManager {
 
     /// Mouse events are wanted: a row or the splitter is held.
     pub fn holding(&self) -> bool {
-        self.pressed.is_some() || self.resizing
+        self.pressed.is_some() || self.resizing || self.resizing_cmd
     }
 
     /// Select one id (a session just saved, moved, renamed), showing it: its folders opened,
@@ -298,8 +306,9 @@ impl SessionManager {
                 self.hover = h;
             }
             SmMsg::Release => {
-                if self.resizing {
+                if self.resizing || self.resizing_cmd {
                     self.resizing = false;
+                    self.resizing_cmd = false;
                     out.save = true;
                 }
                 let dragged = self.drag.take();
@@ -339,7 +348,15 @@ impl SessionManager {
                     let (x0, w0) = *self.drag_from.get_or_insert((x, self.width));
                     let dx = if self.right { x0 - x } else { x - x0 };
                     self.width = (w0 + dx).clamp(MIN_WIDTH, MAX_WIDTH);
+                } else if self.resizing_cmd {
+                    let (x0, w0) = *self.drag_from.get_or_insert((x, self.cmd_width));
+                    let dx = if self.cmd_right { x0 - x } else { x - x0 };
+                    self.cmd_width = (w0 + dx).clamp(MIN_WIDTH, MAX_WIDTH);
                 }
+            }
+            SmMsg::SplitStartCmd => {
+                self.resizing_cmd = true;
+                self.drag_from = None;
             }
             SmMsg::SplitStart => {
                 self.resizing = true;
@@ -599,6 +616,16 @@ impl SessionManager {
         ))
         .interaction(mouse::Interaction::ResizingHorizontally)
         .on_press(Message::Sessions(SmMsg::SplitStart))
+        .into()
+    }
+
+    /// The same strip for the Command Manager when it has its side to itself.
+    pub fn splitter_cmd(&self) -> Element<'_, Message> {
+        widget::mouse_area(widget::container(
+            widget::Space::new().width(6.0).height(Length::Fill),
+        ))
+        .interaction(mouse::Interaction::ResizingHorizontally)
+        .on_press(Message::Sessions(SmMsg::SplitStartCmd))
         .into()
     }
 

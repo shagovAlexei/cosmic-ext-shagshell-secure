@@ -161,6 +161,8 @@ pub struct Config {
     pub command_manager_collapsed: bool,
     /// Session Manager width, px (dragged).
     pub session_manager_width: u16,
+    /// The Command Manager's width when it is alone on its side.
+    pub command_manager_width: u16,
     /// Open folders of the session tree (ids).
     pub expanded: Vec<String>,
     /// Interface language: "" (system), "en", "ru".
@@ -278,6 +280,7 @@ impl Default for Config {
             session_manager_collapsed: false,
             command_manager_collapsed: false,
             session_manager_width: 240,
+            command_manager_width: 260,
             expanded: Vec::new(),
             language: String::new(),
             app_theme: AppTheme::System,
