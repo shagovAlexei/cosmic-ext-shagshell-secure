@@ -328,6 +328,13 @@ impl Asks {
         };
         Some(
             widget::dialog()
+                .icon(
+                    match p.kind {
+                        Kind::HostKey => crate::dialog_icons::Kind::Question,
+                        _ => crate::dialog_icons::Kind::Lock,
+                    }
+                    .icon(48),
+                )
                 .title(heading)
                 .control(body)
                 .primary_action(widget::button::suggested(ok).on_press(m(AskMsg::Ok)))

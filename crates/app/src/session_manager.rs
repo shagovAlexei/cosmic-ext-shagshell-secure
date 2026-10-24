@@ -566,6 +566,7 @@ impl SessionManager {
                     false => fl!("sm-delete-body"),
                 };
                 widget::dialog()
+                    .icon(crate::dialog_icons::Kind::Warning.icon(48))
                     .title(fl!("sm-delete-title", name = name_of(id)))
                     .body(body)
                     .primary_action(

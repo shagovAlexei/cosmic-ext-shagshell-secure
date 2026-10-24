@@ -1452,6 +1452,7 @@ impl SftpView {
                     many => fl!("sftp-n-items", count = many.len()),
                 };
                 widget::dialog()
+                    .icon(crate::dialog_icons::Kind::Warning.icon(48))
                     .title(fl!("sftp-delete-title", what = what))
                     .body(fl!("sftp-delete-body"))
                     .primary_action(
@@ -1469,6 +1470,7 @@ impl SftpView {
                 resumable,
                 ..
             } => widget::dialog()
+                .icon(crate::dialog_icons::Kind::Question.icon(48))
                 .title(fl!("sftp-exists-title"))
                 .control(
                     widget::column::with_children(vec![
