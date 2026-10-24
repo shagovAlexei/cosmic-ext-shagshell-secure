@@ -770,6 +770,12 @@ impl Tabs {
         self.terminal(id).map(term::screen)
     }
 
+    /// Scripts: wipes a terminal tab's screen and scrollback (the program is not told).
+    pub fn clear_screen(&self, id: TabId) -> Option<()> {
+        term::print(self.terminal(id)?, "\x1b[2J\x1b[3J\x1b[H");
+        Some(())
+    }
+
     /// The active tab is being recorded as a script.
     fn recording(&self) -> bool {
         self.active_id()

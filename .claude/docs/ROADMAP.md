@@ -36,8 +36,10 @@
 - [x] 26. ~~Консоль скрипта и режим отладки (spec 26)~~
 - [x] 27. ~~Меню Script со списком скриптов, «Недавние», папка скриптов, скрипт при запуске~~
 - [x] 28. ~~Pre-script сессии (до подключения, с отменой)~~
-- [ ] 29. Расширение `crt` (Screen.Clear / SendKeys / MatchIndex, Session.Lock / SetStatusText, crt.Window, создание сессии, FileTransfer)
+- [x] 29. ~~Расширение `crt`: Screen.Clear / SendKeys / MatchIndex, Session.SetStatusText / Create, crt.Window (spec 29)~~
+- [ ] 29b. `crt.FileTransfer.Upload/Download`, `Session.Lock`
 - [ ] 30. Планировщик скриптов
+- [ ] 31. Заметки (Note): простое текстовое окно с командами и подсказками; открывать при старте (тумблер в Options); переименовать; открыть другой текстовый файл или `.md`; `.md` — в виде превью, переключатель «правка / превью» маленькой кнопкой в окне или на панели
 
 ## Бэклог
 

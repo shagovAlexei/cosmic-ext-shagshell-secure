@@ -203,6 +203,10 @@ pub struct Outcome {
     pub copy: Option<String>,
     /// A run ended: its id, and whether it finished well (a pre-script's session opens or not).
     pub ended: Option<(u64, bool)>,
+    /// `Session.Create`: the session to save (the app owns the store).
+    pub create: Option<(script::NewSession, Reply)>,
+    /// `Window.Activate`: raise the main window.
+    pub raise: bool,
 }
 
 impl Scripts {
@@ -411,6 +415,18 @@ impl Scripts {
                                     .into(),
                             )),
                         }
+                    }
+                    "Session.Create" => match script::new_session(&c.args) {
+                        Ok(n) => out.create = Some((n, c.reply.clone())),
+                        Err(e) => c.reply.send(Err(e)),
+                    },
+                    "Session.SetStatusText" => {
+                        out.notice = c.args.first().and_then(Value::as_str).map(str::to_string);
+                        c.reply.send(Ok(Value::Null));
+                    }
+                    "Window.Activate" => {
+                        out.raise = true;
+                        c.reply.send(Ok(Value::Null));
                     }
                     other => c.reply.send(Err(format!("unknown call {other}"))),
                 },
@@ -841,6 +857,10 @@ fn answer(c: &Call, tabs: &mut Tabs) -> Option<Answer> {
             tabs.script_log_text(id, text).map(|()| Value::Null)
         }),
         "Session.LogFileName" => known(c.tab).map(|id| json!(tabs.log_file(id))),
+        "Screen.Clear" => known(c.tab)
+            .and_then(|id| tabs.clear_screen(id).ok_or("not a terminal tab".into()))
+            .map(|()| Value::Null),
+        "Window.Caption" => Ok(json!("ShagShell Secure")),
         "Tab.Index" => {
             known(c.tab).map(|id| json!(order.iter().position(|&t| t == id).map_or(0, |i| i + 1)))
         }

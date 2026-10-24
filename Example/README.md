@@ -34,6 +34,7 @@ saved session (see `03_connect_saved_session.py`).
 | `13_pick_file_and_hosts.py` | choose a commands file and sessions from a list / выбор файла и сессий из списка |
 | `11_network_device.py` | `enable`, `terminal length 0`, `show run` → file (Cisco-like) / сетевое устройство |
 | `14_pre_script.py` | pre-script: check the host before connecting, abort the session / проверка хоста до подключения, отмена |
+| `15_new_session.py` | create a session from a script, SendKeys / Clear / MatchIndex / SetStatusText / создание сессии из скрипта |
 
 ## Differences from SecureCRT / Отличия от SecureCRT
 - `crt.Screen.Synchronous` and `IgnoreEscape` are always on / всегда включены.
