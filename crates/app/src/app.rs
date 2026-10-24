@@ -243,9 +243,15 @@ impl Application for App {
                             modifiers,
                             repeat: false,
                             ..
-                        }) if crate::keymap_editor::capturing() => Some(Message::KeyMap(
-                            crate::keymap_editor::KmMsg::Captured(physical_key, modifiers),
-                        )),
+                        }) if crate::keymap_editor::capturing() => {
+                            // Alt on its own is the start of Alt+Q, not the chord.
+                            (!crate::keymap_editor::is_modifier(&physical_key)).then(|| {
+                                Message::KeyMap(crate::keymap_editor::KmMsg::Captured(
+                                    physical_key,
+                                    modifiers,
+                                ))
+                            })
+                        }
                         cosmic::iced::Event::Keyboard(keyboard::Event::KeyPressed {
                             physical_key,
                             modifiers,
@@ -905,6 +911,9 @@ impl App {
             }
             Action::EditDefault => return self.open_options(Target::Default),
             Action::Credentials => return self.open_credentials(),
+            Action::KeyMap if self.user_keys_broken => {
+                self.sessions.notice = Some(fl!("km-broken"));
+            }
             Action::KeyMap => {
                 if self.keymap.is_none() {
                     self.keymap = Some(crate::keymap_editor::Editor::new(self.user_keys.clone()));

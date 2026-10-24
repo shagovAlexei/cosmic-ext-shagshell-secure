@@ -18,14 +18,40 @@ static BINDINGS: RwLock<Vec<Binding>> = RwLock::new(Vec::new());
 /// The next key is a chord to record, not an action.
 static CAPTURING: AtomicBool = AtomicBool::new(false);
 
+/// Puts the keys in force. A hand-edited file may hold what the editor would refuse (Ctrl+C) or
+/// a key twice: those are left out here (the file is not changed).
 pub fn set_bindings(k: &Keymap) {
-    *BINDINGS.write().unwrap_or_else(|e| e.into_inner()) = k.keys.clone();
+    let mut ok: Vec<Binding> = Vec::new();
+    for b in &k.keys {
+        if b.keys.check().is_ok() && !ok.iter().any(|o| o.keys == b.keys) {
+            ok.push(b.clone());
+        }
+    }
+    *BINDINGS.write().unwrap_or_else(|e| e.into_inner()) = ok;
+}
+
+/// A modifier key on its own (the first event of Alt+Q): not a chord yet.
+pub fn is_modifier(key: &cosmic::iced::keyboard::key::Physical) -> bool {
+    use cosmic::iced::keyboard::key::Physical;
+    match key {
+        Physical::Code(c) => {
+            let n = format!("{c:?}");
+            ["Shift", "Control", "Alt", "Super", "Meta", "Hyper", "Fn"]
+                .iter()
+                .any(|m| n.starts_with(m))
+        }
+        _ => false,
+    }
 }
 
 /// Which binding a pressed key is (an index into the list `set_bindings` was given).
 pub fn lookup(mods: cosmic::iced::keyboard::Modifiers, code: &str) -> Option<usize> {
-    let want = Chord::new(mods.control(), mods.alt(), mods.shift(), code);
     let g = BINDINGS.read().unwrap_or_else(|e| e.into_inner());
+    // Every key press asks: nothing to look for is the usual answer. Super is the compositor's.
+    if g.is_empty() || mods.logo() {
+        return None;
+    }
+    let want = Chord::new(mods.control(), mods.alt(), mods.shift(), code);
     g.iter().position(|b| b.keys == want)
 }
 
@@ -111,6 +137,10 @@ impl Editor {
 
     pub fn update(&mut self, msg: KmMsg, builtin: bool) -> Outcome {
         let mut out = Outcome::default();
+        // Recording ends with a key (or any other click): it never stays on by accident.
+        if !matches!(msg, KmMsg::Capture | KmMsg::Captured(..)) {
+            CAPTURING.store(false, Ordering::SeqCst);
+        }
         if let Some(e) = &mut self.edit {
             e.error = None;
         }
@@ -161,6 +191,7 @@ impl Editor {
                         Err(Reason::Modifier) => Some(fl!("km-modifier")),
                         Err(Reason::Reserved) => Some(fl!("km-reserved")),
                         Err(Reason::Terminal) => Some(fl!("km-terminal")),
+                        Err(Reason::Ui) => Some(fl!("km-ui")),
                         Ok(()) if builtin => Some(fl!("km-builtin")),
                         Ok(()) => None,
                     };

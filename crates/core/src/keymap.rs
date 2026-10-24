@@ -23,6 +23,8 @@ pub enum Reason {
     Modifier,
     /// Ctrl+Insert / Shift+Insert: the system's.
     Reserved,
+    /// A plain F2–F8: the file manager's and the session tree's own keys.
+    Ui,
     /// A plain, Shift, Ctrl or Ctrl+Shift letter, digit or editing key: the terminal's.
     Terminal,
 }
@@ -71,6 +73,9 @@ impl Chord {
             return Err(Reason::Reserved);
         }
         let any = self.ctrl || self.alt || self.shift;
+        if !any && matches!(c, "F2" | "F3" | "F4" | "F5" | "F6" | "F7" | "F8") {
+            return Err(Reason::Ui);
+        }
         if is_function(c) || self.alt || (is_navigation(c) && any) {
             return Ok(());
         }
@@ -171,7 +176,9 @@ impl Keymap {
     /// `b` in place of binding `at`, or added (`None`).
     pub fn put(&mut self, at: Option<usize>, b: Binding) -> Result<usize, Refused> {
         b.keys.check().map_err(Refused::Chord)?;
-        if b.button.arg.trim().is_empty() && !(b.button.arg == " ") {
+        // A lone space is a fine string to send (paging through «--More--»), nothing else.
+        let lone_space = b.button.kind == crate::buttonbar::Kind::Send && b.button.arg == " ";
+        if b.button.arg.trim().is_empty() && !lone_space {
             return Err(Refused::Empty);
         }
         if self.find(&b.keys).is_some_and(|i| Some(i) != at) {
@@ -261,7 +268,7 @@ mod tests {
         for s in [
             "Alt+Q",
             "Ctrl+Alt+Q",
-            "F5",
+            "F9",
             "Shift+F5",
             "Ctrl+F1",
             "Ctrl+ArrowUp",
@@ -279,6 +286,8 @@ mod tests {
             ("Shift+7", Reason::Terminal),
             ("Ctrl+Enter", Reason::Terminal),
             ("ArrowUp", Reason::Terminal),
+            ("F5", Reason::Ui),
+            ("F2", Reason::Ui),
             ("Ctrl+Insert", Reason::Reserved),
             ("Shift+Insert", Reason::Reserved),
         ] {
@@ -303,6 +312,9 @@ mod tests {
         );
         assert_eq!(m.put(Some(0), bind("Alt+1", "c")), Ok(0)); // itself is not a clash
         assert_eq!(m.put(None, bind("Alt+3", " ")), Ok(1)); // a lone space is a string
+        let mut script = bind("Alt+4", " ");
+        script.button.kind = Kind::Script;
+        assert_eq!(m.put(None, script), Err(Refused::Empty));
         assert_eq!(m.keys[0].button.arg, "c");
         m.remove(0);
         assert_eq!(m.keys.len(), 1);
