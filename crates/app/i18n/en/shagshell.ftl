@@ -573,3 +573,17 @@ sch-bad-minutes = Minutes: a whole number, 1 or more
 sch-bad-time = Time: HH:MM, like 09:30
 sch-name-taken = Another job has this name
 sch-broken = schedule.toml could not be read: changes are not saved
+
+menu-notes = Notes
+menu-note-open = Open Note…
+options-notes-on-start = Open notes at startup
+note-rename = Rename
+note-rename-ok = Rename
+note-open = Open…
+note-open-title = Open a note
+note-edit = Edit
+note-view = View
+note-filter-text = Text and Markdown
+note-too-big = The file is bigger than { $mb } MB
+note-not-text = Not a text file (UTF-8 expected)
+note-bad-name = This name cannot be used

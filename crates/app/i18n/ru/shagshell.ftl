@@ -574,3 +574,17 @@ sch-bad-minutes = Минуты: целое число, 1 и больше
 sch-bad-time = Время: ЧЧ:ММ, например 09:30
 sch-name-taken = Задача с таким именем уже есть
 sch-broken = schedule.toml не удалось прочитать: изменения не сохраняются
+
+menu-notes = Заметки
+menu-note-open = Открыть заметку…
+options-notes-on-start = Открывать заметки при запуске
+note-rename = Переименовать
+note-rename-ok = Переименовать
+note-open = Открыть…
+note-open-title = Открыть заметку
+note-edit = Правка
+note-view = Просмотр
+note-filter-text = Текст и Markdown
+note-too-big = Файл больше { $mb } МБ
+note-not-text = Не текстовый файл (нужен UTF-8)
+note-bad-name = Такое имя нельзя

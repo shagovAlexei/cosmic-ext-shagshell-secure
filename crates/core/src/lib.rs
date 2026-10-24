@@ -12,6 +12,7 @@ pub mod launch;
 pub mod logfile;
 pub mod logon;
 pub mod macros;
+pub mod notes;
 pub mod panel;
 pub mod reconnect;
 pub mod recorder;

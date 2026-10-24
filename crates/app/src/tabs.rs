@@ -117,6 +117,8 @@ pub struct Launch {
     pub protocol: Protocol,
     /// An SFTP tab (`args`: `sftp_args`), not a terminal.
     pub sftp: bool,
+    /// A note: this file, not a program.
+    pub note: Option<std::path::PathBuf>,
     /// Logged from the start (the session says so).
     pub log: Option<LogSpec>,
     /// Connects again by itself when the connection drops.
@@ -139,6 +141,7 @@ impl Launch {
             title: fl!("tab-local-shell"),
             protocol: Protocol::Local,
             sftp: false,
+            note: None,
             log: None,
             auto_reconnect: None,
             logon: None,
@@ -161,6 +164,7 @@ impl Launch {
                 false => format!("SFTP · {}", self.label),
             },
             sftp: true,
+            note: None,
             ..self.clone()
         })
     }
@@ -180,6 +184,8 @@ impl Launch {
 pub enum Body {
     Terminal(Box<Mutex<Terminal>>),
     Sftp(Box<SftpView>),
+    /// A text / markdown file.
+    Note(Box<crate::notes::NoteView>),
 }
 
 pub struct Tab {
@@ -205,7 +211,12 @@ impl Tab {
             (_, true) => &self.base,
             (_, false) => &self.program_title,
         };
-        format!("{} {t}", if self.live() { "✓" } else { "✗" })
+        let mark = match (&self.body, self.live()) {
+            (Body::Note(_), _) => "✎",
+            (_, true) => "✓",
+            (_, false) => "✗",
+        };
+        format!("{mark} {t}")
     }
 
     /// Its program runs (a terminal), or it is connected (SFTP).
@@ -213,13 +224,15 @@ impl Tab {
         match &self.body {
             Body::Terminal(_) => self.alive,
             Body::Sftp(v) => v.connected,
+            // Never «live»: closing it asks nothing, Reconnect does nothing.
+            Body::Note(_) => false,
         }
     }
 
     fn terminal(&self) -> Option<&Mutex<Terminal>> {
         match &self.body {
             Body::Terminal(t) => Some(t),
-            Body::Sftp(_) => None,
+            Body::Sftp(_) | Body::Note(_) => None,
         }
     }
 }
@@ -369,6 +382,69 @@ impl Tabs {
             .any(|t| matches!(&t.body, Body::Sftp(v) if v.has_edits()))
     }
 
+    /// A note has an edit not written yet (the timer runs only then).
+    pub fn has_unsaved_notes(&self) -> bool {
+        (self.tabs.values()).any(|t| matches!(&t.body, Body::Note(v) if v.has_unsaved()))
+    }
+
+    pub fn notes_tick(&mut self) {
+        for tab in self.tabs.values_mut() {
+            if let Body::Note(v) = &mut tab.body {
+                v.tick();
+            }
+        }
+    }
+
+    /// Everything written (the app is going).
+    pub fn save_notes(&mut self) {
+        for tab in self.tabs.values_mut() {
+            if let Body::Note(v) = &mut tab.body {
+                v.save();
+            }
+        }
+    }
+
+    /// A note's message; true: it wants the file chooser. Its title follows its file name.
+    pub fn on_note(&mut self, id: TabId, msg: crate::notes::NoteMsg) -> (bool, Task<Message>) {
+        let Some(tab) = self.tabs.get_mut(&id) else {
+            return (false, Task::none());
+        };
+        let Body::Note(v) = &mut tab.body else {
+            return (false, Task::none());
+        };
+        let rename = matches!(msg, crate::notes::NoteMsg::RenameStart);
+        let field = v.rename_field();
+        let open = v.update(msg);
+        tab.launch.title = v.name();
+        tab.base = v.name();
+        tab.launch.note = Some(v.path.clone());
+        self.retitle(id);
+        let task = match rename {
+            true => widget::text_input::focus(field),
+            false => Task::none(),
+        };
+        (open, task)
+    }
+
+    /// The tab that shows this file, if any.
+    pub fn note_tab(&self, path: &std::path::Path) -> Option<TabId> {
+        (self.tabs.iter())
+            .find(|(_, t)| matches!(&t.body, Body::Note(v) if v.path == path))
+            .map(|(id, _)| *id)
+    }
+
+    /// The files the notes show (what the next start opens).
+    pub fn note_paths(&self) -> Vec<std::path::PathBuf> {
+        let mut v: Vec<_> = (self.tabs.iter())
+            .filter_map(|(id, t)| match &t.body {
+                Body::Note(n) => Some((*id, n.path.clone())),
+                _ => None,
+            })
+            .collect();
+        v.sort();
+        v.into_iter().map(|(_, p)| p).collect()
+    }
+
     pub fn edit_tick(&mut self) {
         for tab in self.tabs.values_mut() {
             if let Body::Sftp(v) = &mut tab.body {
@@ -449,6 +525,9 @@ impl Tabs {
     /// Active tab: (connected, protocol label, cols × rows of a terminal).
     pub fn status(&self) -> Option<crate::status_bar::Status> {
         let tab = self.tabs.get(&self.active_id()?)?;
+        if matches!(tab.body, Body::Note(_)) {
+            return None;
+        }
         let label = tab.launch.label();
         let size = tab.terminal().map(|t| {
             let t = t.lock().unwrap_or_else(|e| e.into_inner());
@@ -504,6 +583,7 @@ impl Tabs {
         self.tabs.get(&id).is_some_and(|t| match t.body {
             Body::Terminal(_) => t.alive,
             Body::Sftp(_) => true,
+            Body::Note(_) => false,
         })
     }
 
@@ -615,6 +695,11 @@ impl Tabs {
     }
 
     fn spawn(&self, id: TabId, launch: &Launch, look: &Look) -> Option<Body> {
+        if let Some(path) = &launch.note {
+            return crate::notes::NoteView::open(path)
+                .ok()
+                .map(|v| Body::Note(Box::new(v)));
+        }
         if launch.sftp {
             let connect = Connect {
                 program: launch.program.clone(),
@@ -845,6 +930,7 @@ impl Tabs {
                 tab.stopped = true;
             }
             Body::Sftp(v) => v.disconnect(),
+            Body::Note(_) => {}
             // Already down, maybe waiting to reconnect by itself: that wait ends.
             Body::Terminal(_) => tab.stopped = true,
         }
@@ -858,7 +944,11 @@ impl Tabs {
     }
 
     fn restart(&mut self, id: TabId, look: &Look) -> Task<Message> {
-        if self.tabs.get(&id).is_none_or(|t| t.live()) {
+        if self
+            .tabs
+            .get(&id)
+            .is_none_or(|t| t.live() || matches!(t.body, Body::Note(_)))
+        {
             return Task::none();
         }
         // SFTP: a new connection in the same tab (its old workers' events are told apart),
@@ -1011,7 +1101,9 @@ impl Tabs {
                 self.disconnect(id);
                 Task::none()
             }
-            TabCmd::Clone => match self.tabs.get(&id).map(|tab| tab.launch.clone()) {
+            TabCmd::Clone => match (self.tabs.get(&id).map(|tab| tab.launch.clone()))
+                .filter(|l| l.note.is_none())
+            {
                 Some(launch) => self.open(launch, look),
                 None => Task::none(),
             },
@@ -1090,6 +1182,12 @@ impl Tabs {
                 body: Body::Sftp(v),
                 ..
             }) => v.view(),
+            Some(
+                tab @ Tab {
+                    body: Body::Note(v),
+                    ..
+                },
+            ) => v.view(id.unwrap_or_default(), tab.widget_id.clone()),
             Some(
                 tab @ Tab {
                     body: Body::Terminal(terminal),
@@ -1226,6 +1324,13 @@ impl Tabs {
                     .unwrap_or_default();
                 self.closed_recordings.push((title, r));
             }
+            if let Some(Tab {
+                body: Body::Note(v),
+                ..
+            }) = self.tabs.get_mut(&id)
+            {
+                v.save();
+            }
             self.tabs.remove(&id); // its Drop ends the program
             self.taps
                 .lock()
@@ -1296,7 +1401,9 @@ impl Tabs {
             }
             TabCmd::Clone => {
                 self.focus = Some(t.0); // its group
-                match self.tabs.get(&t.2).map(|tab| tab.launch.clone()) {
+                match (self.tabs.get(&t.2).map(|tab| tab.launch.clone()))
+                    .filter(|l| l.note.is_none())
+                {
                     Some(launch) => self.open(launch, look),
                     None => Task::none(),
                 }

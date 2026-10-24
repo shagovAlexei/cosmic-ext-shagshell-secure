@@ -80,6 +80,10 @@ pub fn view<'a>(
                 .on_toggle(set(|c, on| c.script_console_auto = on)),
         ))
         .add(settings::item(
+            fl!("options-notes-on-start"),
+            widget::toggler(config.notes_on_start).on_toggle(set(|c, on| c.notes_on_start = on)),
+        ))
+        .add(settings::item(
             fl!("options-theme"),
             widget::dropdown(themes, theme, {
                 let c = config.clone();

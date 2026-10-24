@@ -73,6 +73,10 @@ pub enum Action {
     CancelScript,
     /// Script → Console.
     ScriptConsole,
+    /// View → Notes: the main note's tab.
+    Notes,
+    /// File → Open Note….
+    OpenNote,
     /// Script → Scheduler….
     Scheduler,
     /// Script → Scripts / Recent: the n-th entry of the app's list (folder files, then recents).
@@ -89,7 +93,7 @@ pub enum Action {
 
 /// The functions a Button Bar button can call: the name in `buttonbars.toml` and its label.
 pub type NamedFn = (&'static str, fn() -> String);
-pub const NAMED: [NamedFn; 15] = [
+pub const NAMED: [NamedFn; 16] = [
     ("Connect", || fl!("menu-connect")),
     ("QuickConnect", || fl!("menu-quick-connect")),
     ("NewLocalShell", || fl!("menu-new-local-shell")),
@@ -105,6 +109,7 @@ pub const NAMED: [NamedFn; 15] = [
     ("ToggleCommandManager", || fl!("menu-command-manager")),
     ("ToggleRecording", || fl!("menu-script-record")),
     ("GlobalOptions", || fl!("menu-global-options")),
+    ("Notes", || fl!("menu-notes")),
 ];
 
 impl Action {
@@ -128,6 +133,7 @@ impl Action {
             "GlobalOptions" => Action::GlobalOptions,
             "ScriptConsole" => Action::ScriptConsole,
             "Scheduler" => Action::Scheduler,
+            "Notes" => Action::Notes,
             _ => return None,
         })
     }
@@ -210,6 +216,7 @@ pub fn bar(
                 Button(fl!("menu-connect"), None, Action::Connect),
                 Button(fl!("menu-quick-connect"), None, Action::QuickConnect),
                 Button(fl!("menu-new-local-shell"), None, Action::NewLocalShell),
+                Button(fl!("menu-note-open"), None, Action::OpenNote),
                 tab(fl!("menu-reconnect"), Action::Reconnect),
                 on(live, fl!("menu-disconnect"), Action::Disconnect),
                 CheckBox(fl!("menu-log-session"), None, logging, Action::ToggleLog),
@@ -257,6 +264,7 @@ pub fn bar(
                     button_bar,
                     Action::ToggleButtonBar,
                 ),
+                Button(fl!("menu-notes"), None, Action::Notes),
                 off(fl!("menu-toolbar")),
                 off(fl!("menu-status-bar")),
             ],
