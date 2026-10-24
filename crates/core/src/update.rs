@@ -66,6 +66,76 @@ pub fn check(current: &str) -> Status {
     status(current, &String::from_utf8_lossy(&out.stdout))
 }
 
+/// `v0.18.0`: the only shape of a tag we put in a download address.
+pub fn valid_tag(tag: &str) -> bool {
+    newer("0.0.0", tag) || tag == "v0.0.0"
+}
+
+/// The package named by the first line of `SHA256SUMS` (`<hash>  shagshell_0.18.0_amd64.deb`);
+/// anything with a path or another shape is refused: the name goes into a download address.
+pub fn deb_name(sums: &str) -> Option<String> {
+    let name = sums
+        .lines()
+        .next()?
+        .split_whitespace()
+        .nth(1)?
+        .trim_start_matches('*');
+    let plain = name
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b'-' | b'+'));
+    (plain && name.starts_with("shagshell_") && name.ends_with(".deb")).then(|| name.to_string())
+}
+
+/// `sha256sum -c SHA256SUMS` in `dir`: Ok only when every listed file matches.
+pub fn verify(dir: &std::path::Path) -> Result<(), String> {
+    let out = Command::new("sha256sum")
+        .args(["-c", "--strict", "SHA256SUMS"])
+        .current_dir(dir)
+        .output()
+        .map_err(|e| format!("sha256sum: {e}"))?;
+    match out.status.success() {
+        true => Ok(()),
+        false => Err(String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .chain(String::from_utf8_lossy(&out.stderr).lines())
+            .find(|l| !l.ends_with(": OK"))
+            .unwrap_or("checksum mismatch")
+            .to_string()),
+    }
+}
+
+/// Download release `tag`'s package and `SHA256SUMS` into `dir` (curl, from this repository only)
+/// and check the hash. A package that does not match is deleted. Blocking.
+pub fn download(tag: &str, dir: &std::path::Path) -> Result<std::path::PathBuf, String> {
+    if !valid_tag(tag) {
+        return Err(format!("bad tag {tag}"));
+    }
+    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    let get = |name: &str| -> Result<(), String> {
+        let url = format!("{REPO}/releases/download/{tag}/{name}");
+        let out = Command::new("curl")
+            .args(["-fsSL", "-m", "300", "-o"])
+            .arg(dir.join(name))
+            .args(["--", &url])
+            .output()
+            .map_err(|e| format!("curl: {e}"))?;
+        match out.status.success() {
+            true => Ok(()),
+            false => Err(String::from_utf8_lossy(&out.stderr).trim().to_string()),
+        }
+    };
+    get("SHA256SUMS")?;
+    let sums = std::fs::read_to_string(dir.join("SHA256SUMS")).map_err(|e| e.to_string())?;
+    let name = deb_name(&sums).ok_or("SHA256SUMS: no package")?;
+    get(&name)?;
+    let deb = dir.join(&name);
+    if let Err(e) = verify(dir) {
+        let _ = std::fs::remove_file(&deb);
+        return Err(e);
+    }
+    Ok(deb)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -100,5 +170,32 @@ mod tests {
         assert!(!newer("0.17.1", "v0.17.0"));
         assert!(!newer("0.17.0", "nightly"));
         assert!(!newer("0.18.0", "v0.18.0.0"));
+    }
+
+    #[test]
+    fn deb_name_is_a_plain_package_name() {
+        let h = "a".repeat(64);
+        assert_eq!(
+            deb_name(&format!("{h}  shagshell_0.46.0_amd64.deb\n")),
+            Some("shagshell_0.46.0_amd64.deb".into())
+        );
+        assert_eq!(deb_name(&format!("{h}  ../evil.deb")), None);
+        assert_eq!(deb_name(&format!("{h}  shagshell_/../x.deb")), None);
+        assert_eq!(deb_name(&format!("{h}  other_1.deb")), None);
+        assert_eq!(deb_name(""), None);
+        assert!(valid_tag("v0.46.0") && !valid_tag("v0.46.0/../x") && !valid_tag("latest"));
+    }
+
+    #[test]
+    fn regression_update_refuses_a_package_that_does_not_match_its_hash() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::write(d.path().join("shagshell_0.1.0_amd64.deb"), b"package").unwrap();
+        // sha256 of "package"
+        let ok = "bc4a71180870f7945155fbb02f4b0a2e3faa2a62d6d31b7039013055ed19869a";
+        let line = |h: &str| format!("{h}  shagshell_0.1.0_amd64.deb\n");
+        std::fs::write(d.path().join("SHA256SUMS"), line(ok)).unwrap();
+        assert_eq!(verify(d.path()), Ok(()));
+        std::fs::write(d.path().join("SHA256SUMS"), line(&"0".repeat(64))).unwrap();
+        assert!(verify(d.path()).is_err());
     }
 }
