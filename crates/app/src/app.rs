@@ -37,6 +37,8 @@ pub struct App {
     tabs: Tabs,
     sessions: SessionManager,
     quick: Option<QuickConnect>,
+    /// Tools → Create / Upload Public Key…, while its dialog is open.
+    keys: Option<Keys>,
     /// The Session Options window, when open (one at a time).
     options: Option<SessionOptions>,
     /// The Credentials Manager window, when open.
@@ -61,6 +63,21 @@ pub struct App {
     scripts: crate::script::Scripts,
     /// `--script`: runs once the terminals can start (their event channel is up).
     startup: Option<(std::path::PathBuf, Vec<String>)>,
+}
+
+/// The open dialog of Tools → Create / Upload Public Key….
+enum Keys {
+    Gen(crate::keygen::KeyGen),
+    Upload(crate::keygen::Upload),
+}
+
+impl Keys {
+    fn view(&self) -> Element<'_, Message> {
+        match self {
+            Keys::Gen(g) => g.view(),
+            Keys::Upload(u) => u.view(),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -91,6 +108,7 @@ pub enum Message {
     SecureCrt(crate::securecrt_import::ScMsg),
     Script(crate::script::ScMsg),
     QuickConnect(QcMsg),
+    KeyGen(crate::keygen::KgMsg),
     SessionOptions(SoMsg),
     /// Keys and the pointer: acted on only when from the main window (not Session Options).
     Input(cosmic::iced::window::Id, Box<Message>),
@@ -161,6 +179,7 @@ impl Application for App {
             tabs,
             sessions,
             quick: None,
+            keys: None,
             options: None,
             creds_win: None,
             separate: None,
@@ -304,6 +323,7 @@ impl Application for App {
     fn dialog(&self) -> Option<Element<'_, Message>> {
         (self.asks.dialog(|t| self.tabs.title(t)))
             .or_else(|| self.scripts.dialog())
+            .or_else(|| self.keys.as_ref().map(Keys::view))
             .or_else(|| {
                 self.sc_import
                     .as_ref()
@@ -454,6 +474,9 @@ impl App {
             Message::EnterKey if self.scripts.active() => {
                 return self.script(crate::script::ScMsg::Ok);
             }
+            Message::Sessions(SmMsg::Key(TreeKey::Clear)) if self.keys.is_some() => {
+                return self.key_dialog(crate::keygen::KgMsg::Close);
+            }
             Message::Sessions(SmMsg::Key(TreeKey::Clear)) if self.scripts.active() => {
                 return self.script(crate::script::ScMsg::Cancel);
             }
@@ -598,6 +621,7 @@ impl App {
                 }
                 return Task::batch(tasks);
             }
+            Message::KeyGen(m) => return self.key_dialog(m),
             Message::QuickConnect(QcMsg::Cancel) => self.quick = None,
             Message::QuickConnect(m) => {
                 let Some(req) = self.quick.as_mut().and_then(|q| q.update(m)) else {
@@ -845,6 +869,22 @@ impl App {
             }
             Action::EditDefault => return self.open_options(Target::Default),
             Action::Credentials => return self.open_credentials(),
+            Action::CreateKey => {
+                let k = crate::keygen::KeyGen::new();
+                let focus = k.focus();
+                self.keys = Some(Keys::Gen(k));
+                return focus;
+            }
+            Action::UploadKey => {
+                let session = (self.tabs.active_session()).or_else(|| self.sessions.one_session());
+                match session {
+                    None => self.sessions.notice = Some(fl!("so-nothing")),
+                    Some(id) => match crate::keygen::Upload::new(id) {
+                        Some(u) => self.keys = Some(Keys::Upload(u)),
+                        None => self.sessions.notice = Some(fl!("ku-no-keys")),
+                    },
+                }
+            }
             Action::RunScript => {
                 return Task::perform(crate::script::pick(fl!("script-pick")), |p| {
                     cosmic::Action::App(Message::Script(crate::script::ScMsg::Picked(p)))
@@ -917,6 +957,95 @@ impl App {
             reply.send(Ok(serde_json::Value::Null)); // the tab is there now
         }
         Task::batch(tasks)
+    }
+
+    /// Create / Upload Public Key: what the dialogs ask for.
+    fn key_dialog(&mut self, m: crate::keygen::KgMsg) -> Task<Message> {
+        use crate::keygen::KgMsg;
+        match (&mut self.keys, m) {
+            // A key is being made: its result has to land in this dialog.
+            (Some(Keys::Gen(g)), KgMsg::Close) if g.busy() => {}
+            (_, KgMsg::Close) => {
+                self.keys = None;
+                return self.tabs.focus_active();
+            }
+            (Some(Keys::Gen(g)), KgMsg::Copy) => {
+                if let Some(r) = &g.result {
+                    return cosmic::iced::clipboard::write(r.public.clone());
+                }
+            }
+            (Some(Keys::Gen(g)), m) => {
+                if let Some(spec) = g.update(m) {
+                    let exe = std::env::current_exe().unwrap_or_else(|_| "shagshell".into());
+                    return off_ui(
+                        move || shagshell_core::keygen::generate(&spec, &exe),
+                        |r| Message::KeyGen(KgMsg::Done(r)),
+                    );
+                }
+            }
+            (Some(Keys::Upload(u)), KgMsg::Key(i)) => u.key = i,
+            (Some(Keys::Upload(u)), KgMsg::Upload) => {
+                let (id, key) = (u.session.clone(), u.chosen().cloned());
+                self.keys = None;
+                if let Some(key) = key {
+                    return self.upload_key(&id, &key);
+                }
+            }
+            _ => {}
+        }
+        Task::none()
+    }
+
+    /// `ssh-copy-id` for a session in a tab of its own: the password, if asked, goes through
+    /// the usual askpass dialog.
+    fn upload_key(&mut self, id: &str, key: &std::path::Path) -> Task<Message> {
+        let s = match self.sessions.store.get(id) {
+            Ok(s) if s.protocol == shagshell_core::session::Protocol::Ssh2 => s,
+            Ok(_) => {
+                self.sessions.notice = Some(fl!("sftp-needs-ssh"));
+                return Task::none();
+            }
+            Err(e) => {
+                self.sessions.notice = Some(format!("{id}: {e}"));
+                return Task::none();
+            }
+        };
+        let name = shagshell_core::session::store::name_of(id).to_string();
+        let creds = load_credentials();
+        let mut l = match ssh_launch(
+            &self.control_dir,
+            creds.as_ref(),
+            &s,
+            name.clone(),
+            Some(id),
+        ) {
+            Ok(l) => l,
+            Err(e) => {
+                self.sessions.notice = Some(e);
+                return Task::none();
+            }
+        };
+        let s = creds.unwrap_or_default().resolve(&s);
+        // ssh-copy-id has no `--`: a host that looks like an option would be one.
+        if s.host.starts_with('-') {
+            self.sessions.notice = Some(fl!("ku-bad-host"));
+            return Task::none();
+        }
+        // Its own tab, not the session's: a rebuilt launch, Clone or SFTP must not take it for ssh.
+        l.protocol = tabs::Protocol::Local;
+        l.program = "ssh-copy-id".into();
+        l.args = shagshell_core::keygen::copy_id_args(
+            key,
+            &s.host,
+            s.user.as_deref().unwrap_or_default(),
+            s.port,
+            &s.jump,
+            s.identity.as_deref().unwrap_or_default(),
+            &self.control_dir,
+        );
+        l.title = fl!("ku-tab", name = name);
+        (l.log, l.logon, l.auto_reconnect) = (None, None, None);
+        self.tabs.open(l, &look())
     }
 
     /// A tab for `launch`; the session's `script` (if any) runs on it.

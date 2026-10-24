@@ -37,7 +37,7 @@ Column **Phase** = ROADMAP phase where we implement it (— = not planned).
 |---|---|---|---|
 | Protocols | SSH2, SSH1, Telnet, Telnet/TLS, RLogin, Serial, TAPI, Raw, Local shell | SSH, Telnet, Serial (picocom), Local | 2, 3, 8 |
 | SSH2 auth | password, publickey, keyboard-interactive, GSSAPI, PKCS#11; order per session | all through OpenSSH + askpass | 4 |
-| Keys | Create Public Key wizard (RSA/ECDSA/Ed25519), Public Key Assistant (RFC 4819) | `ssh-keygen`, `ssh-copy-id` | backlog |
+| Keys | Create Public Key wizard (RSA/ECDSA/Ed25519), Public Key Assistant (RFC 4819) | `ssh-keygen`, `ssh-copy-id` | 11 |
 | Agent | built-in agent + forwarding | system agent, `-A` option | 3 |
 | Jump host / firewall | named firewalls (SOCKS4/5, HTTP, "Session" = jump), chainable | `-J` from session path / ProxyCommand | 8 |
 | Port forwarding | local (named, "launch app"), remote, dynamic SOCKS | `-L/-R/-D` | 8 |

@@ -15,11 +15,11 @@
 - [x] 8. ~~8a — jump host / port forwarding в UI, auto-reconnect~~; ~~8b — Telnet и Serial~~
 - [x] 9. ~~9a — Logon Actions (expect/send)~~; ~~9b — keyword highlighting, color schemes~~; ~~9c — импорт из SecureCRT `.ini` (сессии, кнопки)~~
 - [x] 10. ~~Скрипты на Python~~: ~~10a — модуль `crt`, меню Script, `--script`~~; ~~10b — запуск с кнопки / из сессии, импорт кнопок Run Script~~
+- [x] 11. ~~Создание ключей (`ssh-keygen`) и загрузка на сервер (`ssh-copy-id`)~~
 
 ## Бэклог
 
 - Flatpak
-- Генерация ключей в UI (обёртка над `ssh-keygen`), загрузка ключа на сервер (`ssh-copy-id`)
 - Редактирование удалённого файла локально (SecureFX «Edit»)
 - Синхронизация папок в SFTP
 - X/Y/Zmodem (`rz`/`sz`)
