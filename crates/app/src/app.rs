@@ -1136,6 +1136,7 @@ impl App {
             (true, None) => {
                 let (window, open) = cosmic::iced::window::open(self.scripts.settings());
                 self.scripts.win = Some(window);
+                self.scripts.win_size = self.scripts.size();
                 let id = self.scripts.input_id.clone();
                 Task::batch([
                     open.then(move |_| widget::text_input::focus(id.clone())),
@@ -1145,6 +1146,10 @@ impl App {
             (false, Some(w)) => {
                 self.scripts.win = None;
                 cosmic::iced::window::close(w)
+            }
+            (true, Some(w)) if self.scripts.win_size != self.scripts.size() => {
+                self.scripts.win_size = self.scripts.size();
+                cosmic::iced::window::resize(w, self.scripts.win_size)
             }
             _ => Task::none(),
         }

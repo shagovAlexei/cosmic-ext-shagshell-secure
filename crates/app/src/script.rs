@@ -131,17 +131,11 @@ impl Ask {
         match self.call.call.as_str() {
             "Dialog.Prompt" => json!(self.value),
             "Dialog.List" => {
-                let items = self.items();
-                let pick = |i: &usize| items.get(*i).map(|s| json!(s));
-                match (self.multi(), self.picked.is_empty()) {
-                    (_, true) => Value::Null,
-                    (true, false) => json!(self.picked.iter().filter_map(pick).collect::<Vec<_>>()),
-                    (false, false) => self
-                        .picked
-                        .iter()
-                        .next()
-                        .and_then(pick)
-                        .unwrap_or(Value::Null),
+                let rows = script::list_picked(&self.items(), &self.picked, &self.filter);
+                match (self.multi(), rows) {
+                    (_, None) => Value::Null,
+                    (true, Some(r)) => json!(r),
+                    (false, Some(r)) => json!(r[0]),
                 }
             }
             _ => json!(self.flags().enter()),
@@ -165,6 +159,8 @@ pub struct Scripts {
     pub input_id: widget::Id,
     /// The window of the dialog that is up.
     pub win: Option<cosmic::iced::window::Id>,
+    /// The size the window was last given (a different kind of dialog resizes it).
+    pub win_size: cosmic::iced::Size,
     dir: PathBuf,
     tx: tokio::sync::mpsc::UnboundedSender<ScMsg>,
     rx: Arc<Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<ScMsg>>>>,
@@ -196,6 +192,7 @@ impl Scripts {
             asks: VecDeque::new(),
             input_id: widget::Id::unique(),
             win: None,
+            win_size: cosmic::iced::Size::ZERO,
             dir,
             tx,
             rx: Arc::new(Mutex::new(Some(rx))),
@@ -206,14 +203,19 @@ impl Scripts {
         !self.asks.is_empty()
     }
 
-    /// The window of the oldest ask (a list is taller).
-    pub fn settings(&self) -> cosmic::iced::window::Settings {
+    /// The window size the oldest ask needs (a list is taller).
+    pub fn size(&self) -> cosmic::iced::Size {
         let list = self
             .asks
             .front()
             .is_some_and(|a| a.call.call == "Dialog.List");
+        cosmic::iced::Size::new(460.0, if list { 420.0 } else { 220.0 })
+    }
+
+    /// The window of the oldest ask.
+    pub fn settings(&self) -> cosmic::iced::window::Settings {
         cosmic::iced::window::Settings {
-            size: cosmic::iced::Size::new(460.0, if list { 420.0 } else { 220.0 }),
+            size: self.size(),
             min_size: Some(cosmic::iced::Size::new(360.0, 160.0)),
             decorations: false,
             exit_on_close_request: false,
@@ -312,8 +314,13 @@ impl Scripts {
                             _ => String::new(),
                         };
                         let mut picked = std::collections::BTreeSet::new();
+                        // The row to start on (0-based); one that does not exist is none.
                         if c.call == "Dialog.List"
                             && let Some(d) = c.args.get(3).and_then(Value::as_u64)
+                            && c.args
+                                .get(2)
+                                .and_then(Value::as_array)
+                                .is_some_and(|l| (d as usize) < l.len())
                         {
                             picked.insert(d as usize);
                         }
@@ -394,6 +401,15 @@ impl Scripts {
                 }
             }
             ScMsg::Ok | ScMsg::Cancel | ScMsg::Button(_) => {
+                // OK on a List with nothing to give leaves the dialog up.
+                if matches!(msg, ScMsg::Ok)
+                    && self
+                        .asks
+                        .front()
+                        .is_some_and(|a| a.call.call == "Dialog.List" && a.accept().is_null())
+                {
+                    return out;
+                }
                 if let Some(a) = self.asks.pop_front() {
                     let reply = match &msg {
                         ScMsg::Ok => a.accept(),
@@ -548,7 +564,7 @@ impl Scripts {
                 if !label.is_empty() {
                     d = d.accept_label(label);
                 }
-                for f in filters.iter().filter(|f| !f.1.is_empty()) {
+                for f in &filters {
                     d = d.filter(filter(f));
                 }
                 d.save_file().await.ok()?.url()?.clone()
@@ -558,7 +574,7 @@ impl Scripts {
                 if !label.is_empty() {
                     d = d.accept_label(label);
                 }
-                for f in filters.iter().filter(|f| !f.1.is_empty()) {
+                for f in &filters {
                     d = d.filter(filter(f));
                 }
                 d.open_file().await.ok()?.url().clone()

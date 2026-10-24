@@ -263,6 +263,22 @@ pub fn file_filters(spec: &str) -> Vec<(String, Vec<String>)> {
         .collect()
 }
 
+/// What a List dialog gives for OK: the picked rows that the filter still shows, in order.
+/// `None`: nothing to give (the dialog stays).
+pub fn list_picked(
+    items: &[String],
+    picked: &std::collections::BTreeSet<usize>,
+    filter: &str,
+) -> Option<Vec<String>> {
+    let shown = list_matches(items, filter);
+    let rows: Vec<String> = picked
+        .iter()
+        .filter(|i| shown.contains(i))
+        .filter_map(|&i| items.get(i).cloned())
+        .collect();
+    (!rows.is_empty()).then_some(rows)
+}
+
 /// The items of a List dialog that contain `filter` (any case), as indexes into `items`.
 pub fn list_matches(items: &[String], filter: &str) -> Vec<usize> {
     let f = filter.to_lowercase();
@@ -462,7 +478,7 @@ mod tests {
         );
         let f = Flags::parse(2 | 512); // ABORTRETRYIGNORE, DEFBUTTON3
         assert_eq!((f.enter(), f.escape()), (ID_IGNORE, ID_IGNORE));
-        let f = Flags::parse(0 | 512); // OK only: the default is beyond the buttons
+        let f = Flags::parse(512); // OK only: the default is beyond the buttons
         assert_eq!(
             (f.ids(), f.enter(), f.escape()),
             (vec![ID_OK], ID_OK, ID_OK)
@@ -484,6 +500,23 @@ mod tests {
         );
         assert!(file_filters("").is_empty());
         assert!(file_filters("broken").is_empty());
+    }
+
+    #[test]
+    fn list_gives_only_what_the_filter_shows() {
+        let items: Vec<String> = ["web-01", "db-01", "web-02"].map(String::from).to_vec();
+        let picked: std::collections::BTreeSet<usize> = [0, 1].into();
+        assert_eq!(
+            list_picked(&items, &picked, ""),
+            Some(vec!["web-01".into(), "db-01".into()])
+        );
+        assert_eq!(
+            list_picked(&items, &picked, "db"),
+            Some(vec!["db-01".into()])
+        );
+        assert_eq!(list_picked(&items, &picked, "web-02"), None); // picked rows hidden: nothing
+        assert_eq!(list_picked(&items, &Default::default(), ""), None);
+        assert_eq!(list_picked(&items, &[9].into(), ""), None); // a row that does not exist
     }
 
     #[test]
