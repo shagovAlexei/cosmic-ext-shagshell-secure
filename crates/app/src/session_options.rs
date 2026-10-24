@@ -47,6 +47,7 @@ pub enum Field {
     Extra,
     LogFile,
     Script,
+    Label,
     Jump,
     ReconnectDelay,
     ReconnectTries,
@@ -243,6 +244,7 @@ impl SessionOptions {
                 Field::Extra => f.extra = v,
                 Field::LogFile => f.log_file = v,
                 Field::Script => f.script = v,
+                Field::Label => f.label = v,
                 Field::Jump => f.jump = v,
                 Field::Device => f.device = v,
                 Field::Baud => f.baud = v,
@@ -427,13 +429,17 @@ impl SessionOptions {
                 let at = schemes.iter().position(|(k, _)| *k == f.color_scheme);
                 let mut names = vec![fl!("so-scheme-global")];
                 names.extend(schemes.iter().map(|(_, n)| (*n).to_string()));
-                vec![labelled(
-                    fl!("so-scheme"),
-                    widget::dropdown(names, Some(at.map_or(0, |i| i + 1)), move |i| {
-                        m(SoMsg::Scheme(i))
-                    })
-                    .into(),
-                )]
+                vec![
+                    field(fl!("so-label"), Field::Label, &f.label, false),
+                    widget::text::caption(fl!("so-label-hint")).into(),
+                    labelled(
+                        fl!("so-scheme"),
+                        widget::dropdown(names, Some(at.map_or(0, |i| i + 1)), move |i| {
+                            m(SoMsg::Scheme(i))
+                        })
+                        .into(),
+                    ),
+                ]
             }
             Some(Category::Log) => vec![
                 field(fl!("so-log-file"), Field::LogFile, &f.log_file, false),

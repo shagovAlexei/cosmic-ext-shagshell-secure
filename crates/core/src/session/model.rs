@@ -150,6 +150,9 @@ pub struct Session {
     pub button_bar: Option<String>,
     #[serde(skip_serializing_if = "Serial::is_default")]
     pub serial: Serial,
+    /// The tab's text instead of the program's long title; empty: the program's, else the session name.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub label: String,
     /// Terminal colour scheme (a key of the built-in ones); empty: the global one.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub color_scheme: String,
