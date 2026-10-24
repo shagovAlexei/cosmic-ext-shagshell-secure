@@ -238,7 +238,7 @@ impl Application for App {
     fn update(&mut self, message: Message) -> Task<Message> {
         let mut task = self.handle(message);
         // The tab being recorded was closed: what was recorded is still offered.
-        if let Some((title, rec)) = self.tabs.take_closed_recording() {
+        for (title, rec) in self.tabs.take_closed_recordings() {
             task = Task::batch([task, self.save_recording(&title, rec)]);
         }
         // A log that could not start, or stopped by itself (disk full): said in the status bar.

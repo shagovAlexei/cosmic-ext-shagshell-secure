@@ -314,7 +314,7 @@ pub enum TabsMsg {
 #[derive(Default)]
 pub struct Tabs {
     /// A recording whose tab was closed: to be saved.
-    closed_recording: Option<(String, shagshell_core::recorder::Recorder)>,
+    closed_recordings: Vec<(String, shagshell_core::recorder::Recorder)>,
     grid: Option<pane_grid::State<Group>>,
     focus: Option<pane_grid::Pane>,
     tabs: HashMap<TabId, Tab>,
@@ -397,7 +397,7 @@ impl Tabs {
                         if let Some(t) = self.terminal(*id) {
                             t.lock()
                                 .unwrap_or_else(|e| e.into_inner())
-                                .input_scroll(b.clone());
+                                .send_scroll(b.clone());
                         }
                     }
                 }
@@ -771,18 +771,13 @@ impl Tabs {
             let row = s.rows.get(s.row).map(String::as_str).unwrap_or_default();
             row.chars().take(s.col).collect::<String>()
         });
-        tap.start_recording();
-        if let Some(line) = line {
-            tap.record_output(line.as_bytes());
-        }
+        tap.start_recording(&line.unwrap_or_default());
         None
     }
 
-    /// The recording of a tab that was closed meanwhile, once.
-    pub fn take_closed_recording(
-        &mut self,
-    ) -> Option<(String, shagshell_core::recorder::Recorder)> {
-        self.closed_recording.take()
+    /// The recordings of tabs that were closed meanwhile, once.
+    pub fn take_closed_recordings(&mut self) -> Vec<(String, shagshell_core::recorder::Recorder)> {
+        std::mem::take(&mut self.closed_recordings)
     }
 
     /// The active tab is being logged.
@@ -1017,7 +1012,7 @@ impl Tabs {
                     .get(&id)
                     .map(|t| t.launch.title.clone())
                     .unwrap_or_default();
-                self.closed_recording = Some((title, r));
+                self.closed_recordings.push((title, r));
             }
             self.tabs.remove(&id); // its Drop ends the program
             self.taps

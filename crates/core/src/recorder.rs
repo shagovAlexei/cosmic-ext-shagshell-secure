@@ -4,7 +4,6 @@
 //! (the step). Passwords are never kept: a step typed after a password prompt becomes a
 //! `crt.Dialog.Prompt`.
 
-use crate::askpass::{Kind, classify};
 use crate::logfile::Cleaner;
 
 /// A prompt longer than this is waited for by its last `TAIL` characters.
@@ -19,6 +18,8 @@ struct Step {
     text: String,
     /// Typed after a password / passphrase prompt: not kept.
     secret: bool,
+    /// The step ended with Enter (or Ctrl+C / Ctrl+D, which are in `text`).
+    enter: bool,
 }
 
 #[derive(Default)]
@@ -43,7 +44,11 @@ impl Recorder {
 
     /// What the user typed or pasted.
     pub fn input(&mut self, bytes: &[u8]) {
-        for c in String::from_utf8_lossy(bytes).chars() {
+        // Paste markers are the terminal's, not part of the line.
+        let text = String::from_utf8_lossy(bytes)
+            .replace("\x1b[200~", "")
+            .replace("\x1b[201~", "");
+        for c in text.chars() {
             if self.prompt.is_none() {
                 self.prompt = Some(self.clean.partial().trim().to_string());
             }
@@ -63,8 +68,9 @@ impl Recorder {
         let mut text = std::mem::take(&mut self.typing);
         text.extend(last);
         let prompt = self.prompt.take().unwrap_or_default();
-        let secret = matches!(classify(&prompt), Kind::Password | Kind::Passphrase);
+        let secret = looks_secret(&prompt);
         self.steps.push(Step {
+            enter: last.is_some(),
             prompt,
             text: if secret { String::new() } else { text },
             secret,
@@ -90,8 +96,9 @@ impl Recorder {
                 out.push_str(&format!("crt.Screen.WaitForString({})\n", literal(&wait)));
             }
             if s.secret {
+                let enter = if s.enter { " + \"\\r\"" } else { "" };
                 out.push_str(&format!(
-                    "crt.Screen.Send(crt.Dialog.Prompt({}, \"Password\", \"\", True) + \"\\r\")\n",
+                    "crt.Screen.Send(crt.Dialog.Prompt({}, \"Password\", \"\", True){enter})\n",
                     literal(&s.prompt)
                 ));
             } else {
@@ -100,6 +107,21 @@ impl Recorder {
         }
         out
     }
+}
+
+/// A prompt that asks for a secret, by its words (the echo of the line is not known here).
+fn looks_secret(prompt: &str) -> bool {
+    let p = prompt.to_lowercase();
+    [
+        "password",
+        "passphrase",
+        "passcode",
+        "pin:",
+        "secret",
+        "парол",
+    ]
+    .iter()
+    .any(|w| p.contains(w))
 }
 
 /// What to wait for: the prompt, or its end when it is long.
@@ -172,6 +194,36 @@ mod tests {
         assert!(
             s.contains("crt.Dialog.Prompt(\"user@host's password:\", \"Password\", \"\", True)")
         );
+    }
+
+    #[test]
+    fn other_secret_prompts_and_unfinished_secret_steps() {
+        for p in [
+            "Password for admin@db: ",
+            "Enter PIN:",
+            "Password (again):",
+            "Пароль:",
+        ] {
+            let mut r = Recorder::new();
+            r.output(p.as_bytes());
+            r.input(b"s3cret\r");
+            assert!(!body(r).contains("s3cret"), "{p}");
+        }
+        let mut r = Recorder::new();
+        r.output(b"Password: ");
+        r.input(b"abc"); // never ended by Enter
+        assert!(
+            !body(r).contains("\\r\")"),
+            "no Enter the user did not press"
+        );
+    }
+
+    #[test]
+    fn paste_markers_are_dropped() {
+        let mut r = Recorder::new();
+        r.output(b"$ ");
+        r.input(b"\x1b[200~ls -l\x1b[201~\r");
+        assert!(body(r).contains("Send(\"ls -l\\r\")"));
     }
 
     #[test]

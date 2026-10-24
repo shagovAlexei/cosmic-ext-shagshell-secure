@@ -97,9 +97,11 @@ impl Tap {
         *self.pty.lock().unwrap_or_else(|e| e.into_inner()) = Some(sender);
     }
 
-    pub fn start_recording(&self) {
-        *self.rec.lock().unwrap_or_else(|e| e.into_inner()) =
-            Some(shagshell_core::recorder::Recorder::new());
+    /// `prompt`: what is on the screen's cursor line now (the first step's prompt).
+    pub fn start_recording(&self, prompt: &str) {
+        let mut r = shagshell_core::recorder::Recorder::new();
+        r.output(prompt.as_bytes());
+        *self.rec.lock().unwrap_or_else(|e| e.into_inner()) = Some(r);
         self.rec_on.store(true, Ordering::SeqCst);
     }
 
@@ -111,13 +113,6 @@ impl Tap {
 
     pub fn recording(&self) -> bool {
         self.rec_on.load(Ordering::SeqCst)
-    }
-
-    /// Text the program showed before the recording began (the prompt on the screen).
-    pub fn record_output(&self, bytes: &[u8]) {
-        if let Some(r) = self.rec.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
-            r.output(bytes);
-        }
     }
 
     /// What the user typed (not what a script or the Command Window sent).
