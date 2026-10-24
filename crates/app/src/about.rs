@@ -23,6 +23,23 @@ pub fn about() -> About {
 }
 
 pub fn view(about: &About) -> ContextDrawer<'_, Message> {
-    let content = widget::about(about, |url| Message::OpenUrl(url.to_string()));
+    use crate::menu::Action;
+    let mut buttons = widget::row::with_capacity(2).spacing(8).push(
+        widget::button::standard(fl!("menu-check-updates"))
+            .on_press(Message::Action(Action::CheckUpdates)),
+    );
+    let mut col = widget::column::with_capacity(4)
+        .spacing(16)
+        .align_x(cosmic::iced::Alignment::Center)
+        .push(widget::about(about, |url| {
+            Message::OpenUrl(url.to_string())
+        }));
+    if crate::updates::DONATE_URL.is_some() {
+        buttons = buttons.push(
+            widget::button::suggested(fl!("up-donate")).on_press(Message::Action(Action::Donate)),
+        );
+        col = col.push(widget::text::body(fl!("up-support")));
+    }
+    let content = col.push(buttons);
     context_drawer::context_drawer(content, Message::CloseDrawer).title(fl!("menu-about"))
 }
