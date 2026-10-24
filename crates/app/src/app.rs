@@ -171,7 +171,9 @@ impl Application for App {
             .unwrap_or_else(|_| shagshell_core::launch::control_dir());
         let store =
             shagshell_core::session::Store::new(shagshell_core::session::store::default_root());
-        let sessions = SessionManager::new(store, &config.expanded, config.session_manager_width);
+        let mut sessions =
+            SessionManager::new(store, &config.expanded, config.session_manager_width);
+        sessions.right = config.session_manager_side == crate::config::Side::Right;
         let asks = crate::askpass::Asks::new(askpass_sock(&control_dir));
         let hl_path = shagshell_core::highlight::default_path();
         let (hl, hl_error) = match shagshell_core::highlight::Rules::load(&hl_path) {
