@@ -9,6 +9,7 @@ use cosmic::iced::{Subscription, futures::SinkExt};
 use cosmic::widget;
 use serde_json::{Value, json};
 use shagshell_core::script::{self, Host};
+use shagshell_core::sftp::queue::Dir;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::hash::{Hash, Hasher};
 use std::io::Read;
@@ -705,22 +706,41 @@ impl Scripts {
                 .into()
             }
         };
+        // Icons with a hint: the console is often a narrow tab at the side.
+        let tool = |icon: &'static str, tip: String, msg: Option<ScMsg>| -> Element<'_, Message> {
+            widget::tooltip(
+                widget::button::icon(widget::icon::from_name(icon)).on_press_maybe(msg.map(m)),
+                widget::text::caption(tip),
+                widget::tooltip::Position::Bottom,
+            )
+            .into()
+        };
         let tools = widget::row::with_capacity(5)
             .spacing(8)
             .align_y(cosmic::iced::Alignment::Center)
             .padding([8, 12])
-            .push(
-                widget::button::destructive(fl!("console-stop"))
-                    .on_press_maybe((!self.runs.is_empty()).then(|| m(ScMsg::ConsoleStop))),
-            )
-            .push(widget::button::standard(fl!("console-clear")).on_press(m(ScMsg::ConsoleClear)))
-            .push(widget::button::standard(fl!("console-copy")).on_press(m(ScMsg::ConsoleCopy)))
+            .push(tool(
+                "media-playback-stop-symbolic",
+                fl!("console-stop"),
+                (!self.runs.is_empty()).then_some(ScMsg::ConsoleStop),
+            ))
+            .push(tool(
+                "edit-delete-symbolic",
+                fl!("console-clear"),
+                Some(ScMsg::ConsoleClear),
+            ))
+            .push(tool(
+                "edit-copy-symbolic",
+                fl!("console-copy"),
+                Some(ScMsg::ConsoleCopy),
+            ))
             .push(widget::Space::new().width(Length::Fill))
-            .push(widget::text::body(fl!("console-debug")))
-            .push(
+            .push(widget::tooltip(
                 widget::toggler(self.debug.load(Ordering::SeqCst))
                     .on_toggle(move |on| m(ScMsg::ConsoleDebug(on))),
-            );
+                widget::text::caption(fl!("console-debug")),
+                widget::tooltip::Position::Bottom,
+            ));
         let content = widget::column::with_children(vec![tools.into(), body]);
         widget::container(content)
             .width(Length::Fill)
@@ -823,6 +843,16 @@ fn answer(c: &Call, tabs: &mut Tabs) -> Option<Answer> {
             .active_terminal()
             .map(|id| json!(id))
             .ok_or_else(|| "no terminal tab is active".into()),
+        "FileTransfer.Connect" => known(c.tab).and_then(|id| {
+            tabs.sftp_launch(id)
+                .map(|l| json!({"program": l.program, "args": l.args, "env": l.env}))
+                .ok_or_else(|| "FileTransfer: this tab is not an SSH session".to_string())
+        }),
+        "Session.Lock" | "Session.Unlock" => known(c.tab).and_then(|id| {
+            tabs.set_lock(id, c.call == "Session.Lock", c.run)
+                .map(|()| Value::Null)
+        }),
+        "Session.Locked" => known(c.tab).map(|id| json!(tabs.locked(id))),
         "Session.Connected" => known(c.tab).map(|id| json!(tabs.alive(id))),
         "Session.Path" => known(c.tab).map(|id| json!(tabs.session_of(id).unwrap_or_default())),
         "Session.Disconnect" => known(c.tab).map(|id| {
@@ -1058,6 +1088,109 @@ impl Host for RunHost {
     }
 
     fn ui(&self, call: &str, tab: u64, args: &[Value]) -> Answer {
+        match call {
+            "FileTransfer.Upload" => self.transfer(Dir::Up, tab, args),
+            "FileTransfer.Download" => self.transfer(Dir::Down, tab, args),
+            _ => self.ask(call, tab, args),
+        }
+    }
+}
+
+impl RunHost {
+    /// `crt.FileTransfer`: this thread is the script's, so it may wait for the whole copy. The
+    /// tab's ssh is asked of the window, then run here as an SFTP session of its own (the open
+    /// connection is reused through ControlPath).
+    fn transfer(&self, dir: Dir, tab: u64, args: &[Value]) -> Answer {
+        use std::process::{Command, Stdio};
+        let arg = |i: usize| args.get(i).and_then(Value::as_str).unwrap_or("");
+        if arg(0).is_empty() {
+            return Err("FileTransfer: a file name is needed".into());
+        }
+        let conn = self.ask("FileTransfer.Connect", tab, &[])?;
+        let list = |k: &str| -> Vec<String> {
+            (conn[k].as_array().into_iter().flatten())
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        };
+        let env: Vec<(String, String)> = (conn["env"].as_array().into_iter().flatten())
+            .filter_map(|p| Some((p[0].as_str()?.to_string(), p[1].as_str()?.to_string())))
+            .collect();
+        let program = conn["program"].as_str().unwrap_or("ssh");
+        let mut child = Command::new(program)
+            .args(list("args"))
+            .envs(env)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("{program}: {e}"))?;
+        // A cancelled run must not wait for a stuck ssh (an askpass prompt, a dead network).
+        let pid = child.id();
+        let done = Arc::new(AtomicBool::new(false));
+        {
+            let (done, cancel) = (done.clone(), self.cancel.clone());
+            std::thread::spawn(move || {
+                while !done.load(Ordering::SeqCst) {
+                    if cancel.load(Ordering::SeqCst) {
+                        let _ = Command::new("kill").arg(pid.to_string()).status();
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+            });
+        }
+        let (Some(w), Some(r)) = (child.stdin.take(), child.stdout.take()) else {
+            return Err("FileTransfer: no pipes to ssh".into());
+        };
+        let result = (|| -> std::io::Result<()> {
+            let mut c = shagshell_core::sftp::proto::Client::new(r, w)?;
+            let (home, given) = match dir {
+                Dir::Up => (c.realpath(std::path::Path::new("."))?, arg(1).to_string()),
+                Dir::Down => {
+                    let home = std::env::home_dir().unwrap_or_default();
+                    // `~/x` is the user's home; anything else counts from Downloads.
+                    match arg(1).strip_prefix("~/") {
+                        Some(rest) => (home, rest.to_string()),
+                        None => (home.join("Downloads"), arg(1).to_string()),
+                    }
+                }
+            };
+            let src = match dir {
+                Dir::Up => arg(0).strip_prefix("~/").map_or_else(
+                    || arg(0).to_string(),
+                    |r| {
+                        let h = std::env::home_dir().unwrap_or_default();
+                        h.join(r).to_string_lossy().into_owned()
+                    },
+                ),
+                Dir::Down => arg(0).to_string(),
+            };
+            shagshell_core::sftp::ops::script_copy(&mut c, dir, &src, &given, &home, || {
+                !self.cancel.load(Ordering::SeqCst)
+            })
+        })();
+        done.store(true, Ordering::SeqCst);
+        let _ = child.kill();
+        let _ = child.wait();
+        match result {
+            Ok(()) => Ok(json!(true)),
+            Err(e) => {
+                // ssh's own words (host key, permission denied…), now that it is gone.
+                let mut said = String::new();
+                if let Some(mut err) = child.stderr.take() {
+                    let _ = err.read_to_string(&mut said);
+                }
+                let said = said.trim();
+                let tail = said.get(said.len().saturating_sub(300)..).unwrap_or(said);
+                Err(match tail.is_empty() {
+                    true => format!("FileTransfer: {e}"),
+                    false => format!("FileTransfer: {e} ({tail})"),
+                })
+            }
+        }
+    }
+
+    fn ask(&self, call: &str, tab: u64, args: &[Value]) -> Answer {
         let (tx, rx) = mpsc::channel();
         let c = Call {
             run: self.run,

@@ -1,5 +1,7 @@
 app-title = ShagShell Secure
-about-comments = SecureCRT-style SSH/SFTP session manager for COSMIC
+about-comments = SSH / SFTP / Telnet / serial session manager for COSMIC, built to work like SecureCRT: a session tree, tabs, an SFTP tab, a Button Bar, Python scripts and logon actions. SSH itself is done by the system OpenSSH.
+about-version = Version
+about-author = Author:
 about-source = Source code
 about-issues = Report an issue
 
@@ -140,8 +142,9 @@ so-scheme-global = (the one of Global Options)
 options-terminal = Terminal
 options-font = Font (empty = system monospace)
 options-font-size = Font size
-options-tab-height = Tab header height, px (empty = default)
-options-button-height = Button Bar button height, px (empty = default)
+options-tab-height = Tab header height
+options-button-height = Button Bar button height
+options-height-default = Default (theme)
 options-copy-on-select = Copy on select
 options-paste-on-middle = Paste with the middle mouse button
 term-disconnected = Disconnected — press Enter to reconnect

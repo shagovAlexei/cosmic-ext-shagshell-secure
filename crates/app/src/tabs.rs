@@ -217,9 +217,13 @@ impl Tab {
             (_, true) => &self.base,
             (_, false) => &self.program_title,
         };
+        let locked = self
+            .terminal()
+            .is_some_and(|t| t.lock().unwrap_or_else(|e| e.into_inner()).locked());
         let mark = match (&self.body, self.live()) {
+            (Body::Terminal(_), true) if locked => "🔒",
             (Body::Note(_), _) => "✎",
-            (Body::Console, _) => "▤",
+            (Body::Console, _) => "»",
             (_, true) => "✓",
             (_, false) => "✗",
         };
@@ -365,6 +369,8 @@ pub struct Tabs {
     notice: Mutex<Option<String>>,
     /// A live tab asked to close: waits for the dialog.
     confirm: Option<(pane_grid::Pane, Entity)>,
+    /// `crt.Session.Lock`: tab → the script run that locked it.
+    locks: HashMap<TabId, u64>,
     /// The tab pressed last: a drag that starts is about it (the drag carries no tab).
     pressed: Option<(pane_grid::Pane, Entity)>,
     /// The tab right-clicked last: `TabCmd`s are about it.
@@ -1313,6 +1319,52 @@ impl Tabs {
 
     pub fn disconnect_tab(&mut self, id: TabId) {
         self.disconnect(id);
+    }
+
+    /// `crt.Session.Lock / Unlock` from run `run` (a locked tab drops what the user types).
+    pub fn set_lock(&mut self, id: TabId, on: bool, run: u64) -> Result<(), String> {
+        let Some(t) = self.terminal(id) else {
+            self.locks.remove(&id);
+            return Err("no such terminal tab".into());
+        };
+        // Held by another run: that one's to release.
+        match self.locks.get(&id) {
+            Some(owner) if *owner != run => {
+                return Err("the tab is locked by another script".into());
+            }
+            _ => {}
+        }
+        t.lock().unwrap_or_else(|e| e.into_inner()).set_locked(on);
+        match on {
+            true => self.locks.insert(id, run),
+            false => self.locks.remove(&id),
+        };
+        self.retitle(id);
+        Ok(())
+    }
+
+    pub fn locked(&self, id: TabId) -> bool {
+        self.terminal(id)
+            .is_some_and(|t| t.lock().unwrap_or_else(|e| e.into_inner()).locked())
+    }
+
+    /// A run ended: the tabs it locked are free.
+    pub fn unlock_run(&mut self, run: u64) {
+        let ids: Vec<TabId> = (self.locks.iter())
+            .filter(|(_, r)| **r == run)
+            .map(|(id, _)| *id)
+            .collect();
+        for id in ids {
+            let _ = self.set_lock(id, false, run);
+        }
+    }
+
+    /// What `crt.FileTransfer` runs for this tab: its ssh as an SFTP subsystem; `None` for a tab
+    /// that is not an ssh one.
+    pub fn sftp_launch(&self, id: TabId) -> Option<Launch> {
+        let mut l = self.tabs.get(&id)?.launch.sftp()?;
+        l.env.push(("SHAGSHELL_TAB".into(), id.to_string()));
+        Some(l)
     }
 
     fn retitle(&mut self, id: TabId) {

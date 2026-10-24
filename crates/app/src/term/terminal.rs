@@ -170,6 +170,8 @@ impl Metadata {
 }
 
 pub struct Terminal {
+    /// `crt.Session.Lock`: what the user types or pastes is dropped (a script's input is not).
+    locked: bool,
     pub metadata_set: IndexSet<Metadata>,
     pub needs_update: bool,
     pub term: Arc<FairMutex<Term<EventProxy>>>,
@@ -325,6 +327,7 @@ impl Terminal {
             term,
             use_bright_bold,
             zoom_adj: Default::default(),
+            locked: false,
             is_focused: true,
         })
     }
@@ -436,8 +439,19 @@ impl Terminal {
         self.notifier.notify(input);
     }
 
+    pub fn set_locked(&mut self, on: bool) {
+        self.locked = on;
+    }
+
+    pub fn locked(&self) -> bool {
+        self.locked
+    }
+
     /// What the user typed: to the program, and to a script being recorded.
     pub fn input_scroll<I: Into<Cow<'static, [u8]>>>(&self, input: I) {
+        if self.locked {
+            return;
+        }
         let input = input.into();
         self.log.record_input(&input);
         self.send_scroll(input);
@@ -445,11 +459,18 @@ impl Terminal {
 
     /// Bytes that are not the user's keys (the Command Window, the Button Bar): not recorded.
     pub fn send_scroll<I: Into<Cow<'static, [u8]>>>(&self, input: I) {
+        // The user's, the Command Window's: not the terminal's own replies (`input_no_scroll`).
+        if self.locked {
+            return;
+        }
         self.input_no_scroll(input);
         self.scroll(TerminalScroll::Bottom);
     }
 
     pub fn paste(&self, value: String) {
+        if self.locked {
+            return;
+        }
         // This code is ported from alacritty
         let bracketed_paste = {
             let term = self.term.lock();

@@ -412,6 +412,79 @@ fn preserve_times<R: Read, W: Write>(
     }
 }
 
+/// Where `crt.FileTransfer` puts a file called `name`: `given` empty → `home/name`; ending in `/`
+/// or naming a folder → inside it; else that is the new name. A relative `given` is counted from
+/// `home`.
+pub fn script_target(home: &Path, given: &str, name: &OsStr, given_is_dir: bool) -> PathBuf {
+    if given.is_empty() {
+        return home.join(name);
+    }
+    let full = home.join(given);
+    if given.ends_with('/') || given_is_dir {
+        full.join(name)
+    } else {
+        full
+    }
+}
+
+/// `crt.FileTransfer`: the file or folder `src` (on this side for `Up`, the server for `Down`) to
+/// `given` on the other, `home` being where an empty or relative `given` starts. Files already
+/// there are replaced. `go()` false cancels (`Interrupted`).
+pub fn script_copy<R: Read, W: Write>(
+    c: &mut Client<R, W>,
+    dir: Dir,
+    src: &str,
+    given: &str,
+    home: &Path,
+    mut go: impl FnMut() -> bool,
+) -> io::Result<()> {
+    let src_path = Path::new(src);
+    let name = src_path
+        .file_name()
+        .ok_or_else(|| io::Error::new(ErrorKind::InvalidInput, format!("no file name: {src}")))?;
+    let (src_is_dir, given_is_dir) = match dir {
+        Dir::Up => {
+            if src_path.symlink_metadata().is_err() {
+                return Err(io::Error::new(ErrorKind::NotFound, src.to_string()));
+            }
+            (
+                src_path.is_dir(),
+                c.stat(&home.join(given)).is_ok_and(|a| a.is_dir()),
+            )
+        }
+        Dir::Down => (c.stat(src_path)?.is_dir(), home.join(given).is_dir()),
+    };
+    let mut files = Vec::new();
+    if src_is_dir {
+        let dst_dir = home.join(given);
+        files = plan(c, dir, &[src_path.to_path_buf()], &dst_dir)?.files;
+    } else {
+        let dst = script_target(home, given, name, given_is_dir);
+        if let Some(parent) = dst.parent().filter(|p| !p.as_os_str().is_empty()) {
+            match dir {
+                Dir::Up => ensure_remote_dir(c, parent)?,
+                Dir::Down => std::fs::create_dir_all(parent)?,
+            }
+        }
+        files.push((src_path.to_path_buf(), dst, 0));
+    }
+    for (n, (from, to, size)) in files.into_iter().enumerate() {
+        let job = Job {
+            id: n as u64 + 1,
+            batch: 1,
+            dir,
+            src: from,
+            dst: to,
+            size,
+            done: 0,
+            state: crate::sftp::queue::State::Running,
+            is_move: false,
+        };
+        transfer(c, &job, Some(Choice::Overwrite), |_| go())?;
+    }
+    Ok(())
+}
+
 /// The server's tree under `root` as `sync::Node`s, with the folders that could not be read.
 /// A name that is not one plain file name (a `/` in it) is not trusted and left out: it would
 /// lead out of the synchronised folder.
@@ -798,5 +871,60 @@ mod tests {
             transfer(&mut c, &j, Some(Choice::Skip), |_| true).unwrap(),
             Copied::Skipped
         );
+    }
+
+    #[test]
+    fn script_target_reads_the_given_path() {
+        let home = Path::new("/home/u");
+        let t = |g, d| script_target(home, g, OsStr::new("a.txt"), d);
+        assert_eq!(t("", false), Path::new("/home/u/a.txt"));
+        assert_eq!(t("up/", false), Path::new("/home/u/up/a.txt"));
+        assert_eq!(t("up", true), Path::new("/home/u/up/a.txt"));
+        assert_eq!(t("up/b.txt", false), Path::new("/home/u/up/b.txt"));
+        assert_eq!(t("/srv/b.txt", false), Path::new("/srv/b.txt"));
+    }
+
+    #[test]
+    fn script_copy_goes_both_ways_and_replaces() {
+        let Some((mut child, mut c)) = server() else {
+            return;
+        };
+        let tmp = tempfile::tempdir().unwrap();
+        let (local, remote) = (tmp.path().join("l"), tmp.path().join("r"));
+        std::fs::create_dir_all(local.join("tree/sub")).unwrap();
+        std::fs::create_dir_all(&remote).unwrap();
+        std::fs::write(local.join("a.txt"), "one").unwrap();
+        std::fs::write(local.join("tree/sub/x"), "deep").unwrap();
+        let a = local.join("a.txt");
+        let go = || true;
+        // A new name, then replaced by a second copy.
+        script_copy(&mut c, Dir::Up, a.to_str().unwrap(), "b.txt", &remote, go).unwrap();
+        std::fs::write(&a, "two").unwrap();
+        script_copy(&mut c, Dir::Up, a.to_str().unwrap(), "b.txt", &remote, go).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(remote.join("b.txt")).unwrap(),
+            "two"
+        );
+        // A folder, whole, into a folder that is not there yet.
+        let tree = local.join("tree");
+        script_copy(&mut c, Dir::Up, tree.to_str().unwrap(), "in", &remote, go).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(remote.join("in/tree/sub/x")).unwrap(),
+            "deep"
+        );
+        // Down, into a folder, and a missing source is an error.
+        let dl = tmp.path().join("dl");
+        script_copy(
+            &mut c,
+            Dir::Down,
+            remote.join("b.txt").to_str().unwrap(),
+            "",
+            &dl,
+            go,
+        )
+        .unwrap();
+        assert_eq!(std::fs::read_to_string(dl.join("b.txt")).unwrap(), "two");
+        assert!(script_copy(&mut c, Dir::Up, "/no/such/file", "", &remote, go).is_err());
+        let _ = child.kill();
     }
 }

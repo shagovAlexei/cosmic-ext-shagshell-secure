@@ -174,6 +174,18 @@ class _Session:
     def SetStatusText(self, text):
         _call("Session.SetStatusText", self._tab, str(text))
 
+    def Lock(self):
+        """The user can no longer type or paste into the tab (Send still works); freed when the
+        script ends."""
+        _call("Session.Lock", self._tab)
+
+    def Unlock(self):
+        _call("Session.Unlock", self._tab)
+
+    @property
+    def Locked(self):
+        return bool(_call("Session.Locked", self._tab))
+
     def Create(self, name, host, user="", port=22, folder=""):
         """Saves a new SSH session (the Default template, no password); returns its path."""
         return _call("Session.Create", self._tab, name, host, user, int(port), folder)
@@ -263,11 +275,34 @@ class _Window:
         _call("Window.Activate", 0)
 
 
+def _abs(p):
+    p = str(p)
+    return p if p.startswith("~/") else os.path.abspath(p)
+
+
+class _FileTransfer:
+    """SFTP over the script's tab (an SSH session); each call waits until it is done."""
+
+    def __init__(self, tab):
+        self._tab = tab
+
+    def Upload(self, local, remote=""):
+        """A file to the server (`remote`: a name, a folder, or empty = home); a folder goes whole
+        INTO `remote` (empty = home)."""
+        # Relative to the script's folder of work, not the app's.
+        return _call("FileTransfer.Upload", self._tab, _abs(local), str(remote))
+
+    def Download(self, remote, local=""):
+        """From the server (`local`: a name, a folder, or empty = ~/Downloads)."""
+        return _call("FileTransfer.Download", self._tab, str(remote), _abs(local) if local else "")
+
+
 class _Crt:
     def __init__(self):
         self._tab = int(os.environ.get("SHAGSHELL_SCRIPT_TAB", "0"))
         self.Screen = _Screen(self._tab)
         self.Session = _Session(self._tab)
+        self.FileTransfer = _FileTransfer(self._tab)
         self.Dialog = _Dialog()
         self.Window = _Window()
         self.Clipboard = _Clipboard()

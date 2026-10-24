@@ -46,7 +46,10 @@ pub enum SmMsg {
     Leave,
     /// The left button came up anywhere (only listened to while a row or the splitter is held).
     Release,
-    Cursor(f32),
+    Cursor(f32, f32),
+    /// The strip between two stacked panes is held / the stack's height (from the view).
+    SplitStartV,
+    ColHeight(f32),
     Mods(Modifiers),
     Filter(String),
     ClearFilter,
@@ -56,6 +59,7 @@ pub enum SmMsg {
     Submit,
     Cancel,
     SplitStart,
+    SplitStartCmd,
     Key(TreeKey),
 }
 
@@ -133,6 +137,16 @@ pub struct SessionManager {
     pub notice: Option<String>,
     pub width: f32,
     resizing: bool,
+    /// The Command Manager alone on its side has a width of its own, resized the same way.
+    pub cmd_width: f32,
+    pub cmd_right: bool,
+    resizing_cmd: bool,
+    /// The two panes of a side stacked: the top one's share of the column (0.15–0.85), the
+    /// column's height (measured by the view), and a drag of the strip between them.
+    pub split: f32,
+    pub col_h: f32,
+    resizing_v: bool,
+    drag_from_v: Option<(f32, f32)>,
     /// The pane is at the right of the terminals (set by the app from the config).
     pub right: bool,
     /// While the splitter is dragged: the cursor and the width at its first move.
@@ -163,6 +177,13 @@ impl SessionManager {
             notice: None,
             width: f32::from(width).clamp(MIN_WIDTH, MAX_WIDTH),
             resizing: false,
+            cmd_width: 260.0,
+            cmd_right: true,
+            resizing_cmd: false,
+            split: 0.5,
+            col_h: 0.0,
+            resizing_v: false,
+            drag_from_v: None,
             right: false,
             drag_from: None,
             focused: false,
@@ -206,7 +227,7 @@ impl SessionManager {
 
     /// Mouse events are wanted: a row or the splitter is held.
     pub fn holding(&self) -> bool {
-        self.pressed.is_some() || self.resizing
+        self.pressed.is_some() || self.resizing || self.resizing_cmd || self.resizing_v
     }
 
     /// Select one id (a session just saved, moved, renamed), showing it: its folders opened,
@@ -298,8 +319,10 @@ impl SessionManager {
                 self.hover = h;
             }
             SmMsg::Release => {
-                if self.resizing {
+                if self.resizing || self.resizing_cmd || self.resizing_v {
                     self.resizing = false;
+                    self.resizing_cmd = false;
+                    self.resizing_v = false;
                     out.save = true;
                 }
                 let dragged = self.drag.take();
@@ -334,12 +357,29 @@ impl SessionManager {
                     }
                 }
             }
-            SmMsg::Cursor(x) => {
+            SmMsg::ColHeight(h) => self.col_h = h,
+            SmMsg::SplitStartV => {
+                self.resizing_v = true;
+                self.drag_from_v = None;
+            }
+            SmMsg::Cursor(x, y) => {
+                if self.resizing_v && self.col_h > 0.0 {
+                    let (y0, r0) = *self.drag_from_v.get_or_insert((y, self.split));
+                    self.split = (r0 + (y - y0) / self.col_h).clamp(0.15, 0.85);
+                }
                 if self.resizing {
                     let (x0, w0) = *self.drag_from.get_or_insert((x, self.width));
                     let dx = if self.right { x0 - x } else { x - x0 };
                     self.width = (w0 + dx).clamp(MIN_WIDTH, MAX_WIDTH);
+                } else if self.resizing_cmd {
+                    let (x0, w0) = *self.drag_from.get_or_insert((x, self.cmd_width));
+                    let dx = if self.cmd_right { x0 - x } else { x - x0 };
+                    self.cmd_width = (w0 + dx).clamp(MIN_WIDTH, MAX_WIDTH);
                 }
+            }
+            SmMsg::SplitStartCmd => {
+                self.resizing_cmd = true;
+                self.drag_from = None;
             }
             SmMsg::SplitStart => {
                 self.resizing = true;
@@ -599,6 +639,26 @@ impl SessionManager {
         ))
         .interaction(mouse::Interaction::ResizingHorizontally)
         .on_press(Message::Sessions(SmMsg::SplitStart))
+        .into()
+    }
+
+    /// The strip between two stacked panes: drags them taller / shorter.
+    pub fn splitter_v(&self) -> Element<'_, Message> {
+        widget::mouse_area(widget::container(
+            widget::Space::new().width(Length::Fill).height(6.0),
+        ))
+        .interaction(mouse::Interaction::ResizingVertically)
+        .on_press(Message::Sessions(SmMsg::SplitStartV))
+        .into()
+    }
+
+    /// The same strip for the Command Manager when it has its side to itself.
+    pub fn splitter_cmd(&self) -> Element<'_, Message> {
+        widget::mouse_area(widget::container(
+            widget::Space::new().width(6.0).height(Length::Fill),
+        ))
+        .interaction(mouse::Interaction::ResizingHorizontally)
+        .on_press(Message::Sessions(SmMsg::SplitStartCmd))
         .into()
     }
 

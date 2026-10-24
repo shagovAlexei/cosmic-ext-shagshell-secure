@@ -598,7 +598,7 @@ impl ButtonBar {
             widget::context_menu(
                 widget::Space::new()
                     .width(Length::Fill)
-                    .height(Length::Fill),
+                    .height(Length::Fixed(f32::from(height.unwrap_or(32)))),
                 Some(menu::items(&std::collections::HashMap::new(), items)),
             )
             .window_id(window)
