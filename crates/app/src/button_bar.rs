@@ -571,27 +571,39 @@ impl ButtonBar {
                 widget::tooltip::Position::Top,
             ))
             .push(widget::Space::new().width(Length::Fill));
-        // Bars: new / rename / delete.
-        row = row
-            .push(widget::button::text(fl!("bb-new-bar")).on_press(m(BbMsg::NewBar)))
-            .push(
-                widget::button::text(fl!("bb-rename-bar"))
-                    .on_press_maybe(shown.map(|_| m(BbMsg::RenameBar))),
-            )
-            .push(
-                widget::button::text(fl!("bb-delete-bar"))
-                    .on_press_maybe(shown.map(|_| m(BbMsg::DeleteBar))),
-            );
-        widget::container(row).padding([4, 12]).into()
+        // Bars are managed from the menu of the empty space.
+        let has = shown.is_some();
+        let bar_item = |label: String, cmd: BarCmd, on: bool| match on {
+            true => menu::Item::Button(label, None, cmd),
+            false => menu::Item::ButtonDisabled(label, None, cmd),
+        };
+        let items = vec![
+            bar_item(fl!("bb-new-bar"), BarCmd::NewBar, true),
+            bar_item(fl!("bb-rename-bar"), BarCmd::RenameBar, has),
+            bar_item(fl!("bb-delete-bar"), BarCmd::DeleteBar, has),
+            menu::Item::Divider,
+            bar_item(fl!("bb-add"), BarCmd::AddButton, true),
+        ];
+        widget::context_menu(
+            widget::container(row).padding([4, 12]).width(Length::Fill),
+            Some(menu::items(&std::collections::HashMap::new(), items)),
+        )
+        .window_id(window)
+        .on_surface_action(Message::Surface)
+        .into()
     }
 }
 
-/// A button's context-menu entries (the button's index is in them).
+/// The context-menu entries of a button (its index is in them) and of the bar.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum BarCmd {
     Edit(usize),
     Delete(usize),
     Move(usize, isize),
+    NewBar,
+    RenameBar,
+    DeleteBar,
+    AddButton,
 }
 
 impl menu::Action for BarCmd {
@@ -601,6 +613,10 @@ impl menu::Action for BarCmd {
             BarCmd::Edit(i) => BbMsg::Edit(i),
             BarCmd::Delete(i) => BbMsg::Delete(i),
             BarCmd::Move(i, by) => BbMsg::Move(i, by),
+            BarCmd::NewBar => BbMsg::NewBar,
+            BarCmd::RenameBar => BbMsg::RenameBar,
+            BarCmd::DeleteBar => BbMsg::DeleteBar,
+            BarCmd::AddButton => BbMsg::AddButton,
         })
     }
 }
