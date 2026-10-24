@@ -374,7 +374,6 @@ impl Application for App {
 
     fn dialog(&self) -> Option<Element<'_, Message>> {
         (self.asks.dialog(|t| self.tabs.title(t)))
-            .or_else(|| self.update.as_deref().map(crate::updates::dialog))
             .or_else(|| self.keys.as_ref().map(Keys::view))
             .or_else(|| self.commands.dialog())
             .or_else(|| self.keymap.as_ref().map(crate::keymap_editor::Editor::view))
@@ -387,6 +386,8 @@ impl Application for App {
             .or_else(|| self.tabs.dialog())
             .or_else(|| self.quick.as_ref().map(QuickConnect::view))
             .or_else(|| self.sessions.dialog())
+            // Last: a check that ends while another dialog is up does not push it away.
+            .or_else(|| self.update.as_deref().map(crate::updates::dialog))
     }
 
     fn header_start(&self) -> Vec<Element<'_, Message>> {
@@ -1045,7 +1046,9 @@ impl App {
             Action::About => self.toggle_drawer(Drawer::About),
             Action::CheckUpdates => return check_updates(true),
             Action::Donate => {
-                return self.update(Message::OpenUrl(crate::updates::DONATE_URL.into()));
+                if let Some(url) = crate::updates::DONATE_URL {
+                    return self.update(Message::OpenUrl(url.into()));
+                }
             }
             Action::GlobalOptions => {
                 self.toggle_drawer(Drawer::Options);
@@ -1200,7 +1203,9 @@ impl App {
             }
             UpMsg::Later => self.update = None,
             UpMsg::Donate => {
-                return self.update(Message::OpenUrl(crate::updates::DONATE_URL.into()));
+                if let Some(url) = crate::updates::DONATE_URL {
+                    return self.update(Message::OpenUrl(url.into()));
+                }
             }
         }
         Task::none()

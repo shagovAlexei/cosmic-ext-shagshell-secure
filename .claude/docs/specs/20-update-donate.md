@@ -13,4 +13,4 @@
 - Иконка `heart.svg` в `res/icons/dialog` для окна.
 
 ## Открыто
-- **`DONATE_URL`**: Payment Link отдельного Stripe-аккаунта проекта (как у shagoff-commander аккаунт «Shagoff Commander»). Аккаунт создаёт владелец (доступен только Fluent.lt); пока в `DONATE_URL` страница проекта на GitHub — заменить одной строкой.
+- **`DONATE_URL`**: Payment Link отдельного Stripe-аккаунта проекта (как у shagoff-commander аккаунт «Shagoff Commander»). Аккаунт создаёт владелец (доступен только Fluent.lt); пока `DONATE_URL = None`, и кнопка доната, текст с просьбой и пункт Help скрыты; когда ссылка есть — `Some("https://donate.stripe.com/…")` одной строкой.

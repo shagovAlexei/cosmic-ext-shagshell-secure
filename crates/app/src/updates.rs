@@ -8,10 +8,11 @@ use cosmic::Element;
 use cosmic::widget;
 use shagshell_core::update::Status;
 
-pub const REPO: &str = "https://github.com/shagovAlexei/cosmic-ext-shagshell-secure";
+pub use shagshell_core::update::REPO;
 /// The Payment Link of the project's own Stripe account (amount of the donor's choice, EUR).
-// TODO: the Payment Link of the separate Stripe account; until it exists, the project's page.
-pub const DONATE_URL: &str = REPO;
+/// None until that account exists: then the donate button, its text and the menu item are hidden.
+// TODO: the Payment Link of the separate Stripe account.
+pub const DONATE_URL: Option<&str> = None;
 
 #[derive(Clone, Debug)]
 pub enum UpMsg {
@@ -29,19 +30,24 @@ pub fn release_url(tag: &str) -> String {
 
 pub fn dialog(tag: &str) -> Element<'_, Message> {
     let m = |x| Message::Update(x);
-    let body = widget::column::with_capacity(3)
+    let mut body = widget::column::with_capacity(3)
         .spacing(12)
         .push(widget::text::body(fl!(
             "up-body",
             current = env!("CARGO_PKG_VERSION")
-        )))
-        .push(widget::text::body(fl!("up-support")));
-    widget::dialog()
+        )));
+    if DONATE_URL.is_some() {
+        body = body.push(widget::text::body(fl!("up-support")));
+    }
+    let mut d = widget::dialog()
         .icon(Kind::Heart.icon(48))
         .title(fl!("up-title", tag = tag))
         .control(body)
         .primary_action(widget::button::suggested(fl!("up-update")).on_press(m(UpMsg::Update)))
-        .secondary_action(widget::button::standard(fl!("up-skip")).on_press(m(UpMsg::Skip)))
-        .tertiary_action(widget::button::standard(fl!("up-donate")).on_press(m(UpMsg::Donate)))
-        .into()
+        .secondary_action(widget::button::standard(fl!("up-skip")).on_press(m(UpMsg::Skip)));
+    if DONATE_URL.is_some() {
+        d = d
+            .tertiary_action(widget::button::standard(fl!("up-donate")).on_press(m(UpMsg::Donate)));
+    }
+    d.into()
 }
