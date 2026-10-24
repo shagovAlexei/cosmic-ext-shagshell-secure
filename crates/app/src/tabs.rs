@@ -131,6 +131,8 @@ pub struct Launch {
     pub scheme: String,
     /// The session's tab label: shown instead of the program's title.
     pub label: String,
+    /// The saved session (its id) this tab was opened from: it is opened again at the next start.
+    pub session: Option<String>,
 }
 
 impl Launch {
@@ -150,6 +152,7 @@ impl Launch {
             logon: None,
             scheme: String::new(),
             label: String::new(),
+            session: None,
         }
     }
 
@@ -169,6 +172,7 @@ impl Launch {
             sftp: true,
             note: None,
             console: false,
+            session: None,
             ..self.clone()
         })
     }
@@ -277,6 +281,9 @@ pub enum TabCmd {
     /// Into a window of its own.
     Detach,
     Close,
+    /// Every other tab of the window.
+    CloseOthers,
+    CloseAll,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -369,6 +376,8 @@ pub struct Tabs {
     notice: Mutex<Option<String>>,
     /// A live tab asked to close: waits for the dialog.
     confirm: Option<(pane_grid::Pane, Entity)>,
+    /// «Close others / all» with live tabs among them: asked once (the tabs, then closed).
+    confirm_many: Option<Vec<(pane_grid::Pane, Entity)>>,
     /// `crt.Session.Lock`: tab → the script run that locked it.
     locks: HashMap<TabId, u64>,
     /// The tab pressed last: a drag that starts is about it (the drag carries no tab).
@@ -463,6 +472,15 @@ impl Tabs {
             .collect();
         v.sort();
         v.into_iter().map(|(_, p)| p).collect()
+    }
+
+    /// The saved sessions with a tab open (not their SFTP tabs), oldest tab first.
+    pub fn session_ids(&self) -> Vec<String> {
+        let mut v: Vec<_> = (self.tabs.iter())
+            .filter_map(|(id, t)| Some((*id, t.launch.session.clone()?)))
+            .collect();
+        v.sort();
+        v.into_iter().map(|(_, s)| s).collect()
     }
 
     pub fn edit_tick(&mut self) {
@@ -1134,10 +1152,12 @@ impl Tabs {
                 Some(launch) => self.open(launch, look),
                 None => Task::none(),
             },
-            TabCmd::Close | TabCmd::Detach => match self.window_of(id) {
-                Some(w) => self.reattach(w),
-                None => Task::none(),
-            },
+            TabCmd::Close | TabCmd::Detach | TabCmd::CloseOthers | TabCmd::CloseAll => {
+                match self.window_of(id) {
+                    Some(w) => self.reattach(w),
+                    None => Task::none(),
+                }
+            }
             TabCmd::SplitRight | TabCmd::SplitDown | TabCmd::MoveTo(_) => Task::none(),
         }
     }
@@ -1378,6 +1398,34 @@ impl Tabs {
         }
     }
 
+    /// «Close others» (all but `keep`) / «Close all»: asks once when a live tab is among them.
+    fn close_many(&mut self, keep: Option<(pane_grid::Pane, Entity)>) -> Task<Message> {
+        let mut all = Vec::new();
+        for (pane, group) in self.grid.iter().flat_map(|g| g.iter()) {
+            all.extend(group.model.iter().map(|e| (*pane, e)));
+        }
+        all.retain(|t| Some(*t) != keep);
+        let live = all.iter().any(|(pane, e)| {
+            (self.grid.as_ref())
+                .and_then(|g| g.get(*pane)?.model.data::<TabId>(*e).copied())
+                .and_then(|id| self.tabs.get(&id))
+                .is_some_and(|t| t.live())
+        });
+        match (live, all.is_empty()) {
+            (_, true) => Task::none(),
+            (true, _) => {
+                self.confirm_many = Some(all);
+                Task::none()
+            }
+            _ => self.close_list(all),
+        }
+    }
+
+    fn close_list(&mut self, list: Vec<(pane_grid::Pane, Entity)>) -> Task<Message> {
+        // Panes and entities are stable ids: closing one does not renumber the others.
+        Task::batch(list.into_iter().map(|(p, e)| self.close_now(p, e)))
+    }
+
     /// Close without asking.
     fn close_now(&mut self, pane: pane_grid::Pane, e: Entity) -> Task<Message> {
         let Some(grid) = self.grid.as_mut() else {
@@ -1563,6 +1611,8 @@ impl Tabs {
             }
             TabCmd::Detach => self.detach(t),
             TabCmd::Close => self.update(TabsMsg::Close(t.0, t.1), look),
+            TabCmd::CloseOthers => self.close_many(Some((t.0, t.1))),
+            TabCmd::CloseAll => self.close_many(None),
         }
     }
 
@@ -1652,7 +1702,7 @@ impl Tabs {
     /// Enter on a tab whose program ended: start it again. `false`: not such a tab.
     /// A «Close tab?» dialog is up.
     pub fn confirming(&self) -> bool {
-        self.confirm.is_some()
+        self.confirm.is_some() || self.confirm_many.is_some()
     }
 
     /// The active tab is an ssh one: an SFTP tab can use its connection.
@@ -1796,12 +1846,16 @@ impl Tabs {
                 }
             }
             TabsMsg::CloseConfirmed => {
+                if let Some(list) = self.confirm_many.take() {
+                    return self.close_list(list);
+                }
                 if let Some((pane, e)) = self.confirm.take() {
                     return self.close_now(pane, e);
                 }
             }
             TabsMsg::CloseCancelled => {
                 self.confirm = None;
+                self.confirm_many = None;
                 return self.focus_active();
             }
             TabsMsg::Context(pane, e) => self.context = Some((pane, e)),
@@ -1844,6 +1898,24 @@ impl Tabs {
 
     /// Asks before closing a live tab, as SecureCRT's "Confirm disconnect".
     pub fn dialog(&self) -> Option<Element<'_, Message>> {
+        if let Some(list) = &self.confirm_many {
+            let msg = |m| Message::Tabs(m);
+            return Some(
+                widget::dialog()
+                    .icon(crate::dialog_icons::Kind::Warning.icon(48))
+                    .title(fl!("close-many-title", n = list.len()))
+                    .body(fl!("close-tab-body"))
+                    .primary_action(
+                        widget::button::destructive(fl!("close"))
+                            .on_press(msg(TabsMsg::CloseConfirmed)),
+                    )
+                    .secondary_action(
+                        widget::button::standard(fl!("cancel"))
+                            .on_press(msg(TabsMsg::CloseCancelled)),
+                    )
+                    .into(),
+            );
+        }
         let Some((pane, e)) = self.confirm else {
             // The active SFTP tab's own (copy, rename, overwrite…).
             let id = self.active_sftp()?;
@@ -1999,7 +2071,16 @@ fn tab_menu(
             }
         }
         items.push(Button(fl!("menu-tab-window"), None, TabCmd::Detach));
-        items.extend([Divider, Button(fl!("menu-close-tab"), None, TabCmd::Close)]);
+        items.extend([
+            Divider,
+            Button(fl!("menu-close-tab"), None, TabCmd::Close),
+            on(
+                model.len() > 1 || neighbours.contains(&true),
+                fl!("menu-close-others"),
+                TabCmd::CloseOthers,
+            ),
+            Button(fl!("menu-close-all"), None, TabCmd::CloseAll),
+        ]);
         let blank = Element::from(widget::Space::new());
         menu::Tree::with_children(blank, menu::items(&HashMap::new(), items))
     };

@@ -603,3 +603,8 @@ note-filter-text = Текст и Markdown
 note-too-big = Файл больше { $mb } МБ
 note-not-text = Не текстовый файл (нужен UTF-8)
 note-bad-name = Такое имя нельзя
+
+menu-close-others = Закрыть остальные вкладки
+menu-close-all = Закрыть все вкладки
+close-many-title = Закрыть вкладок: { $n }?
+options-tabs-on-start = При запуске открывать сессии, бывшие в прошлый раз

@@ -80,6 +80,10 @@ pub fn view<'a>(
                 .on_toggle(set(|c, on| c.script_console_auto = on)),
         ))
         .add(settings::flex_item(
+            fl!("options-tabs-on-start"),
+            widget::toggler(config.tabs_on_start).on_toggle(set(|c, on| c.tabs_on_start = on)),
+        ))
+        .add(settings::flex_item(
             fl!("options-notes-on-start"),
             widget::toggler(config.notes_on_start).on_toggle(set(|c, on| c.notes_on_start = on)),
         ))

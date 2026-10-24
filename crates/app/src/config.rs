@@ -150,6 +150,10 @@ pub struct Config {
     pub script_debug: bool,
     /// Script Console: opens by itself when a script writes something.
     pub script_console_auto: bool,
+    /// The sessions that had a tab at the last exit are opened again at the start.
+    pub tabs_on_start: bool,
+    /// The saved sessions (ids) with a tab open now, in the order they were opened.
+    pub tabs_open: Vec<String>,
     /// Notes: the files open at the last exit come back at the start.
     pub notes_on_start: bool,
     /// The files the note tabs showed (newest state; written when one opens / closes).
@@ -276,6 +280,8 @@ impl Default for Config {
             startup_script: String::new(),
             script_debug: false,
             script_console_auto: true,
+            tabs_on_start: true,
+            tabs_open: Vec::new(),
             notes_on_start: false,
             notes_open: Vec::new(),
             commands_above: false,

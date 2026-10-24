@@ -292,6 +292,10 @@ impl Application for App {
         });
         app.refresh_scripts();
         let mut note_tasks = Vec::new();
+        if app.config.tabs_on_start {
+            let ids = app.config.tabs_open.clone();
+            note_tasks.push(app.open_sessions(&ids, true));
+        }
         if app.config.notes_on_start {
             for f in app.config.notes_open.clone() {
                 note_tasks.push(app.open_note(std::path::Path::new(&f)));
@@ -316,6 +320,7 @@ impl Application for App {
         if tabs_changed {
             self.remember_notes();
         }
+        self.remember_sessions();
         // A tab went into a window of its own: titled.
         for (window, title) in self.tabs.take_new_windows() {
             task = Task::batch([
@@ -1918,10 +1923,12 @@ impl App {
     /// well, else at once.
     fn open_session_tab(
         &mut self,
-        launch: tabs::Launch,
+        mut launch: tabs::Launch,
+        id: &str,
         s: &shagshell_core::session::Session,
         scripts: bool,
     ) -> Task<Message> {
+        launch.session = Some(id.to_string());
         let post = if scripts { s.script.as_str() } else { "" };
         let pre = s.pre_script.trim();
         if !scripts || pre.is_empty() {
@@ -1977,12 +1984,12 @@ impl App {
                                 label: s.label.clone(),
                                 ..tabs::Launch::local_shell()
                             };
-                            tasks.push(self.open_session_tab(l, &s, scripts));
+                            tasks.push(self.open_session_tab(l, id, &s, scripts));
                             continue;
                         }
                         P::Telnet | P::Serial => {
                             match program_launch(&s, name, Some(id)) {
-                                Ok(l) => tasks.push(self.open_session_tab(l, &s, scripts)),
+                                Ok(l) => tasks.push(self.open_session_tab(l, id, &s, scripts)),
                                 Err(e) => self.sessions.notice = Some(e),
                             }
                             continue;
@@ -1990,7 +1997,7 @@ impl App {
                         P::Ssh2 => {}
                     }
                     match ssh_launch(&self.control_dir, creds.as_ref(), &s, name, Some(id)) {
-                        Ok(l) => tasks.push(self.open_session_tab(l, &s, scripts)),
+                        Ok(l) => tasks.push(self.open_session_tab(l, id, &s, scripts)),
                         Err(e) => self.sessions.notice = Some(e),
                     }
                 }
@@ -2055,6 +2062,15 @@ impl App {
         let task = self.tabs.open(launch, &look(&self.config));
         self.remember_notes();
         task
+    }
+
+    /// The sessions with a tab open, for the next start.
+    fn remember_sessions(&mut self) {
+        let open = self.tabs.session_ids();
+        if open != self.config.tabs_open {
+            self.config.tabs_open = open;
+            self.save_config();
+        }
     }
 
     /// The open notes, for the next start.
@@ -2919,6 +2935,7 @@ fn ssh_launch(
         logon: logon_spec(s, session),
         scheme: s.color_scheme.clone(),
         label: s.label.clone(),
+        session: None,
     })
 }
 
@@ -2993,6 +3010,7 @@ fn program_launch(
         logon: logon_spec(s, id),
         scheme: s.color_scheme.clone(),
         label: s.label.clone(),
+        session: None,
     })
 }
 
