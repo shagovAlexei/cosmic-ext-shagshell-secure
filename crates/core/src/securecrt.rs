@@ -434,6 +434,13 @@ fn wine_prefix(root: &Path) -> Option<std::path::PathBuf> {
 /// of its sub folders (`Z:"Folder List V2"=n` and n names); a folder on disk that is not listed
 /// follows. What is not a `SEND` is counted as skipped.
 pub fn read_commands(dir: &Path) -> (crate::commands::Folder, usize) {
+    read_commands_at(dir, 0)
+}
+
+/// Folders below this depth are not read (a loop of links, a hand-made file).
+const MAX_DEPTH: usize = 8;
+
+fn read_commands_at(dir: &Path, depth: usize) -> (crate::commands::Folder, usize) {
     let mut skipped = 0;
     let mut f = crate::commands::Folder::default();
     let read = |name: &str| std::fs::read_to_string(dir.join(name)).unwrap_or_default();
@@ -483,10 +490,14 @@ pub fn read_commands(dir: &Path) -> (crate::commands::Folder, usize) {
         }
     }
     for n in names {
-        if !dir.join(&n).is_dir() || n.is_empty() {
+        // A name from the file is a folder right here: no path, no link (it may lead anywhere).
+        let own = !n.is_empty() && n != "." && n != ".." && !n.contains(['/', '\\']);
+        let real = own
+            && std::fs::symlink_metadata(dir.join(&n)).is_ok_and(|m| m.is_dir() && !m.is_symlink());
+        if !real || depth >= MAX_DEPTH {
             continue;
         }
-        let (mut sub, s) = read_commands(&dir.join(&n));
+        let (mut sub, s) = read_commands_at(&dir.join(&n), depth + 1);
         skipped += s;
         sub.name = n;
         f.folders.push(sub);
@@ -840,6 +851,14 @@ mod tests {
         assert_eq!(f.folders[1].folders[0].name, "inner");
         assert_eq!(f.count(), 3);
         assert_eq!(read_commands(&dir.path().join("none")).0.count(), 0);
+        // names that lead elsewhere, and a loop, are not followed
+        w(
+            "__FolderData__.ini",
+            "Z:\"Folder List V2\"=00000002\r\n ..\r\n loop\r\n",
+        );
+        std::os::unix::fs::symlink(dir.path(), dir.path().join("loop")).unwrap();
+        let (g, _) = read_commands(dir.path());
+        assert!(g.folders.iter().all(|x| x.name != ".." && x.name != "loop"));
     }
 
     #[test]

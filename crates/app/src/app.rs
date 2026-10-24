@@ -530,7 +530,12 @@ impl App {
                     false => crate::keymap_editor::KmMsg::Close,
                 });
             }
-            Message::Sessions(SmMsg::Key(TreeKey::Clear)) if self.commands.has_dialog() => {
+            Message::Sessions(SmMsg::Key(TreeKey::Clear))
+                if self.commands.has_dialog()
+                    && !self.asks.active()
+                    && !self.scripts.active()
+                    && self.keys.is_none() =>
+            {
                 return self.command_manager(crate::command_manager::CmMsg::Cancel);
             }
             Message::Sessions(SmMsg::Key(TreeKey::Clear)) if self.scripts.active() => {

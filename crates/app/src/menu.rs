@@ -70,7 +70,7 @@ pub enum Action {
 
 /// The functions a Button Bar button can call: the name in `buttonbars.toml` and its label.
 pub type NamedFn = (&'static str, fn() -> String);
-pub const NAMED: [NamedFn; 13] = [
+pub const NAMED: [NamedFn; 14] = [
     ("Connect", || fl!("menu-connect")),
     ("QuickConnect", || fl!("menu-quick-connect")),
     ("NewLocalShell", || fl!("menu-new-local-shell")),
@@ -83,6 +83,7 @@ pub const NAMED: [NamedFn; 13] = [
     ("SplitDown", || fl!("menu-split-down")),
     ("ToggleSessionManager", || fl!("menu-session-manager")),
     ("ToggleCommandWindow", || fl!("menu-command-window")),
+    ("ToggleCommandManager", || fl!("menu-command-manager")),
     ("GlobalOptions", || fl!("menu-global-options")),
 ];
 
@@ -102,6 +103,7 @@ impl Action {
             "SplitDown" => Action::SplitDown,
             "ToggleSessionManager" => Action::ToggleSessionManager,
             "ToggleCommandWindow" => Action::ToggleCommandWindow,
+            "ToggleCommandManager" => Action::ToggleCommandManager,
             "GlobalOptions" => Action::GlobalOptions,
             _ => return None,
         })

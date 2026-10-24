@@ -104,8 +104,10 @@ impl Folder {
         out
     }
 
+    /// Something in here (or the folder's own name) matches.
     fn matches(&self, filter: &str) -> bool {
         filter.is_empty()
+            || self.name.to_lowercase().contains(filter)
             || self.commands.iter().any(|c| c.hit(filter))
             || self.folders.iter().any(|f| f.matches(filter))
     }
@@ -119,13 +121,18 @@ impl Folder {
         open: &HashSet<Vec<String>>,
         out: &mut Vec<Row>,
     ) {
+        // A folder whose own name matches shows everything in it.
+        let all = !filter.is_empty()
+            && !self.name.is_empty()
+            && self.name.to_lowercase().contains(filter);
+        let filter = if all { "" } else { filter };
         for (i, f) in self.folders.iter().enumerate() {
             if !f.matches(filter) {
                 continue;
             }
             path.push(i);
             key.push(f.name.clone());
-            let is_open = !filter.is_empty() || open.contains(key);
+            let is_open = !filter.is_empty() || all || open.contains(key);
             out.push(Row {
                 addr: Addr {
                     folders: path.clone(),
@@ -373,6 +380,24 @@ mod tests {
         assert_eq!(titles(&rows), [(0, "web"), (1, "nginx"), (2, "reload")]);
         assert_eq!(t.command(&rows[2].addr).unwrap().text, "nginx -s reload\\r");
         assert!(t.rows("zzz", &HashSet::new()).is_empty());
+    }
+
+    #[test]
+    fn a_folders_own_name_finds_it_with_everything_in_it() {
+        let t = sample();
+        let rows = t.rows("nginx", &HashSet::new());
+        // `nginx` is a folder name here, and a text in `web`'s first command
+        assert_eq!(
+            titles(&rows),
+            [
+                (0, "web"),
+                (1, "nginx"),
+                (2, "reload"),
+                (1, "systemctl status nginx\\r")
+            ]
+        );
+        let only = t.rows("web", &HashSet::new());
+        assert_eq!(only.len(), 4); // the folder and all of it
     }
 
     #[test]

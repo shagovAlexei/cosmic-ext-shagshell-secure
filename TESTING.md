@@ -222,3 +222,4 @@
 | `sftp::sync::tests::regression_unread_folders_are_never_deleted_from` | папка, которую не удалось прочитать с одной стороны, не даёт «лишних» файлов для удаления на другой |
 | `sftp::sync::tests::regression_links_are_never_written_through` | синхронизация не пишет через символическую ссылку: файл против ссылки — «не трогается», одинокая ссылка не копируется |
 | `sftp::sync::tests::regression_inside_a_file_folder_clash_nothing_is_done` | внутри пары «файл / папка с одним именем» ничего не копируется |
+| `securecrt::tests::command_manager_folders` | импорт команд не идёт за `..` и ссылками (петля), порядок папок как в SecureCRT |

@@ -136,12 +136,7 @@ impl CommandManager {
                 out.focus = Some(self.input_id.clone());
             }
             CmMsg::AddFolder => {
-                // Inside the selected folder, not inside a command's.
-                let parent = match &self.selected {
-                    Some(a) if a.command.is_none() => a.folders.clone(),
-                    Some(a) => a.folders.clone(),
-                    None => Vec::new(),
-                };
+                let parent = self.parent();
                 self.dialog = Some(Dialog::Folder {
                     parent,
                     rename: None,
@@ -218,7 +213,9 @@ impl CommandManager {
 
     fn ok(&mut self, out: &mut Outcome) {
         let Some(d) = self.dialog.take() else { return };
+        let is_command = matches!(d, Dialog::Command { .. });
         let err = |e: Error| match e {
+            Error::Empty if is_command => fl!("bb-arg-empty"),
             Error::Empty => fl!("name-empty"),
             Error::Taken => fl!("cm-name-taken"),
             Error::NoSuch => fl!("cm-gone"),
@@ -245,6 +242,7 @@ impl CommandManager {
                 rename,
                 name,
             } => {
+                let old_key = rename.as_deref().and_then(|p| self.key_of(p));
                 let r = match &rename {
                     Some(path) => self.tree.rename_folder(path, &name).map(|()| path.clone()),
                     None => self
@@ -254,7 +252,15 @@ impl CommandManager {
                 };
                 match r {
                     Ok(path) => {
-                        // Renamed folders lose their «open» (it is kept by name).
+                        // What was open under the old name is open under the new one.
+                        if let (Some(old), Some(new)) = (&old_key, self.key_of(&path)) {
+                            self.open = (self.open.drain())
+                                .map(|k| match k.starts_with(old) {
+                                    true => [new.clone(), k[old.len()..].to_vec()].concat(),
+                                    false => k,
+                                })
+                                .collect();
+                        }
                         self.open_path(&path[..path.len().saturating_sub(1)]);
                         self.selected = Some(Addr {
                             folders: path,
@@ -278,6 +284,17 @@ impl CommandManager {
                 out.save = true;
             }
         }
+    }
+
+    /// The names down from the top to the folder at `path`.
+    fn key_of(&self, path: &[usize]) -> Option<Vec<String>> {
+        let mut f = &self.tree;
+        let mut key = Vec::new();
+        for &i in path {
+            f = f.folders.get(i)?;
+            key.push(f.name.clone());
+        }
+        Some(key)
     }
 
     /// The folder at `path` (and above) shown open.
