@@ -595,6 +595,7 @@ note-rename = Переименовать
 note-rename-ok = Переименовать
 note-open = Открыть…
 note-open-title = Открыть заметку
+note-copy = Копировать всё
 note-edit = Правка
 note-view = Просмотр
 note-filter-text = Текст и Markdown

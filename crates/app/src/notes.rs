@@ -15,6 +15,8 @@ use std::time::{Duration, Instant};
 pub enum NoteMsg {
     Edit(Action),
     Preview,
+    /// The whole text to the clipboard (the formatted view cannot be selected).
+    Copy,
     RenameStart,
     RenameEdit(String),
     RenameDo,
@@ -121,6 +123,10 @@ impl NoteView {
     }
 
     /// `true`: the tab wants the file chooser.
+    pub fn text(&self) -> String {
+        self.text.text()
+    }
+
     pub fn update(&mut self, msg: NoteMsg) -> bool {
         match msg {
             NoteMsg::Edit(a) => {
@@ -132,6 +138,7 @@ impl NoteView {
                 }
             }
             NoteMsg::Preview => self.set_preview(!self.preview),
+            NoteMsg::Copy => {}
             NoteMsg::RenameStart => self.rename = Some(self.name()),
             NoteMsg::RenameEdit(v) => self.rename = Some(v),
             NoteMsg::RenameCancel => self.rename = None,
@@ -203,6 +210,10 @@ impl NoteView {
                 true => fl!("note-edit"),
                 false => fl!("note-view"),
             };
+            if self.preview {
+                bar =
+                    bar.push(widget::button::standard(fl!("note-copy")).on_press(m(NoteMsg::Copy)));
+            }
             bar = bar.push(widget::button::standard(label).on_press(m(NoteMsg::Preview)));
         }
         let body: Element<'_, Message> = match self.preview {

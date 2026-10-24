@@ -594,6 +594,7 @@ note-rename = Rename
 note-rename-ok = Rename
 note-open = Open…
 note-open-title = Open a note
+note-copy = Copy all
 note-edit = Edit
 note-view = View
 note-filter-text = Text and Markdown
