@@ -202,6 +202,7 @@ impl Application for App {
             crate::session_manager::MAX_WIDTH,
         );
         sessions.cmd_right = config.command_manager_side == crate::config::Side::Right;
+        sessions.split = (f32::from(config.panes_split) / 1000.0).clamp(0.15, 0.85);
         let asks = crate::askpass::Asks::new(askpass_sock(&control_dir));
         let hl_path = shagshell_core::highlight::default_path();
         let (hl, hl_error) = match shagshell_core::highlight::Rules::load(&hl_path) {
@@ -400,7 +401,7 @@ impl Application for App {
                                 Some(Message::Sessions(SmMsg::Release))
                             }
                             cosmic::iced::Event::Mouse(M::CursorMoved { position }) => {
-                                Some(Message::Sessions(SmMsg::Cursor(position.x)))
+                                Some(Message::Sessions(SmMsg::Cursor(position.x, position.y)))
                             }
                             _ => None,
                         },
@@ -660,14 +661,30 @@ impl App {
             col = col.push(
                 widget::container(pane)
                     .width(Length::Fill)
-                    .height(if collapsed {
-                        Length::Shrink
-                    } else {
-                        Length::Fill
+                    .height(match (collapsed, stacked) {
+                        (true, _) => Length::Shrink,
+                        (false, false) => Length::Fill,
+                        // The two share the column as the strip between them was dragged.
+                        (false, true) => {
+                            let top = (self.sessions.split * 1000.0) as u16;
+                            Length::FillPortion(if at == 0 { top } else { 1000 - top })
+                        }
                     })
                     .class(cosmic::theme::Container::Card),
             );
+            // Between two open panes: the strip that resizes them.
+            if at == 0
+                && stacked
+                && !collapsed
+                && !self.config.command_manager_collapsed
+                && !self.config.session_manager_collapsed
+            {
+                col = col.push(self.sessions.splitter_v());
+            }
         }
+        let col = cosmic::iced::widget::sensor(col)
+            .on_show(|s| Message::Sessions(SmMsg::ColHeight(s.height)))
+            .on_resize(|s| Message::Sessions(SmMsg::ColHeight(s.height)));
         let sessions = panes.contains(&Panel::Sessions);
         let width = if sessions {
             self.sessions.width
@@ -960,6 +977,7 @@ impl App {
                     self.config.expanded = self.sessions.expanded.iter().cloned().collect();
                     self.config.session_manager_width = self.sessions.width as u16;
                     self.config.command_manager_width = self.sessions.cmd_width as u16;
+                    self.config.panes_split = (self.sessions.split * 1000.0) as u16;
                     self.save_config();
                 }
                 let mut tasks: Vec<_> = out.task.into_iter().collect();

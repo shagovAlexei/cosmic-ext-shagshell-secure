@@ -163,6 +163,8 @@ pub struct Config {
     pub session_manager_width: u16,
     /// The Command Manager's width when it is alone on its side.
     pub command_manager_width: u16,
+    /// Two panes stacked on a side: the top one's share, in thousandths (500: half).
+    pub panes_split: u16,
     /// Open folders of the session tree (ids).
     pub expanded: Vec<String>,
     /// Interface language: "" (system), "en", "ru".
@@ -281,6 +283,7 @@ impl Default for Config {
             command_manager_collapsed: false,
             session_manager_width: 240,
             command_manager_width: 260,
+            panes_split: 500,
             expanded: Vec::new(),
             language: String::new(),
             app_theme: AppTheme::System,

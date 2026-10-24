@@ -706,22 +706,41 @@ impl Scripts {
                 .into()
             }
         };
+        // Icons with a hint: the console is often a narrow tab at the side.
+        let tool = |icon: &'static str, tip: String, msg: Option<ScMsg>| -> Element<'_, Message> {
+            widget::tooltip(
+                widget::button::icon(widget::icon::from_name(icon)).on_press_maybe(msg.map(m)),
+                widget::text::caption(tip),
+                widget::tooltip::Position::Bottom,
+            )
+            .into()
+        };
         let tools = widget::row::with_capacity(5)
             .spacing(8)
             .align_y(cosmic::iced::Alignment::Center)
             .padding([8, 12])
-            .push(
-                widget::button::destructive(fl!("console-stop"))
-                    .on_press_maybe((!self.runs.is_empty()).then(|| m(ScMsg::ConsoleStop))),
-            )
-            .push(widget::button::standard(fl!("console-clear")).on_press(m(ScMsg::ConsoleClear)))
-            .push(widget::button::standard(fl!("console-copy")).on_press(m(ScMsg::ConsoleCopy)))
+            .push(tool(
+                "media-playback-stop-symbolic",
+                fl!("console-stop"),
+                (!self.runs.is_empty()).then_some(ScMsg::ConsoleStop),
+            ))
+            .push(tool(
+                "edit-delete-symbolic",
+                fl!("console-clear"),
+                Some(ScMsg::ConsoleClear),
+            ))
+            .push(tool(
+                "edit-copy-symbolic",
+                fl!("console-copy"),
+                Some(ScMsg::ConsoleCopy),
+            ))
             .push(widget::Space::new().width(Length::Fill))
-            .push(widget::text::body(fl!("console-debug")))
-            .push(
+            .push(widget::tooltip(
                 widget::toggler(self.debug.load(Ordering::SeqCst))
                     .on_toggle(move |on| m(ScMsg::ConsoleDebug(on))),
-            );
+                widget::text::caption(fl!("console-debug")),
+                widget::tooltip::Position::Bottom,
+            ));
         let content = widget::column::with_children(vec![tools.into(), body]);
         widget::container(content)
             .width(Length::Fill)
