@@ -564,10 +564,12 @@ impl Application for App {
             self.sessions.notice.as_deref(),
         ));
         if self.config.button_bar_visible {
-            col = col.push(self.buttons.view(self.shown_bar(), window, self.config.button_px()));
+            col = col.push(
+                self.buttons
+                    .view(self.shown_bar(), window, self.config.button_px()),
+            );
         }
-        col
-        .into()
+        col.into()
     }
 }
 
