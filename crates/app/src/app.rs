@@ -76,6 +76,13 @@ pub struct App {
     script_files: Vec<std::path::PathBuf>,
     /// Sessions waiting for their pre-script: run id → the tab to open, and its post-script.
     pre_runs: std::collections::HashMap<u64, (tabs::Launch, String)>,
+    /// The scheduled scripts (`schedule.toml`); a broken file is never written over.
+    schedule: shagshell_core::schedule::Schedule,
+    schedule_broken: bool,
+    /// Per job name: when it last ran (local minutes), and the run that is still going.
+    sched_state: std::collections::HashMap<String, (i64, Option<u64>)>,
+    /// Script → Scheduler…, while open.
+    sched_win: Option<crate::scheduler::SchedWindow>,
 }
 
 /// The open dialog of Tools → Create / Upload Public Key….
@@ -141,6 +148,9 @@ pub enum Message {
     SftpTx(crate::sftp_worker::Events),
     Sftp(crate::term::TabId, crate::sftp_view::SftpMsg),
     Credentials(crate::credentials_window::CwMsg),
+    Scheduler(crate::scheduler::SchMsg),
+    /// The scheduler's clock.
+    SchedTick,
     /// Global Options: the master-password keyring wanted on / off.
     SetSeparate(bool),
     /// …and how it is now (or why it could not be changed).
@@ -234,11 +244,34 @@ impl Application for App {
             startup: None,
             script_files: Vec::new(),
             pre_runs: Default::default(),
+            schedule: Default::default(),
+            schedule_broken: false,
+            sched_state: Default::default(),
+            sched_win: None,
         };
+        let mut sched_error = None;
+        match shagshell_core::schedule::Schedule::load(
+            &shagshell_core::schedule::Schedule::default_path(),
+        ) {
+            Ok(mut s) => {
+                s.unique_names();
+                app.schedule = s;
+            }
+            Err(e) => {
+                app.schedule_broken = true;
+                sched_error = Some(format!("schedule.toml: {e}"));
+            }
+        }
+        // Counting starts now: what passed while the app was closed is not made up for.
+        let now = shagshell_core::schedule::local_minutes();
+        for j in &app.schedule.jobs {
+            app.sched_state.insert(j.name.clone(), (now, None));
+        }
         // A broken buttonbars.toml is said, and left alone.
         app.sessions.notice = (app.buttons.broken().map(String::from))
             .or(hl_error)
-            .or(keys_error);
+            .or(keys_error)
+            .or(sched_error);
         app.tabs.set_looks(&app.config, &app.hl, &look(&app.config));
         app.startup = startup.or_else(|| {
             let p = shagshell_core::script::expand_home(std::path::Path::new(
@@ -359,6 +392,11 @@ impl Application for App {
             },
             crate::askpass::subscription(askpass_sock(&self.control_dir)),
             self.scripts.subscription(),
+            match self.schedule.jobs.iter().any(|j| j.enabled) {
+                true => cosmic::iced::time::every(std::time::Duration::from_secs(15))
+                    .map(|_| Message::SchedTick),
+                false => Subscription::none(),
+            },
             self.core()
                 .watch_config::<Config>(APP_ID)
                 .map(|u| Message::Config(u.config)),
@@ -410,6 +448,10 @@ impl Application for App {
             .window_view(id, &self.config, focused, self.dialog().is_none())
         {
             return v;
+        }
+        if let Some(s) = self.sched_win.as_ref().filter(|s| s.window == id) {
+            let last = |i: usize| self.sched_last_text(i);
+            return s.view(focused, &last);
         }
         match self.creds_win.as_ref().filter(|c| c.window == id) {
             Some(c) => c.view(focused),
@@ -926,6 +968,11 @@ impl App {
                     return self.credentials(CwMsg::Close);
                 }
             }
+            Message::Input(w, m) if self.sched_win.as_ref().is_some_and(|s| s.window == w) => {
+                if is_escape(&m) {
+                    return self.scheduler(crate::scheduler::SchMsg::Close);
+                }
+            }
             // A tab's own window: what happens there is about that tab.
             Message::Input(w, m) if self.tabs.tab_in(w).is_some() => {
                 self.tabs.front = self.tabs.tab_in(w);
@@ -960,8 +1007,15 @@ impl App {
             {
                 return self.credentials(CwMsg::Close);
             }
+            Message::CloseRequested(w)
+                if self.sched_win.as_ref().is_some_and(|s| s.window == w) =>
+            {
+                return self.scheduler(crate::scheduler::SchMsg::Close);
+            }
             Message::CloseRequested(_) => {}
             Message::Credentials(m) => return self.credentials(m),
+            Message::Scheduler(m) => return self.scheduler(m),
+            Message::SchedTick => return self.sched_tick(),
             Message::Key(k, m) => {
                 // «Close tab?»: Enter is Close, Esc Cancel.
                 if self.tabs.confirming()
@@ -1232,6 +1286,7 @@ impl App {
                 }
             }
             Action::ScriptsRefresh => self.refresh_scripts(),
+            Action::Scheduler => return self.open_scheduler(),
             Action::ScriptsFolder => {
                 return Task::perform(
                     crate::script::pick_folder(fl!("script-folder-title"), self.scripts_dir()),
@@ -1357,6 +1412,11 @@ impl App {
         }
         // After the run's own notice: that the session was not opened is what matters.
         let mut pre_task = Task::none();
+        if let Some((run, _)) = out.ended {
+            for st in self.sched_state.values_mut().filter(|s| s.1 == Some(run)) {
+                st.1 = None;
+            }
+        }
         if let Some((run, ok)) = out.ended
             && let Some((launch, post)) = self.pre_runs.remove(&run)
         {
@@ -1870,6 +1930,163 @@ impl App {
                 self.sessions.notice = Some(e);
                 Task::none()
             }
+        }
+    }
+
+    /// Script → Scheduler…; open already: raised.
+    fn open_scheduler(&mut self) -> Task<Message> {
+        if let Some(s) = &self.sched_win {
+            return cosmic::iced::window::gain_focus(s.window);
+        }
+        let (window, open) = cosmic::iced::window::open(crate::scheduler::settings());
+        let s = crate::scheduler::SchedWindow::new(window, &self.schedule);
+        let first = s.name_field();
+        self.sched_win = Some(s);
+        Task::batch([
+            open.then(move |_| widget::text_input::focus(first.clone())),
+            cosmic::ApplicationExt::set_window_title(self, fl!("sch-title"), window),
+        ])
+    }
+
+    fn scheduler(&mut self, msg: crate::scheduler::SchMsg) -> Task<Message> {
+        use crate::scheduler::SchMsg;
+        let Some(w) = &mut self.sched_win else {
+            return Task::none();
+        };
+        match msg {
+            SchMsg::Close => {
+                let id = w.window;
+                self.sched_win = None;
+                return cosmic::iced::window::close(id);
+            }
+            SchMsg::Drag => return cosmic::iced::window::drag(w.window),
+            SchMsg::Save => self.sched_save(),
+            SchMsg::Delete => {
+                if let Some(i) = w.selected
+                    && i < self.schedule.jobs.len()
+                {
+                    let old = self.schedule.jobs.remove(i);
+                    self.sched_state.remove(&old.name);
+                    self.sched_write();
+                    let next = i.min(self.schedule.jobs.len().saturating_sub(1));
+                    let w = self.sched_win.as_mut().expect("open");
+                    w.reload(
+                        &self.schedule,
+                        (!self.schedule.jobs.is_empty()).then_some(next),
+                    );
+                }
+            }
+            SchMsg::RunNow => {
+                if let Some(job) = w.selected.and_then(|i| self.schedule.jobs.get(i)).cloned() {
+                    self.sched_run(&job);
+                }
+            }
+            m => w.update(m, &self.schedule),
+        }
+        Task::none()
+    }
+
+    /// Save: the fields checked, the name not another job's; counting starts again.
+    fn sched_save(&mut self) {
+        let Some(w) = &mut self.sched_win else {
+            return;
+        };
+        let job = match w.job() {
+            Ok(j) => j,
+            Err(e) => {
+                w.error = Some(e);
+                return;
+            }
+        };
+        let at = w.selected.filter(|&i| i < self.schedule.jobs.len());
+        if (self.schedule.jobs.iter().enumerate()).any(|(i, j)| j.name == job.name && Some(i) != at)
+        {
+            w.error = Some(fl!("sch-name-taken"));
+            return;
+        }
+        let now = shagshell_core::schedule::local_minutes();
+        // Counting goes on when only the name / script / arguments changed.
+        let (last, running) = match at {
+            Some(i) => {
+                let old = std::mem::replace(&mut self.schedule.jobs[i], job.clone());
+                let (last, running) = self.sched_state.remove(&old.name).unwrap_or((now, None));
+                (if old.every == job.every { last } else { now }, running)
+            }
+            None => {
+                self.schedule.jobs.push(job.clone());
+                (now, None)
+            }
+        };
+        self.sched_state.insert(job.name.clone(), (last, running));
+        self.sched_write();
+        let i = at.unwrap_or(self.schedule.jobs.len() - 1);
+        if let Some(w) = &mut self.sched_win {
+            w.reload(&self.schedule, Some(i));
+        }
+    }
+
+    fn sched_write(&mut self) {
+        if self.schedule_broken {
+            self.sessions.notice = Some(fl!("sch-broken"));
+            return;
+        }
+        if let Err(e) = self
+            .schedule
+            .save(&shagshell_core::schedule::Schedule::default_path())
+        {
+            self.sessions.notice = Some(format!("schedule.toml: {e}"));
+        }
+    }
+
+    /// The clock: what is due starts, one run of a job at a time.
+    fn sched_tick(&mut self) -> Task<Message> {
+        let now = shagshell_core::schedule::local_minutes();
+        let due: Vec<_> = (self.schedule.jobs.iter())
+            .filter(|j| {
+                let (last, running) = self
+                    .sched_state
+                    .get(&j.name)
+                    .copied()
+                    .unwrap_or((now, None));
+                running.is_none() && shagshell_core::schedule::due(j, last, now)
+            })
+            .cloned()
+            .collect();
+        for j in due {
+            self.sched_run(&j);
+        }
+        Task::none()
+    }
+
+    /// Starts `job` (no tab: the id nothing has, as with a pre-script); a run still going stops it.
+    fn sched_run(&mut self, job: &shagshell_core::schedule::Job) {
+        let st = self
+            .sched_state
+            .entry(job.name.clone())
+            .or_insert((0, None));
+        if st.1.is_some() {
+            return;
+        }
+        st.0 = shagshell_core::schedule::local_minutes();
+        let path = shagshell_core::script::expand_home(std::path::Path::new(&job.script));
+        match self.scripts.run(&path, &job.args, u64::MAX) {
+            Ok(run) => st.1 = Some(run),
+            Err(e) => self.sessions.notice = Some(format!("{}: {e}", job.name)),
+        }
+    }
+
+    /// «Last run» of the i-th job for its window.
+    fn sched_last_text(&self, i: usize) -> String {
+        let Some(job) = self.schedule.jobs.get(i) else {
+            return String::new();
+        };
+        match self.sched_state.get(&job.name) {
+            Some((_, Some(_))) => fl!("sch-running"),
+            Some((m, _)) if job.enabled => {
+                let ago = shagshell_core::schedule::local_minutes() - m;
+                fl!("sch-counted", min = ago)
+            }
+            _ => String::new(),
         }
     }
 
