@@ -23,7 +23,9 @@ pub fn ensure_default(dir: &Path, russian: bool) -> io::Result<PathBuf> {
         false => ("Notes.md", CHEAT_EN),
     };
     let path = dir.join(name);
-    if !path.exists() {
+    // A folder with something in it (the note renamed, others added) gets no second cheat sheet.
+    let empty = std::fs::read_dir(dir).is_ok_and(|mut d| d.next().is_none()) || !dir.exists();
+    if !path.exists() && empty {
         std::fs::create_dir_all(dir)?;
         std::fs::write(&path, text)?;
     }
@@ -64,9 +66,11 @@ pub fn rename(path: &Path, name: &str) -> io::Result<PathBuf> {
     valid_name(name, false)
         .map_err(|e| io::Error::new(ErrorKind::InvalidFilename, format!("{e:?}")))?;
     let mut file = name.to_string();
-    if Path::new(name).extension().is_none()
-        && let Some(ext) = path.extension()
-    {
+    let known = Path::new(name)
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| matches!(e.to_ascii_lowercase().as_str(), "md" | "markdown" | "txt"));
+    if !known && let Some(ext) = path.extension() {
         file = format!("{name}.{}", ext.to_string_lossy());
     }
     let to = path.with_file_name(file);
@@ -100,7 +104,18 @@ mod tests {
         std::fs::write(&p, "mine").unwrap();
         ensure_default(&d, false).unwrap();
         assert_eq!(std::fs::read_to_string(&p).unwrap(), "mine");
-        assert!(ensure_default(&d, true).unwrap().ends_with("Заметки.md"));
+        // Something is in the folder: no second cheat sheet next to it.
+        let ru = ensure_default(&d, true).unwrap();
+        assert!(!ru.exists());
+        std::fs::remove_file(&p).unwrap();
+        std::fs::write(d.join("Work.md"), "x").unwrap();
+        assert!(!ensure_default(&d, false).unwrap().exists());
+        let fresh = d.join("sub");
+        assert!(
+            ensure_default(&fresh, true)
+                .unwrap()
+                .ends_with("Заметки.md")
+        );
         let _ = std::fs::remove_dir_all(d);
     }
 
@@ -151,6 +166,9 @@ mod tests {
             ErrorKind::InvalidFilename
         );
         assert_eq!(rename(&a, "a").unwrap(), a);
+        let v = rename(&a, "ideas v1.2").unwrap();
+        assert_eq!(v, d.join("ideas v1.2.md"));
+        let a = rename(&v, "a.md").unwrap();
         let c = rename(&a, "plan").unwrap();
         assert_eq!(c, d.join("plan.md"));
         assert!(c.exists() && !a.exists());

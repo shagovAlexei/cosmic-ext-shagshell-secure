@@ -36,6 +36,13 @@ pub struct NoteView {
     rename_id: widget::Id,
 }
 
+impl Drop for NoteView {
+    /// The tab goes (closed, or the app ends): what is not written yet is.
+    fn drop(&mut self) {
+        self.save();
+    }
+}
+
 /// The file's text for a note, or the words for why not.
 pub fn read(path: &Path) -> Result<String, String> {
     notes::read(path).map_err(|e| match e {
@@ -88,9 +95,18 @@ impl NoteView {
         if self.dirty.is_none() {
             return;
         }
-        match std::fs::write(&self.path, self.text.text()) {
+        // Written beside, then moved over: a crash leaves the old file, not half of the new.
+        let tmp = self.path.with_file_name(format!(".{}.tmp", self.name()));
+        match std::fs::write(&tmp, self.text.text())
+            .and_then(|()| std::fs::rename(&tmp, &self.path))
+        {
             Ok(()) => self.dirty = None,
-            Err(e) => self.error = Some(format!("{}: {e}", self.path.display())),
+            Err(e) => {
+                let _ = std::fs::remove_file(&tmp);
+                // Tried again in a second.
+                self.dirty = Some(Instant::now());
+                self.error = Some(format!("{}: {e}", self.path.display()));
+            }
         }
     }
 
@@ -137,8 +153,16 @@ impl NoteView {
             }
             NoteMsg::Open => return true,
             NoteMsg::Link(url) => {
-                if let Err(e) = std::process::Command::new("xdg-open").arg(&url).spawn() {
-                    self.error = Some(format!("xdg-open: {e}"));
+                // Web and mail links only: a `file:` link in a file from elsewhere is not run.
+                if ["http://", "https://", "mailto:"]
+                    .iter()
+                    .any(|s| url.starts_with(s))
+                {
+                    match std::process::Command::new("xdg-open").arg(&url).spawn() {
+                        // Waited for, so it does not stay a zombie.
+                        Ok(mut c) => drop(std::thread::spawn(move || c.wait())),
+                        Err(e) => self.error = Some(format!("xdg-open: {e}")),
+                    }
                 }
             }
         }
@@ -183,7 +207,11 @@ impl NoteView {
         }
         let body: Element<'_, Message> = match self.preview {
             true => {
-                let style = markdown::Style::from(&cosmic::iced::Theme::Dark);
+                let base = match cosmic::theme::active().cosmic().is_dark {
+                    true => cosmic::iced::Theme::Dark,
+                    false => cosmic::iced::Theme::Light,
+                };
+                let style = markdown::Style::from(&base);
                 widget::scrollable(
                     markdown::view(&self.items, markdown::Settings::with_style(style))
                         .map(move |u| m(NoteMsg::Link(u.to_string()))),

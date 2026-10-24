@@ -414,10 +414,14 @@ impl Tabs {
         };
         let rename = matches!(msg, crate::notes::NoteMsg::RenameStart);
         let field = v.rename_field();
+        let before = v.path.clone();
         let open = v.update(msg);
-        tab.launch.title = v.name();
-        tab.base = v.name();
-        tab.launch.note = Some(v.path.clone());
+        // Only a rename of the file changes the title (a tab renamed by hand keeps its name).
+        if v.path != before {
+            tab.launch.title = v.name();
+            tab.base = v.name();
+            tab.launch.note = Some(v.path.clone());
+        }
         self.retitle(id);
         let task = match rename {
             true => widget::text_input::focus(field),

@@ -300,7 +300,10 @@ impl Application for App {
 
     fn update(&mut self, message: Message) -> Task<Message> {
         self.sessions.right = self.config.session_manager_side == crate::config::Side::Right;
-        let tabs_changed = matches!(message, Message::Tabs(_) | Message::Note(..));
+        let tabs_changed = matches!(
+            message,
+            Message::Tabs(_) | Message::Note(_, crate::notes::NoteMsg::RenameDo)
+        );
         let mut task = self.handle(message);
         if tabs_changed {
             self.remember_notes();
