@@ -299,7 +299,7 @@ sm-sftp = Open SFTP
 sftp-connecting = Connecting…
 sftp-disconnected = Not connected: { $why }
 sftp-not-connected = Not connected
-sftp-keys = Tab panel · Enter open · Backspace up · Insert mark · F5 copy · F6 move · Shift+F6 rename · F7 folder · F8 delete · F4 edit · Ctrl+D bookmarks · Alt+Enter rights · Ctrl+H hidden · Ctrl+R refresh
+sftp-keys = Tab panel · Enter open · Backspace up · Insert mark · F5 copy · F6 move · Shift+F6 rename · F7 folder · F8 delete · F4 edit · Ctrl+D bookmarks · Ctrl+Y sync · Alt+Enter rights · Ctrl+H hidden · Ctrl+R refresh
 sftp-n-items = { $count ->
     [one] { $count } item
    *[other] { $count } items
@@ -417,3 +417,33 @@ km-broken = keymap.toml could not be read: the keys are not saved so that it is 
 km-ui = F2–F8 on their own are used by the file manager and the session tree: add Shift / Ctrl / Alt, or take another key
 so-label = Tab label (empty: the program's title, else the session name)
 so-label-hint = Shown in the tab instead of a long title such as user@host:~/dir.
+
+## Sync
+sy-title = Synchronize Folders
+sy-local = Local folder
+sy-remote = Server folder
+sy-mode = Direction
+sy-up = To the server (local → server)
+sy-down = From the server (server → local)
+sy-both = Both ways (the newer file wins)
+sy-recursive = Include subfolders
+sy-mirror = Delete what the target has and the source has not
+sy-compare = Compare
+sy-scanning = Reading both folders…
+sy-same = The folders are the same.
+sy-summary = { $files } files to copy ({ $size }), { $deletes } to delete
+sy-all = Tick all
+sy-none = Untick all
+sy-more = … and { $n } more (all are done if ticked)
+sy-delete-warn = { $n } items will be deleted from the target after the copying.
+sy-back = Back
+sy-run = Synchronize
+sy-run-delete = Synchronize and delete
+sy-why-new = new
+sy-why-newer = newer
+sy-why-older = the target is newer
+sy-why-size = other size
+sy-conflict = a file and a folder of one name, or other size at the same time: not touched
+sy-queued = Synchronizing: { $n } copy batches in the queue
+sy-done = Synchronization finished
+sy-failed = Some copies failed: nothing was deleted

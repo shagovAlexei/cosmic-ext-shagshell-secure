@@ -59,6 +59,8 @@ pub enum Key {
     Edit,
     /// Ctrl+D: bookmarks.
     Bookmarks,
+    /// Ctrl+Y: Synchronize Folders.
+    Sync,
 }
 
 /// The commander's keys, by physical key (any layout).
@@ -83,6 +85,7 @@ pub fn key(k: &Physical, m: Modifiers) -> Option<Key> {
         Code::KeyH if m.control() && !m.shift() && !m.alt() => Key::Hidden,
         Code::Enter | Code::NumpadEnter if m.alt() && !m.control() && !m.shift() => Key::Chmod,
         Code::KeyD if m.control() && !m.shift() && !m.alt() => Key::Bookmarks,
+        Code::KeyY if m.control() && !m.shift() && !m.alt() => Key::Sync,
         Code::F4 if plain && !m.shift() => Key::Edit,
         Code::F5 if plain => Key::Copy,
         Code::F6 if plain && m.shift() => Key::Rename,
@@ -127,6 +130,8 @@ pub enum SftpMsg {
     BmAdd,
     /// The edit timer: a file saved in the editor goes up.
     EditTick,
+    /// The Synchronize Folders dialog.
+    Sync(crate::sftp_sync::SyncMsg),
 }
 
 enum Dialog {
@@ -153,6 +158,7 @@ enum Dialog {
         place: String,
         list: Vec<String>,
     },
+    Sync(Box<crate::sftp_sync::SyncState>),
     Chmod {
         paths: Vec<PathBuf>,
         /// The first one's bits when the dialog opened: only what is changed from them is applied.
@@ -201,6 +207,9 @@ pub struct SftpView {
     /// Files being edited locally (F4), and the batches that fetch / send them.
     edits: Vec<Edit>,
     edit_batches: HashMap<u64, PathBuf>,
+    /// A sync's copy batches, and what is deleted once they are all done.
+    sync_batches: Vec<u64>,
+    sync_deletes: Vec<(shagshell_core::sftp::sync::Kind, PathBuf)>,
 }
 
 /// A server's file opened in the local editor: sent back when it is saved.
@@ -254,6 +263,8 @@ impl SftpView {
             rule,
             edits: Vec::new(),
             edit_batches: HashMap::new(),
+            sync_batches: Vec::new(),
+            sync_deletes: Vec::new(),
         };
         for p in &mut v.panels {
             p.set_show_hidden(show_hidden);
@@ -604,6 +615,17 @@ impl SftpView {
             SftpMsg::DialogCancel if matches!(self.dialog, Some(Dialog::Conflict { .. })) => {
                 self.conflict(None);
             }
+            SftpMsg::Sync(m) => return self.sync_msg(m),
+            // Enter in the sync dialog: the next step.
+            SftpMsg::DialogOk if matches!(self.dialog, Some(Dialog::Sync(_))) => {
+                let next = match &self.dialog {
+                    Some(Dialog::Sync(s)) if s.phase == crate::sftp_sync::Phase::Preview => {
+                        crate::sftp_sync::SyncMsg::Run
+                    }
+                    _ => crate::sftp_sync::SyncMsg::Compare,
+                };
+                return self.sync_msg(next);
+            }
             SftpMsg::DialogOk => self.dialog_ok(),
             SftpMsg::DialogCancel => self.dialog = None,
             SftpMsg::ConflictAll(on) => {
@@ -706,6 +728,14 @@ impl SftpView {
                 self.paused = false;
                 self.pump();
             }
+            Event::Scanned(r) => {
+                if let Some(Dialog::Sync(s)) = &mut self.dialog {
+                    match r {
+                        Ok((l, r)) => s.compared(&l, &r),
+                        Err(e) => s.failed(e),
+                    }
+                }
+            }
             Event::Progress(id, n) => self.queue.progress(id, n),
             Event::Conflict(id, target) => {
                 let Some(job) = self.queue.jobs().iter().find(|j| j.id == id).cloned() else {
@@ -773,6 +803,7 @@ impl SftpView {
                     }
                 }
                 self.pump();
+                self.sync_check();
             }
             Event::Disconnected(why) if browse => {
                 self.connected = false;
@@ -863,6 +894,19 @@ impl SftpView {
             }
             Key::Edit if self.active == REMOTE => self.edit_start(),
             Key::Edit => {}
+            Key::Sync => {
+                if self.browse.is_none() || !self.connected {
+                    self.status = Some(fl!("sftp-not-connected"));
+                } else {
+                    let (l, r) = (
+                        self.panels[LOCAL].cwd().to_path_buf(),
+                        self.panels[REMOTE].cwd().to_path_buf(),
+                    );
+                    self.dialog = Some(Dialog::Sync(Box::new(crate::sftp_sync::SyncState::new(
+                        l, r,
+                    ))));
+                }
+            }
             Key::Bookmarks => {
                 let place = self.bookmark_place();
                 let list = match load_bookmarks() {
@@ -1044,8 +1088,148 @@ impl SftpView {
                 clear: init & !bits,
                 recursive,
             }),
-            Dialog::Bookmarks { .. } => {}
+            Dialog::Bookmarks { .. } | Dialog::Sync(_) => {}
             Dialog::Conflict { .. } | Dialog::Mkdir(_) | Dialog::Rename(..) | Dialog::Goto(_) => {}
+        }
+    }
+
+    /// The sync dialog's buttons.
+    fn sync_msg(&mut self, m: crate::sftp_sync::SyncMsg) -> Task<Message> {
+        use crate::sftp_sync::{Phase, SyncMsg};
+        let Some(Dialog::Sync(s)) = &mut self.dialog else {
+            return Task::none();
+        };
+        s.update(&m);
+        match m {
+            SyncMsg::Compare if s.phase == Phase::Setup => {
+                s.phase = Phase::Scanning;
+                let cmd = Cmd::Scan {
+                    local: s.local.clone(),
+                    remote: s.remote.clone(),
+                    recursive: s.recursive,
+                };
+                self.send_browse(cmd);
+            }
+            SyncMsg::Run if s.phase == Phase::Preview => {
+                let (ops, local, remote) = (s.chosen(), s.local.clone(), s.remote.clone());
+                self.dialog = None;
+                self.sync_run(&ops, &local, &remote);
+            }
+            _ => {}
+        }
+        Task::none()
+    }
+
+    /// What was chosen: folders made, copies queued (one batch each way, «overwrite» already
+    /// answered), deletes kept for when the copies are done.
+    fn sync_run(
+        &mut self,
+        ops: &[shagshell_core::sftp::sync::Op],
+        local: &std::path::Path,
+        remote: &std::path::Path,
+    ) {
+        use shagshell_core::sftp::sync::Kind;
+        let (mut up, mut down) = (Vec::new(), Vec::new());
+        let (mut rdirs, mut ldirs): (Vec<PathBuf>, Vec<PathBuf>) = (Vec::new(), Vec::new());
+        self.sync_deletes.clear();
+        for o in ops {
+            let (l, r) = (local.join(&o.rel), remote.join(&o.rel));
+            match o.kind {
+                Kind::CopyUp => {
+                    rdirs.extend(r.parent().map(PathBuf::from));
+                    up.push((l, r, o.size));
+                }
+                Kind::CopyDown => {
+                    ldirs.extend(l.parent().map(PathBuf::from));
+                    down.push((r, l, o.size));
+                }
+                Kind::MkdirRemote => rdirs.push(r),
+                Kind::MkdirLocal => ldirs.push(l),
+                Kind::DeleteLocal => self.sync_deletes.push((Kind::DeleteLocal, l)),
+                Kind::DeleteRemote => self.sync_deletes.push((Kind::DeleteRemote, r)),
+                Kind::Conflict => {}
+            }
+        }
+        for d in ldirs {
+            if let Err(e) = std::fs::create_dir_all(&d) {
+                self.status = Some(format!("{}: {e}", d.display()));
+            }
+        }
+        rdirs.sort();
+        rdirs.dedup();
+        if !rdirs.is_empty() {
+            if self.transfer.is_none() {
+                self.transfer = Some(self.worker());
+            }
+            if let Some(w) = &self.transfer {
+                w.send(Cmd::Mkdirs(rdirs));
+            }
+        }
+        self.sync_batches.clear();
+        for (dir, files) in [(Dir::Up, up), (Dir::Down, down)] {
+            if files.is_empty() {
+                continue;
+            }
+            let batch = self.queue.batch();
+            self.queue.answer(batch, Choice::Overwrite);
+            self.queue.add(batch, dir, files, false);
+            self.sync_batches.push(batch);
+        }
+        self.status = Some(fl!(
+            "sy-queued",
+            n = i64::try_from(self.sync_batches.len()).unwrap_or(0)
+        ));
+        self.paused = false;
+        self.pump();
+        self.sync_check();
+    }
+
+    /// The copies of a sync are all done: the deletes go, if every one went well.
+    fn sync_check(&mut self) {
+        if self.sync_batches.is_empty() && self.sync_deletes.is_empty() {
+            return;
+        }
+        // Settled: nothing of these batches waits or runs (a failed job never becomes Done).
+        let open = self.queue.jobs().iter().any(|j| {
+            self.sync_batches.contains(&j.batch)
+                && matches!(j.state, State::Waiting | State::Running)
+        });
+        if open {
+            return;
+        }
+        let failed = self.queue.jobs().iter().any(|j| {
+            self.sync_batches.contains(&j.batch)
+                && matches!(j.state, State::Failed(_) | State::Cancelled)
+        });
+        self.sync_batches.clear();
+        let deletes = std::mem::take(&mut self.sync_deletes);
+        if failed {
+            self.status = Some(fl!("sy-failed"));
+            return;
+        }
+        use shagshell_core::sftp::sync::Kind;
+        let remote: Vec<PathBuf> = (deletes.iter())
+            .filter(|(k, _)| *k == Kind::DeleteRemote)
+            .map(|(_, p)| p.clone())
+            .collect();
+        let mut said = false;
+        for (_, p) in deletes.iter().filter(|(k, _)| *k == Kind::DeleteLocal) {
+            let r = match std::fs::symlink_metadata(p) {
+                Ok(m) if m.is_dir() => std::fs::remove_dir_all(p),
+                _ => std::fs::remove_file(p),
+            };
+            if let Err(e) = r {
+                self.status = Some(format!("{}: {e}", p.display()));
+                said = true;
+            }
+        }
+        if !remote.is_empty() {
+            self.send_browse(Cmd::Delete(remote));
+        }
+        self.relist(LOCAL);
+        self.relist(REMOTE);
+        if !said {
+            self.status = Some(fl!("sy-done"));
         }
     }
 
@@ -1212,6 +1396,7 @@ impl SftpView {
                     fl!("sftp-apply"),
                 )
             }
+            Dialog::Sync(s) => s.view(self.id),
             Dialog::Bookmarks { list, .. } => {
                 let mut col = widget::column::with_capacity(list.len() + 1).spacing(4);
                 if list.is_empty() {

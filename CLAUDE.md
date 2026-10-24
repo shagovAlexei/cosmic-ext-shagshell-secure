@@ -72,6 +72,7 @@ We do **not** implement SSH. The system OpenSSH does it; we drive it.
   - `keyring.rs` — Secret Service over zbus (from shagoff-commander, + `lookup` / `delete`);
   - `credentials.rs` — `credentials.toml` (name → user, unknown fields kept), `put` (checked add / rename), `resolve`; `Store::using` / `relink` follow a renamed / deleted set;
   - `sftp/{proto,queue}.rs` — the SFTP v3 client (tested against `/usr/lib/openssh/sftp-server` run directly) and the transfer queue (a pure state machine: one job at a time, retry, cancel, per-batch «for all»);
+  - `sftp/sync.rs` — Synchronize Folders: `diff(local, remote, mode, mirror)` → ops (copy / mkdir / delete / conflict), trees read by `scan_local` / `ops::scan_remote`; copies keep the source's mtime (`ops::preserve_times`) so a second sync sees equal files. App side: `sftp_sync.rs` (dialog), batches queued with «overwrite» answered, deletes after the copies all went well.
   - `bookmarks.rs` — SFTP bookmarks (`bookmarks.toml`, per place); `uri.rs` — `text/uri-list` of dropped files → paths;
   - `panel.rs` — a file panel (listing, cursor, marks, targets) and size / time text, after shagoff-commander;
   - `logfile.rs` — log name templates `%H %S %Y %M %D %h %m %s %P %U`, `Cleaner` (output → plain text), `Logger`; the app copies a PTY's output to it through `term::log::TeePty`;

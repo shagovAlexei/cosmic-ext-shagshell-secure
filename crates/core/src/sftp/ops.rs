@@ -367,6 +367,12 @@ pub fn transfer<R: Read, W: Write>(
             }
         }
     }
+    // The copy keeps the source's time (SecureFX's «preserve times»): a later sync then sees the
+    // two as the same. Only a nicety: a server that refuses it is no failure of the copy.
+    match preserve_times(c, job) {
+        Err(e) if is_fatal(&e) => return Err(e),
+        _ => {}
+    }
     if job.is_move {
         match job.dir {
             Dir::Down => c.remove(&job.src)?,
@@ -374,6 +380,68 @@ pub fn transfer<R: Read, W: Write>(
         }
     }
     Ok(Copied::Done)
+}
+
+/// The target of `job` gets the source's modification time.
+fn preserve_times<R: Read, W: Write>(c: &mut Client<R, W>, job: &Job) -> io::Result<()> {
+    match job.dir {
+        Dir::Down => {
+            let (_, secs) = remote_stat(c, &job.src)?;
+            let t = std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs.max(0) as u64);
+            std::fs::OpenOptions::new()
+                .write(true)
+                .open(&job.dst)?
+                .set_modified(t)
+        }
+        Dir::Up => {
+            let (_, secs) = local_stat(&job.src)?;
+            c.set_times(&job.dst, u32::try_from(secs.max(0)).unwrap_or(u32::MAX))
+        }
+    }
+}
+
+/// The server's tree under `root` as `sync::Node`s (links skipped; a folder that can't be read
+/// is left out).
+pub fn scan_remote<R: Read, W: Write>(
+    c: &mut Client<R, W>,
+    root: &Path,
+    recursive: bool,
+) -> io::Result<Vec<crate::sftp::sync::Node>> {
+    let mut out = Vec::new();
+    scan_remote_dir(c, root, Path::new(""), recursive, &mut out, true)?;
+    Ok(out)
+}
+
+fn scan_remote_dir<R: Read, W: Write>(
+    c: &mut Client<R, W>,
+    root: &Path,
+    rel: &Path,
+    recursive: bool,
+    out: &mut Vec<crate::sftp::sync::Node>,
+    top: bool,
+) -> io::Result<()> {
+    let entries = match c.read_dir(&root.join(rel)) {
+        Ok(e) => e,
+        // The folder asked for must be there; one below it may be closed to us.
+        Err(e) if !top && !is_fatal(&e) => return Ok(()),
+        Err(e) => return Err(e),
+    };
+    for e in entries {
+        if e.attrs.is_link() {
+            continue;
+        }
+        let rel = rel.join(&e.name);
+        out.push(crate::sftp::sync::Node {
+            rel: rel.clone(),
+            size: e.attrs.size.unwrap_or(0),
+            mtime: i64::from(e.attrs.mtime.unwrap_or(0)),
+            is_dir: e.attrs.is_dir(),
+        });
+        if e.attrs.is_dir() && recursive {
+            scan_remote_dir(c, root, &rel, recursive, out, false)?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -410,6 +478,53 @@ mod tests {
             state: State::Running,
             is_move,
         }
+    }
+
+    fn set_mtime(p: &Path, secs: u64) {
+        let t = std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs);
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(p)
+            .unwrap()
+            .set_modified(t)
+            .unwrap();
+    }
+
+    #[test]
+    fn copies_keep_the_sources_time_both_ways() {
+        let Some((_s, mut c)) = server() else { return };
+        let (r, l) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let (rf, lf) = (r.path().join("f"), l.path().join("f"));
+        std::fs::write(&rf, "remote").unwrap();
+        set_mtime(&rf, 1_000_000_000);
+        let j = job(Dir::Down, &rf, &lf, false);
+        assert_eq!(transfer(&mut c, &j, None, |_| true).unwrap(), Copied::Done);
+        assert_eq!(local_stat(&lf).unwrap().1, 1_000_000_000);
+        // and up: a new file on the server with the local one's time
+        let up = r.path().join("up");
+        std::fs::write(&lf, "local").unwrap();
+        set_mtime(&lf, 1_100_000_000);
+        let j = job(Dir::Up, &lf, &up, false);
+        assert_eq!(transfer(&mut c, &j, None, |_| true).unwrap(), Copied::Done);
+        assert_eq!(remote_stat(&mut c, &up).unwrap().1, 1_100_000_000);
+    }
+
+    #[test]
+    fn scan_remote_reads_the_tree_without_links() {
+        let Some((_s, mut c)) = server() else { return };
+        let r = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(r.path().join("a/b")).unwrap();
+        std::fs::write(r.path().join("a/b/f"), "xyz").unwrap();
+        std::os::unix::fs::symlink(r.path().join("a"), r.path().join("ln")).unwrap();
+        let mut rel: Vec<String> = scan_remote(&mut c, r.path(), true)
+            .unwrap()
+            .iter()
+            .map(|n| n.rel.display().to_string())
+            .collect();
+        rel.sort();
+        assert_eq!(rel, ["a", "a/b", "a/b/f"]);
+        assert_eq!(scan_remote(&mut c, r.path(), false).unwrap().len(), 1);
+        assert!(scan_remote(&mut c, &r.path().join("none"), true).is_err());
     }
 
     #[test]
