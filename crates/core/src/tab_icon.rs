@@ -41,7 +41,8 @@ pub fn state(alive: bool, seen: bool, unread: bool, locked: bool) -> State {
 
 pub fn colour(s: State) -> &'static str {
     match s {
-        State::Connecting | State::Locked => "#d29922",
+        State::Connecting => "#d29922",
+        State::Locked => "#a371f7",
         State::Connected => "#2ea043",
         State::Output => "#388bfd",
         State::Disconnected => "#da3633",
@@ -49,7 +50,7 @@ pub fn colour(s: State) -> &'static str {
     }
 }
 
-/// The 16×16 SVG of `g` in the colour of `s`; a locked tab gets a padlock over it.
+/// The 16×16 SVG of `g` in the colour of `s` (a locked tab: purple, with a padlock).
 pub fn svg(g: Glyph, s: State) -> String {
     let c = colour(s);
     // A screen with a ">_" prompt.
@@ -116,5 +117,10 @@ mod tests {
             assert!(!s.contains(colour(State::Connected)));
         }
         assert!(svg(Glyph::Local, State::Locked).matches("<rect").count() >= 1); // the padlock
+        // Locked and connecting must not look alike (the ssh glyph has a padlock already).
+        assert_ne!(
+            svg(Glyph::Ssh, State::Locked),
+            svg(Glyph::Ssh, State::Connecting)
+        );
     }
 }

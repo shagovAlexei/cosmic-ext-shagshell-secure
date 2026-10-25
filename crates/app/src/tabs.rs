@@ -252,8 +252,7 @@ impl Tab {
             .is_some_and(|t| t.lock().unwrap_or_else(|e| e.into_inner()).locked());
         let st = match &self.body {
             Body::Note(_) | Body::Console => State::Plain,
-            // SFTP: connected or not, nothing in between.
-            Body::Sftp(_) => state(self.live(), true, false, false),
+            Body::Sftp(v) => state(v.connected || v.connecting(), v.connected, false, false),
             Body::Terminal(_) => state(self.live(), self.seen, self.unread, locked),
         };
         widget::icon(widget::icon::from_svg_bytes(svg(glyph, st).into_bytes())).size(16)
@@ -664,9 +663,10 @@ impl Tabs {
             if let Some(e) = found {
                 group.model.activate(e);
                 self.focus = Some(*pane);
-                return;
+                break;
             }
         }
+        self.mark_read();
     }
 
     /// The saved session the active tab was opened from.
