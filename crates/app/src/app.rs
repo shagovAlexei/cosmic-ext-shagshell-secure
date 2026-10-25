@@ -720,6 +720,13 @@ impl App {
                 };
                 match toolbar::function(&b.cmd) {
                     Some(t) => return self.update(Message::Action(t.2)),
+                    None if b.is_script() => {
+                        let Some(args) = shlex::split(&b.params) else {
+                            self.sessions.notice = Some(fl!("script-bad-args"));
+                            return Task::none();
+                        };
+                        return self.script(crate::script::ScMsg::Start(b.cmd.into(), args));
+                    }
                     None => self.launch_app(&format!("{} {}", b.cmd, b.params)),
                 }
             }
@@ -1430,6 +1437,9 @@ impl App {
                         self.update(Message::ButtonBar(crate::button_bar::BbMsg::Arg(s)))
                     }
                     Slot::Key => self.keymap_dialog(crate::keymap_editor::KmMsg::Arg(s)),
+                    Slot::Tool => self.toolbar(crate::toolbar::TbMsg::Edit(
+                        shagshell_core::toolbar::ToolMsg::Cmd(s),
+                    )),
                     Slot::Sched => self.scheduler(crate::scheduler::SchMsg::Script(s)),
                     Slot::Pre => self
                         .session_options(SoMsg::Field(crate::session_options::Field::PreScript, s)),

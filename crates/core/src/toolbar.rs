@@ -38,6 +38,12 @@ impl ToolButton {
     pub fn is_sep(&self) -> bool {
         self.cmd == SEP
     }
+
+    /// A program that is a Python script: run like Script → Run… on the active tab, `params` its
+    /// arguments.
+    pub fn is_script(&self) -> bool {
+        self.cmd.ends_with(".py")
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -194,6 +200,13 @@ mod tests {
         assert_eq!((t.list.clone(), t.sel), (default.clone(), Some(0)));
         t.update(ToolMsg::Reset); // the default is kept for a second reset
         assert_eq!(t.list, default);
+    }
+
+    #[test]
+    fn a_py_program_is_a_script() {
+        assert!(ToolButton::function("/home/u/backup.py").is_script());
+        assert!(!ToolButton::function("xterm").is_script());
+        assert!(!ToolButton::function("python3").is_script());
     }
 
     #[test]

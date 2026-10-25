@@ -2,6 +2,10 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.80.0 — 2026-10-26
+
+- feat: a toolbar button can run a Python script: in the toolbar editor «Browse…» beside Command picks a `.py`, Parameters are its arguments; pressing it runs the script on the active tab (like Script → Run…), with a gear icon and the file name as its hint; the function list moved to its own row
+
 ## 0.79.0 — 2026-10-26
 
 - feat: Lock Session without a password: leave both fields empty; «Unlock Session» then frees the tab at once
