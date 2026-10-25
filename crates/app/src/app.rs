@@ -1758,6 +1758,7 @@ impl App {
             }
             Action::ScriptConsole => return self.open_console(true),
             Action::Find => return self.find(FindMsg::Open),
+            Action::ConnectBar => return widget::text_input::focus(toolbar::bar_id()),
             Action::FullScreen => {
                 self.full_screen = !self.full_screen;
                 // Full screen is the terminal's: the menu bar goes too (F11 brings it back).
@@ -3571,6 +3572,7 @@ fn builtin_action(key: &Physical, mods: Modifiers) -> Option<Action> {
         (Code::Digit0 | Code::Numpad0, Modifiers::CTRL) => Action::ZoomReset,
         (Code::F11, m) if m.is_empty() => Action::FullScreen,
         (Code::KeyF, m) if m == ctrl_shift => Action::Find,
+        (Code::KeyR, m) if m == ctrl_shift => Action::ConnectBar,
         (_, Modifiers::ALT) => Action::SelectTab(digits.iter().position(|d| *d == code)? as u8),
         _ => return None,
     })
@@ -3597,6 +3599,8 @@ mod tests {
         assert_eq!(k(Code::Minus, Modifiers::CTRL), Some(Action::ZoomOut));
         assert_eq!(k(Code::Digit0, Modifiers::CTRL), Some(Action::ZoomReset));
         assert_eq!(k(Code::F11, Modifiers::empty()), Some(Action::FullScreen));
+        let cs = Modifiers::CTRL | Modifiers::SHIFT;
+        assert_eq!(k(Code::KeyR, cs), Some(Action::ConnectBar));
         assert_eq!(k(Code::F11, Modifiers::SHIFT), None); // the program's
     }
 

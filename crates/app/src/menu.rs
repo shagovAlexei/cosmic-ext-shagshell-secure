@@ -93,6 +93,8 @@ pub enum Action {
     FullScreen,
     /// Edit → Find… (Ctrl+Shift+F).
     Find,
+    /// File → Connect Bar (Ctrl+Shift+R): the toolbar's field takes the keys.
+    ConnectBar,
     // Shown, not working yet (later phases).
     Disconnect,
     ConnectSftp,
@@ -179,6 +181,7 @@ fn key_binds() -> HashMap<KeyBind, Action> {
         bind(vec![Ctrl], Key::Named(Named::Tab), Action::NextTab),
         bind(vec![Ctrl, Shift], Key::Named(Named::Tab), Action::PrevTab),
         bind(vec![Ctrl, Shift], c("f"), Action::Find),
+        bind(vec![Ctrl, Shift], c("r"), Action::ConnectBar),
         bind(vec![Ctrl], c("="), Action::ZoomIn),
         bind(vec![Ctrl], c("-"), Action::ZoomOut),
         bind(vec![Ctrl], c("0"), Action::ZoomReset),
@@ -226,6 +229,7 @@ fn icon_of(a: Action) -> Option<cosmic::widget::icon::Handle> {
         Action::Donate => "emblem-favorite-symbolic",
         Action::About => "help-about-symbolic",
         Action::Pending | Action::Find => "edit-find-symbolic",
+        Action::ConnectBar => "system-search-symbolic",
         Action::ZoomIn => "zoom-in-symbolic",
         Action::ZoomOut => "zoom-out-symbolic",
         Action::ZoomReset => "zoom-original-symbolic",
@@ -300,6 +304,7 @@ pub fn bar(
             vec![
                 Button(fl!("menu-connect"), None, Action::Connect),
                 Button(fl!("menu-quick-connect"), None, Action::QuickConnect),
+                Button(fl!("menu-connect-bar"), None, Action::ConnectBar),
                 Button(fl!("menu-new-local-shell"), None, Action::NewLocalShell),
                 Button(fl!("menu-note-open"), None, Action::OpenNote),
                 tab(fl!("menu-reconnect"), Action::Reconnect),

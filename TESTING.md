@@ -432,3 +432,5 @@
 - [ ] v0.71.0: Keymap Editor: every key in the list starts with its action's icon (envelope = send string, menu = function, program, gear = script); the «Action» dropdown of a key and of a Button Bar button shows the same icons
 - [ ] v0.72.0: Global Options → «Вкладки»: Вверху / Внизу moves the tabs; a fresh config has them at the top
 - [ ] v0.72.0: F11: full screen without the menu bar; F11 again: window and menu back
+- [ ] v0.73.0: toolbar editor: «Connect Bar» is in the list; Up / Down moves the field on the bar, Delete removes it
+- [ ] v0.73.0: Ctrl+Shift+R (or File → Connect Bar) in a terminal: the cursor is in the Connect Bar, letters go there
