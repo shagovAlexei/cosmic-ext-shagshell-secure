@@ -23,6 +23,7 @@ Legend: ✅ have · 🟡 partly · ❌ missing · — not planned.
 |---|---|---|
 | Status icons: Connected, Disconnected, **New Input**, **Inactivity** (N s), Locked overlay, script running | ✅ coloured icons (0.48.0), inactivity (0.56.0, fixed 5 s) | |
 | Status as icon / background colour / colour rectangle | ❌ | |
+| Lock Session (password) | ✅ 0.77.0 (tab menu; memory only) | |
 | Tab text = session name, label template `%H %S %U %I %P` | ✅ session name (0.48.0), label template `%S %H %U %P` (0.57.0) | |
 | «(n)» on a second tab of the same session | ❌ | |
 | Tab width: fit / fixed / divide evenly, min width, tooltip | ✅ fit to label, max 240 px (0.69.0) | |

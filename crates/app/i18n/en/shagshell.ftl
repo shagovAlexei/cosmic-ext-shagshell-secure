@@ -697,3 +697,23 @@ icon-star = Star
 icon-flag = Flag
 bb-tip = Hint (shown when the pointer rests on the button)
 panel-strip = Fold into a strip
+
+# Lock Session, the note tab menu
+menu-lock = Lock Session…
+menu-unlock = Unlock Session…
+lock-title = Lock «{ $name }»
+lock-unlock-title = Unlock «{ $name }»
+lock-body = Nothing typed reaches the tab until it is unlocked with this password. The password is kept in memory only.
+lock-unlock-body = Type the password the tab was locked with.
+lock-password = Password
+lock-again = Password again
+lock-lock = Lock
+lock-unlock = Unlock
+lock-wrong = Wrong password
+lock-empty = Type a password
+lock-mismatch = The passwords differ
+lock-locked = Locked
+note-save = Save
+note-save-as = Save As…
+note-wrap = Word Wrap
+note-numbers = Line Numbers

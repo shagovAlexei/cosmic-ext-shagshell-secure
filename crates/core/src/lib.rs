@@ -27,6 +27,7 @@ pub mod sftp;
 pub mod shell;
 pub mod sshconfig;
 pub mod tab_icon;
+pub mod tablock;
 pub mod tabs;
 pub mod toolbar;
 pub mod update;
