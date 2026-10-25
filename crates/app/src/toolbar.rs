@@ -15,7 +15,14 @@ pub fn bar_id() -> widget::Id {
 
 /// The app functions a toolbar button can run: (name in the config, icon, action, label).
 pub type Tool = (&'static str, &'static str, Action, fn() -> String);
-pub const TOOLS: [Tool; 26] = [
+pub const TOOLS: [Tool; 27] = [
+    // The Connect Bar's field itself, not a button (where it stands on the bar).
+    (
+        "ConnectBar",
+        "system-search-symbolic",
+        Action::ConnectBar,
+        || fl!("menu-connect-bar"),
+    ),
     (
         "SessionManager",
         "view-list-symbolic",
@@ -172,14 +179,25 @@ pub fn default_bar() -> Vec<ToolButton> {
         ToolButton::sep(),
         f("Sftp"),
         f("SessionOptions"),
+        ToolButton::sep(),
+        f(CONNECT_BAR),
     ]
 }
 
-/// The bar: the config's list, else the default one.
+const CONNECT_BAR: &str = "ConnectBar";
+
+/// The bar: the config's list, else the default one. A list saved before the Connect Bar was an
+/// item gets it at the end, where it used to be drawn.
 pub fn buttons(config: &[ToolButton]) -> Vec<ToolButton> {
     match config.is_empty() {
         true => default_bar(),
-        false => config.to_vec(),
+        false => {
+            let mut list = config.to_vec();
+            if !list.iter().any(|b| b.cmd == CONNECT_BAR) {
+                list.extend([ToolButton::sep(), ToolButton::function(CONNECT_BAR)]);
+            }
+            list
+        }
     }
 }
 
@@ -210,17 +228,33 @@ pub fn view(
     picked: Option<usize>,
     tools: &[ToolButton],
 ) -> Element<'static, Message> {
-    let row = (tools.iter().enumerate()).map(|(i, b)| -> Element<'static, Message> {
-        if b.is_sep() {
-            return widget::Space::new().width(10.0).into();
-        }
-        let button = widget::button::icon(widget::icon::from_name(icon(b)))
-            .on_press(Message::Toolbar(TbMsg::Run(i)));
-        widget::tooltip(button, widget::text(tip(b)), tooltip::Position::Bottom).into()
-    });
-    let mut items = row.collect::<Vec<_>>();
-    // SecureCRT's Connect Bar: a session's name or user@host:port, Enter connects.
-    items.push(widget::Space::new().width(12.0).into());
+    // SecureCRT's Connect Bar: a session's name or user@host:port, Enter connects. Drawn once,
+    // where its item stands (one field, one id).
+    let mut field = Some(connect_bar(bar, list, picked));
+    let items =
+        (tools.iter().enumerate()).filter_map(|(i, b)| -> Option<Element<'static, Message>> {
+            if b.is_sep() {
+                return Some(widget::Space::new().width(10.0).into());
+            }
+            if b.cmd == CONNECT_BAR {
+                return field.take();
+            }
+            let button = widget::button::icon(widget::icon::from_name(icon(b)))
+                .on_press(Message::Toolbar(TbMsg::Run(i)));
+            Some(widget::tooltip(button, widget::text(tip(b)), tooltip::Position::Bottom).into())
+        });
+    let items = items.collect::<Vec<_>>();
+    let row = widget::row::with_children(items)
+        .spacing(4)
+        .padding([4, 8])
+        .width(cosmic::iced::Length::Fill)
+        .align_y(cosmic::iced::Alignment::Center);
+    widget::mouse_area(row)
+        .on_right_press(Message::Toolbar(TbMsg::Open))
+        .into()
+}
+
+fn connect_bar(bar: &str, list: &[String], picked: Option<usize>) -> Element<'static, Message> {
     let input = widget::search_input(fl!("connect-bar-hint"), bar.to_string())
         .id(bar_id())
         .on_focus(Message::FocusField(bar_id()))
@@ -255,16 +289,7 @@ pub fn view(
             .class(cosmic::theme::Container::Dropdown),
         );
     }
-    let input: Element<'static, Message> = input.into();
-    items.push(input);
-    let row = widget::row::with_children(items)
-        .spacing(4)
-        .padding([4, 8])
-        .width(cosmic::iced::Length::Fill)
-        .align_y(cosmic::iced::Alignment::Center);
-    widget::mouse_area(row)
-        .on_right_press(Message::Toolbar(TbMsg::Open))
-        .into()
+    input.into()
 }
 
 /// An icon button with a hint on hover: for strips that are often narrow (a note, a queue, a
@@ -290,11 +315,22 @@ mod tests {
     #[test]
     fn the_default_bar_runs_known_functions() {
         let bar = default_bar();
-        assert_eq!(bar.iter().filter(|b| b.is_sep()).count(), 3);
+        assert_eq!(bar.iter().filter(|b| b.is_sep()).count(), 4);
         assert!(bar.iter().all(|b| b.is_sep() || function(&b.cmd).is_some()));
         let mut seen = std::collections::HashSet::new();
         assert!(TOOLS.iter().all(|t| seen.insert(t.0)), "names are unique");
         assert_eq!(buttons(&[]), bar);
+        // A bar saved before the Connect Bar was an item keeps it, at the end; one placed stays.
+        let old = vec![ToolButton::function("Connect")];
+        assert_eq!(
+            buttons(&old).last().map(|b| b.cmd.as_str()),
+            Some("ConnectBar")
+        );
+        let placed = vec![
+            ToolButton::function("ConnectBar"),
+            ToolButton::function("Connect"),
+        ];
+        assert_eq!(buttons(&placed), placed);
         let program = ToolButton::function("xterm");
         assert_eq!(icon(&program), "application-x-executable-symbolic");
         assert_eq!(tip(&program), "xterm");

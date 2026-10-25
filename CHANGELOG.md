@@ -2,6 +2,11 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.73.0 — 2026-10-25
+
+- feat: the Connect Bar is an item of the toolbar: the toolbar editor (right click on the bar) moves or removes it like a button
+- feat: Ctrl+Shift+R (File → Connect Bar) puts the cursor in the Connect Bar; its hint shows the key
+
 ## 0.72.0 — 2026-10-25
 
 - feat: Global Options: «Tabs: Top / Bottom» list instead of the «Tabs at the bottom» switch (top by default)
