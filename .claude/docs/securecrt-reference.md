@@ -109,3 +109,12 @@ These hold the user's real hosts, script paths and (encrypted) passwords: use th
 - Session Manager icons by protocol: screen `>_` + padlock (SSH), screen (Telnet), telephone (Serial/TAPI), house (Local Shell), folders with the same marks.
 - Themes: View → Themes (System, Native, Carbon, VS Blue/Dark/White, Office White + legacy); on Linux it follows the system light/dark.
 - Full comparison with ours: `.claude/docs/ui-comparison.md`.
+
+### The main window, from a real 9.7 screenshot (2026-10-25)
+The picture itself is kept out of git (it shows real hosts): `.claude/local/securecrt-9.7-main.png` on the user's machine.
+- Title: `<tab> (n) - SecureCRT` — the active tab's name, «(1)» for a second copy of a session.
+- Session Manager docked as auto-hide: a thin vertical «Session Manager» strip on the left edge, the terminal gets the whole width.
+- One toolbar row of small (16 px) monochrome icons: connect, quick connect, reconnect, disconnect, local shell, copy, paste, find (binoculars), a «Keyword <Alt+U>» field, print, options, keymap, help; then text buttons «Run…», «Cancel», «Recent Script».
+- Tabs: a small status icon before the name — green check = connected, red no-entry circle = disconnected, a document icon for the Scratchpad tab; the active tab has a blue top edge; tabs are compact (fit to label), not stretched.
+- Terminal: black background, no padding; a horizontal scrollbar at the bottom, a vertical one on the right.
+- Bottom: the Button Bar row — a «Default» bar dropdown, then buttons with coloured dots (blue, green) and their labels; no separate status bar in view.
