@@ -13,3 +13,7 @@ After shagoff-commander's TC-style «Change button bar» (the user asked for it 
 
 ## Not now
 - Shift+drag of a button on the bar (commander has it); a button's own working directory.
+
+## 0.80.0: script buttons
+
+A program whose command ends in `.py` is a script (`ToolButton::is_script`): pressing it runs it on the active tab like Script → Run…, Parameters split shell-style into its arguments (an unclosed quote: the status bar says so). The editor's «Browse…» beside Command picks the file; the function list has its own row. A script's default icon is `system-run-symbolic`, its default hint the file name.

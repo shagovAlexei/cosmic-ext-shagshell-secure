@@ -201,19 +201,24 @@ pub fn buttons(config: &[ToolButton]) -> Vec<ToolButton> {
     }
 }
 
-/// A button's icon: its own, else its function's (a program: the generic one).
+/// A button's icon: its own, else its function's (a program: the generic one, a script: a gear).
 pub fn icon(b: &ToolButton) -> String {
+    const PROGRAM: &str = "application-x-executable-symbolic";
     match (b.icon.as_str(), function(&b.cmd)) {
         ("", Some(t)) => t.1.to_string(),
-        ("", None) => "application-x-executable-symbolic".into(),
+        ("" | PROGRAM, None) if b.is_script() => "system-run-symbolic".into(),
+        ("", None) => PROGRAM.into(),
         (i, _) => i.to_string(),
     }
 }
 
-/// A button's hint: its own, else its function's name (a program: its command).
+/// A button's hint: its own, else its function's name (a program: its command, a script: its
+/// file name).
 pub fn tip(b: &ToolButton) -> String {
     match (b.tip.as_str(), function(&b.cmd)) {
         ("", Some(t)) => (t.3)(),
+        ("", None) if b.is_script() => (std::path::Path::new(&b.cmd).file_name())
+            .map_or_else(|| b.cmd.clone(), |n| n.to_string_lossy().into_owned()),
         ("", None) => b.cmd.clone(),
         (t, _) => t.to_string(),
     }
@@ -527,16 +532,26 @@ pub fn editor<'a>(t: &'a ToolEdit, labels: &'a [String]) -> Element<'a, Message>
                 cmd,
                 on(ToolMsg::Cmd)
             ),
+            widget::button::standard(fl!("so-browse"))
+                .on_press_maybe(editable.map(|_| Message::ScriptFile(crate::script::Slot::Tool))),
+        ]
+        .spacing(6)
+        .align_y(Alignment::Center),
+        row![
+            widget::text::body(fl!("bb-function")).width(Length::Fixed(110.0)),
             widget::dropdown(labels, internal, move |i| {
                 msg(ToolMsg::Function(TOOLS[i].0.to_string()))
-            })
-            .width(Length::Fixed(220.0)),
+            }),
         ]
         .spacing(6)
         .align_y(Alignment::Center),
         field(
             fl!("toolbar-params"),
-            fl!("toolbar-params-hint"),
+            if b.is_script() {
+                fl!("toolbar-params-script")
+            } else {
+                fl!("toolbar-params-hint")
+            },
             params,
             on(ToolMsg::Params).filter(|_| internal.is_none())
         ),

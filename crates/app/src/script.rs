@@ -1279,6 +1279,8 @@ pub enum Slot {
     Open,
     /// Key Map: a key's script.
     Key,
+    /// The toolbar editor: a button's script.
+    Tool,
 }
 
 /// A script's field with a «Browse…» button beside it.
