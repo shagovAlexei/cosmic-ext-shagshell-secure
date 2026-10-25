@@ -492,9 +492,6 @@ impl Tabs {
         let Body::Note(v) = &mut tab.body else {
             return (false, Task::none());
         };
-        if matches!(msg, crate::notes::NoteMsg::Copy) {
-            return (false, iced::clipboard::write(v.text()));
-        }
         let rename = matches!(msg, crate::notes::NoteMsg::RenameStart);
         let field = v.rename_field();
         let before = v.path.clone();

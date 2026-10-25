@@ -21,3 +21,8 @@
 - Список / поиск по заметкам;
 - WYSIWYG-редактирование markdown, поиск по тексту, синхронизацию;
 - Вставку выделенного из заметки в терминал (можно позже: кнопка «Отправить строку»).
+
+## 0.76.0: редактор COSMIC Edit
+- Вместо iced `text_editor` и предпросмотра `.md` — виджет редактора COSMIC Edit (`crates/app/src/editor/`: `text_box.rs`, `line_number.rs` из pop-os/cosmic-edit @ 4ac1cc8, GPL-3.0) поверх cosmic-text `SyntaxEditor` (`syntect` + `two-face`, темы COSMIC Dark / Light из `cosmic-syntax-theme`): подсветка по расширению, номера строк, подсветка текущей строки. Режим vi выключен (`set_passthrough(true)`).
+- Ctrl+C / X / V / A / Z / Shift+Z / Y — в нашем `text_box` по физической клавише (в COSMIC Edit их держит приложение).
+- Предпросмотр `.md` (`core::mdview`) удалён.

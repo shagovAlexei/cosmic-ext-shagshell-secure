@@ -23,7 +23,11 @@ pollster = "0.4"
 
 # Terminal, adapted from cosmic-term: the emulator and the text it draws with (libcosmic's version).
 alacritty_terminal = "0.25.1"
-cosmic-text = { version = "0.19", features = ["monospace_fallback", "shape-run-cache"] }
+cosmic-text = { version = "0.19", features = ["monospace_fallback", "shape-run-cache", "syntect", "vi"] }
+# Notes: COSMIC Edit's editor (`editor/`), its syntax highlighting and themes.
+syntect = "5.3"
+two-face = "0.4.5"
+cosmic-syntax-theme = { git = "https://github.com/pop-os/cosmic-syntax-theme.git", rev = "b1e1eb0234568911e59888f092dfc779c609b499" }
 indexmap = "2"
 tokio = { version = "1", features = ["rt", "sync"] }
 # The file chooser portal, for the folder it opens in (libcosmic's dialog does not pass one).

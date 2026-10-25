@@ -7,6 +7,7 @@ mod command_window;
 mod config;
 mod credentials_window;
 mod dialog_icons;
+mod editor;
 mod find_bar;
 mod i18n;
 mod keygen;
