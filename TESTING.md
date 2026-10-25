@@ -395,3 +395,4 @@
 - [ ] v0.49.0: Session Manager icons by protocol: ssh screen with padlock, telnet screen, serial connector, local house; readable in light and dark themes
 - [ ] v0.50.0: every menu shows icons beside its items (checkboxes keep the check mark), text lines up; Script → Cancel is grey with no script running
 - [ ] v0.51.0: SFTP rows show folder / file icons (`..` an up arrow); in a narrow group the rights, then the date go, names stay readable; the F-key buttons wrap onto a second row
+- [ ] v0.52.0: status bar: «Ln N, Col M» follows the cursor, ⏱ counts up each second while connected and stops when it ends, «● REC file.log» while logging

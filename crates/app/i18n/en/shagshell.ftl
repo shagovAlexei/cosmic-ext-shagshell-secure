@@ -62,6 +62,7 @@ bb-bad-command = The command can't be read (quotes)
 menu-log-session = Log Session
 menu-script-record = Record Script
 status-recording = REC SCRIPT
+status-cursor = Ln {$line}, Col {$col}
 status-logging = REC
 menu-options = Options
 menu-session-options = Session Options…

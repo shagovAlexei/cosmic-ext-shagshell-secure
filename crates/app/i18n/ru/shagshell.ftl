@@ -62,6 +62,7 @@ bb-bad-command = Команду не разобрать (кавычки)
 menu-log-session = Записывать лог сессии
 menu-script-record = Записать скрипт
 status-recording = ЗАПИСЬ СКРИПТА
+status-cursor = Стр {$line}, Кол {$col}
 status-logging = ЗАПИСЬ
 menu-options = Параметры
 menu-session-options = Параметры сессии…

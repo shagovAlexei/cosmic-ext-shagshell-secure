@@ -2,6 +2,10 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.52.0 — 2026-10-25
+
+- feat: the status bar also shows the cursor position, how long the tab has been connected and the log file's name while logging
+
 ## 0.51.0 — 2026-10-25
 
 - feat: SFTP panels show folder / file icons instead of `[name]`; a narrow panel drops the rights, then the date, then the size column; the F-key buttons wrap instead of being cut
