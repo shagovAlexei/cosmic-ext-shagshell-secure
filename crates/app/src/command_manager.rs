@@ -441,6 +441,7 @@ impl CommandManager {
         .spacing(2);
         let filter = widget::search_input(fl!("sm-filter"), self.filter.clone())
             .id(self.filter_id.clone())
+            .on_focus(Message::FocusField(self.filter_id.clone()))
             .on_input(|f| Message::CommandManager(CmMsg::Filter(f)))
             .on_clear(m(CmMsg::ClearFilter));
         let rows = self.tree.rows(&self.filter, &self.open);

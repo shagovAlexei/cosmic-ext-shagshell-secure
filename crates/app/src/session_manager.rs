@@ -156,6 +156,12 @@ pub struct SessionManager {
 }
 
 impl SessionManager {
+    /// Every saved session's id, in tree order.
+    pub fn session_ids(&self) -> Vec<String> {
+        let top = self.tree.iter().map(|n| n.name().to_string()).collect();
+        shagshell_core::session::rows::sessions_under(&self.tree, &top)
+    }
+
     pub fn new(store: Store, expanded: &[String], width: u16) -> Self {
         let mut sm = Self {
             store,
@@ -700,6 +706,7 @@ impl SessionManager {
         .spacing(2);
         let filter = widget::search_input(fl!("sm-filter"), self.filter.clone())
             .id(self.filter_id.clone())
+            .on_focus(Message::FocusField(self.filter_id.clone()))
             .on_input(|f| Message::Sessions(SmMsg::Filter(f)))
             .on_clear(m(SmMsg::ClearFilter));
         let list: Element<'_, Message> = match self.rows.is_empty() {
