@@ -1472,6 +1472,9 @@ impl App {
                     (_, Some(i)) => Some((i + n - 1) % n),
                 };
             }
+            Message::Key(Physical::Code(Code::Escape), m) if self.about && m.is_empty() => {
+                return self.update(Message::CloseAbout);
+            }
             // Edit → Find: Esc closes its bar.
             Message::Key(Physical::Code(Code::Escape), m)
                 if self.find.is_some() && m.is_empty() =>
