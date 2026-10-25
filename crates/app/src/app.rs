@@ -1760,6 +1760,8 @@ impl App {
             Action::Find => return self.find(FindMsg::Open),
             Action::FullScreen => {
                 self.full_screen = !self.full_screen;
+                // Full screen is the terminal's: the menu bar goes too (F11 brings it back).
+                self.core.window.show_headerbar = !self.full_screen;
                 let mode = match self.full_screen {
                     true => cosmic::iced::window::Mode::Fullscreen,
                     false => cosmic::iced::window::Mode::Windowed,

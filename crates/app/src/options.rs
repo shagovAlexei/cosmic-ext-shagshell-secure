@@ -374,8 +374,19 @@ pub fn view<'a>(
             widget::toggler(config.cursor_blink).on_toggle(set(|c, on| c.cursor_blink = on)),
         ))
         .add(settings::flex_item(
-            fl!("options-tabs-bottom"),
-            widget::toggler(config.tabs_bottom).on_toggle(set(|c, on| c.tabs_bottom = on)),
+            fl!("options-tabs-position"),
+            widget::dropdown(
+                vec![fl!("options-tabs-top"), fl!("options-tabs-bottom")],
+                Some(usize::from(config.tabs_bottom)),
+                {
+                    let c = config.clone();
+                    move |i| {
+                        let mut c = c.clone();
+                        c.tabs_bottom = i == 1;
+                        Message::SetConfig(c)
+                    }
+                },
+            ),
         ))
         .add(settings::flex_item(
             fl!("options-tabs-hide-single"),

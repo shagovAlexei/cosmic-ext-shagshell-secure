@@ -430,3 +430,5 @@
 - [ ] v0.70.4 regression: Button Bar: the text (and the colour dot) of every button sits in the vertical middle
 - [ ] v0.70.5: Options → Key Map → add a key with action «Run script»: Browse… opens the file chooser and fills the field
 - [ ] v0.71.0: Keymap Editor: every key in the list starts with its action's icon (envelope = send string, menu = function, program, gear = script); the «Action» dropdown of a key and of a Button Bar button shows the same icons
+- [ ] v0.72.0: Global Options → «Вкладки»: Вверху / Внизу moves the tabs; a fresh config has them at the top
+- [ ] v0.72.0: F11: full screen without the menu bar; F11 again: window and menu back
