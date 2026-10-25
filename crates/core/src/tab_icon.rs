@@ -20,10 +20,34 @@ pub enum Glyph {
     Cloud,
     Desktop,
     Container,
+    Laptop,
+    Mobile,
+    Printer,
+    Camera,
+    Wifi,
+    Storage,
+    Chip,
+    Power,
+    Antenna,
+    Web,
+    Mail,
+    Vpn,
+    Key,
+    Service,
+    Monitoring,
+    Code,
+    Deploy,
+    Office,
+    Tools,
+    Lab,
+    Bug,
+    Vm,
+    Star,
+    Flag,
 }
 
 /// The icons a session can pick, by the name kept in its file.
-pub const PICKABLE: [(&str, Glyph); 12] = [
+pub const PICKABLE: [(&str, Glyph); 36] = [
     ("ssh", Glyph::Ssh),
     ("terminal", Glyph::Telnet),
     ("serial", Glyph::Serial),
@@ -36,6 +60,30 @@ pub const PICKABLE: [(&str, Glyph); 12] = [
     ("cloud", Glyph::Cloud),
     ("desktop", Glyph::Desktop),
     ("container", Glyph::Container),
+    ("laptop", Glyph::Laptop),
+    ("mobile", Glyph::Mobile),
+    ("printer", Glyph::Printer),
+    ("camera", Glyph::Camera),
+    ("wifi", Glyph::Wifi),
+    ("storage", Glyph::Storage),
+    ("chip", Glyph::Chip),
+    ("power", Glyph::Power),
+    ("antenna", Glyph::Antenna),
+    ("web", Glyph::Web),
+    ("mail", Glyph::Mail),
+    ("vpn", Glyph::Vpn),
+    ("key", Glyph::Key),
+    ("service", Glyph::Service),
+    ("monitoring", Glyph::Monitoring),
+    ("code", Glyph::Code),
+    ("deploy", Glyph::Deploy),
+    ("office", Glyph::Office),
+    ("tools", Glyph::Tools),
+    ("lab", Glyph::Lab),
+    ("bug", Glyph::Bug),
+    ("vm", Glyph::Vm),
+    ("star", Glyph::Star),
+    ("flag", Glyph::Flag),
 ];
 
 impl Glyph {
@@ -150,6 +198,78 @@ pub fn svg(g: Glyph, s: State) -> String {
         ),
         Glyph::Container => format!(
             r#"<path d="M8 1.5l6 3v7l-6 3-6-3v-7z" fill="none" stroke="{c}" stroke-width="1.4" stroke-linejoin="round"/><path d="M2 4.5l6 3 6-3M8 7.5v7" fill="none" stroke="{c}" stroke-width="1.2" stroke-linejoin="round"/>"#
+        ),
+        Glyph::Laptop => format!(
+            r#"<rect x="3" y="3" width="10" height="7" rx="1" fill="none" stroke="{c}" stroke-width="1.4"/><path d="M1.5 12.5h13" stroke="{c}" stroke-width="1.5" stroke-linecap="round"/>"#
+        ),
+        Glyph::Mobile => format!(
+            r#"<rect x="4.5" y="1.5" width="7" height="13" rx="1.5" fill="none" stroke="{c}" stroke-width="1.4"/><path d="M7 12.2h2" stroke="{c}" stroke-width="1.3" stroke-linecap="round"/>"#
+        ),
+        Glyph::Printer => format!(
+            r#"<path d="M4.5 6V2h7v4M4.5 11.5H2.5V6.5h11v5h-2" fill="none" stroke="{c}" stroke-width="1.4" stroke-linejoin="round"/><rect x="4.5" y="9.5" width="7" height="5" fill="none" stroke="{c}" stroke-width="1.4"/>"#
+        ),
+        Glyph::Camera => format!(
+            r#"<rect x="1.5" y="4.5" width="9" height="7" rx="1.2" fill="none" stroke="{c}" stroke-width="1.4"/><path d="M10.5 7l4-2v6l-4-2z" fill="none" stroke="{c}" stroke-width="1.3" stroke-linejoin="round"/><circle cx="6" cy="8" r="1.4" fill="{c}"/>"#
+        ),
+        Glyph::Wifi => format!(
+            r#"<path d="M2 6.2a8.5 8.5 0 0 1 12 0M4.2 8.6a5.3 5.3 0 0 1 7.6 0M6.4 11a2.2 2.2 0 0 1 3.2 0" fill="none" stroke="{c}" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="13.2" r="1" fill="{c}"/>"#
+        ),
+        Glyph::Storage => format!(
+            r#"<rect x="1.5" y="3" width="13" height="10" rx="1.5" fill="none" stroke="{c}" stroke-width="1.4"/><path d="M1.5 9.5h13" stroke="{c}" stroke-width="1.2"/><circle cx="11.5" cy="11.3" r=".9" fill="{c}"/><path d="M4 11.3h3.5" stroke="{c}" stroke-width="1.2" stroke-linecap="round"/>"#
+        ),
+        Glyph::Chip => format!(
+            r#"<rect x="4" y="4" width="8" height="8" rx="1" fill="none" stroke="{c}" stroke-width="1.4"/><rect x="6.5" y="6.5" width="3" height="3" fill="{c}"/><path d="M6 1.5V4M10 1.5V4M6 12v2.5M10 12v2.5M1.5 6H4M1.5 10H4M12 6h2.5M12 10h2.5" stroke="{c}" stroke-width="1.2" stroke-linecap="round"/>"#
+        ),
+        Glyph::Power => format!(
+            r#"<path d="M5 3.5a5.5 5.5 0 1 0 6 0" fill="none" stroke="{c}" stroke-width="1.5" stroke-linecap="round"/><path d="M8 1.5v6" stroke="{c}" stroke-width="1.5" stroke-linecap="round"/>"#
+        ),
+        Glyph::Antenna => format!(
+            r#"<path d="M8 6v8.5M5.5 14.5h5" stroke="{c}" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="5" r="1.2" fill="{c}"/><path d="M4.8 2a4.5 4.5 0 0 0 0 6M11.2 2a4.5 4.5 0 0 1 0 6" fill="none" stroke="{c}" stroke-width="1.3" stroke-linecap="round"/>"#
+        ),
+        Glyph::Web => format!(
+            r#"<circle cx="8" cy="8" r="6.3" fill="none" stroke="{c}" stroke-width="1.4"/><path d="M1.7 8h12.6M8 1.7c2.2 2.4 2.2 10.2 0 12.6M8 1.7c-2.2 2.4-2.2 10.2 0 12.6" fill="none" stroke="{c}" stroke-width="1.1"/>"#
+        ),
+        Glyph::Mail => format!(
+            r#"<rect x="1.5" y="3.5" width="13" height="9" rx="1.2" fill="none" stroke="{c}" stroke-width="1.4"/><path d="M2 4.5l6 4.5 6-4.5" fill="none" stroke="{c}" stroke-width="1.3" stroke-linejoin="round"/>"#
+        ),
+        Glyph::Vpn => format!(
+            r#"<rect x="3" y="7" width="10" height="7.5" rx="1.2" fill="none" stroke="{c}" stroke-width="1.4"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" fill="none" stroke="{c}" stroke-width="1.4"/><circle cx="8" cy="10.7" r="1.1" fill="{c}"/>"#
+        ),
+        Glyph::Key => format!(
+            r#"<circle cx="5" cy="8" r="3" fill="none" stroke="{c}" stroke-width="1.4"/><path d="M8 8h6.5M12 8v2.5M14 8v2" stroke="{c}" stroke-width="1.4" stroke-linecap="round"/>"#
+        ),
+        Glyph::Service => format!(
+            r#"<circle cx="8" cy="8" r="2.2" fill="none" stroke="{c}" stroke-width="1.4"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" stroke="{c}" stroke-width="1.4" stroke-linecap="round"/>"#
+        ),
+        Glyph::Monitoring => format!(
+            r#"<rect x="1.5" y="2" width="13" height="10" rx="1.2" fill="none" stroke="{c}" stroke-width="1.4"/><path d="M3.5 9l2.5-3 2 2 2.5-3.5L12.5 7" fill="none" stroke="{c}" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round"/><path d="M6 14.5h4" stroke="{c}" stroke-width="1.4" stroke-linecap="round"/>"#
+        ),
+        Glyph::Code => format!(
+            r#"<path d="M5.5 4L2 8l3.5 4M10.5 4L14 8l-3.5 4M9 2.5L7 13.5" fill="none" stroke="{c}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>"#
+        ),
+        Glyph::Deploy => format!(
+            r#"<path d="M8 1.5c2.5 1.5 3.5 4 3.5 6.5l-1.5 2.5H6L4.5 8c0-2.5 1-5 3.5-6.5z" fill="none" stroke="{c}" stroke-width="1.3" stroke-linejoin="round"/><circle cx="8" cy="6" r="1.2" fill="{c}"/><path d="M6.5 12.5L8 14.5l1.5-2" fill="none" stroke="{c}" stroke-width="1.3" stroke-linejoin="round"/>"#
+        ),
+        Glyph::Office => format!(
+            r#"<path d="M2.5 14.5V2.5h7v12M9.5 6.5h4v8M1.5 14.5h13" fill="none" stroke="{c}" stroke-width="1.4" stroke-linejoin="round"/><path d="M4.5 5h2.5M4.5 8h2.5M4.5 11h2.5M11 9h1M11 12h1" stroke="{c}" stroke-width="1.2" stroke-linecap="round"/>"#
+        ),
+        Glyph::Tools => format!(
+            r#"<path d="M10.5 1.8a3.2 3.2 0 0 0-3.9 4.1L2 10.5 4.5 13l4.6-4.6a3.2 3.2 0 0 0 4.1-3.9l-2 2-1.8-.5-.5-1.8z" fill="none" stroke="{c}" stroke-width="1.3" stroke-linejoin="round"/>"#
+        ),
+        Glyph::Lab => format!(
+            r#"<path d="M6 1.5h4M6.5 1.5v4.5L2.5 13a1 1 0 0 0 .9 1.5h9.2a1 1 0 0 0 .9-1.5l-4-7V1.5" fill="none" stroke="{c}" stroke-width="1.4" stroke-linejoin="round"/><path d="M4.5 10h7" stroke="{c}" stroke-width="1.2"/>"#
+        ),
+        Glyph::Bug => format!(
+            r#"<rect x="4.5" y="4.5" width="7" height="9" rx="3.5" fill="none" stroke="{c}" stroke-width="1.4"/><path d="M8 7.5v6M4.5 8H2M11.5 8H14M4.5 11.5H2.5M11.5 11.5h2M6 4.5L5 2.5M10 4.5l1-2" stroke="{c}" stroke-width="1.2" stroke-linecap="round"/>"#
+        ),
+        Glyph::Vm => format!(
+            r#"<rect x="4" y="1.5" width="10.5" height="8" rx="1" fill="none" stroke="{c}" stroke-width="1.3"/><rect x="1.5" y="6" width="10.5" height="8.5" rx="1" fill="none" stroke="{c}" stroke-width="1.4"/><path d="M4 9.5l1.8 1.5L4 12.5" fill="none" stroke="{c}" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>"#
+        ),
+        Glyph::Star => format!(
+            r#"<path d="M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.6l-3.8 2 .7-4.3-3.1-3 4.3-.6z" fill="none" stroke="{c}" stroke-width="1.3" stroke-linejoin="round"/>"#
+        ),
+        Glyph::Flag => format!(
+            r#"<path d="M3.5 14.5V2" stroke="{c}" stroke-width="1.5" stroke-linecap="round"/><path d="M3.5 2.5h9l-2 3 2 3h-9" fill="none" stroke="{c}" stroke-width="1.4" stroke-linejoin="round"/>"#
         ),
         Glyph::Note => format!(
             r#"<path d="M3 1.5h7l3 3V14.5H3z" fill="none" stroke="{c}" stroke-width="1.5" stroke-linejoin="round"/><path d="M5.5 7h5M5.5 9.5h5M5.5 12h3" stroke="{c}" stroke-width="1.2" stroke-linecap="round"/>"#

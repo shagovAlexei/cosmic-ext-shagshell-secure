@@ -2,6 +2,11 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.68.0 — 2026-10-25
+
+- feat: a Button Bar button has a «Hint» field: shown when the pointer rests on the button
+- feat: 24 more session icons (laptop, phone, printer, camera, Wi-Fi, storage, board / IoT, UPS, antenna, web, mail, VPN, key, service, monitoring, code, deploy, office, tools, lab, debugging, virtual machine, star, flag)
+
 ## 0.67.0 — 2026-10-25
 
 - feat: the window opens maximized (Global Options, on by default)

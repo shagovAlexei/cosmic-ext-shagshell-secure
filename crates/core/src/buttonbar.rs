@@ -47,6 +47,9 @@ pub struct Button {
     /// Its dot (SecureCRT's button colours): a name of `COLORS`, empty = none.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub color: String,
+    /// The hint shown when the pointer rests on the button; empty: none.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub tip: String,
 }
 
 /// The button colours (SecureCRT's 11) and how they are drawn.
@@ -213,8 +216,12 @@ mod tests {
         let mut b = button("x", Kind::Send, "ls\\r");
         assert!(!toml::to_string(&b).unwrap().contains("color")); // none: not written
         b.color = "green".into();
+        b.tip = "list files".into();
         let back: Button = toml::from_str(&toml::to_string(&b).unwrap()).unwrap();
-        assert_eq!(back.color, "green");
+        assert_eq!(
+            (back.color.as_str(), back.tip.as_str()),
+            ("green", "list files")
+        );
         assert!(dot_svg("green").unwrap().contains("#2ea043"));
         assert_eq!(dot_svg("nope"), None);
     }
@@ -227,6 +234,7 @@ mod tests {
             args: String::new(),
             target: Target::Current,
             color: String::new(),
+            tip: String::new(),
         }
     }
 
@@ -237,6 +245,7 @@ mod tests {
         b.bars[i].buttons.push(Button {
             target: Target::All,
             color: String::new(),
+            tip: String::new(),
             ..button("save", Kind::Send, "wr\\r")
         });
         b.bars[i]

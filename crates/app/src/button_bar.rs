@@ -25,6 +25,7 @@ pub enum BbMsg {
     DeleteBar,
     /// The «Map Button» window's fields.
     Label(String),
+    Tip(String),
     KindSel(usize),
     Arg(String),
     Args(String),
@@ -273,6 +274,7 @@ impl ButtonBar {
                 }
             }
             BbMsg::Label(t) => self.map(|b| b.label = t),
+            BbMsg::Tip(t) => self.map(|b| b.tip = t),
             BbMsg::Arg(t) => self.map(|b| b.arg = t),
             BbMsg::Args(t) => self.map(|b| b.args = t),
             BbMsg::KindSel(i) => self.map(|b| {
@@ -511,6 +513,7 @@ impl ButtonBar {
                 let color = (shagshell_core::buttonbar::COLORS.iter())
                     .position(|(n, _)| *n == button.color)
                     .map_or(0, |i| i + 1);
+                col = col.push(field(fl!("bb-tip"), &button.tip, BbMsg::Tip, None));
                 col = col.push(
                     widget::column::with_children(vec![
                         widget::text::caption(fl!("bb-color")).into(),
@@ -633,6 +636,16 @@ impl ButtonBar {
                         false => menu::Item::Button(fl!("bb-right"), None, BarCmd::Move(i, 1)),
                     },
                 ];
+                // The hint, when the pointer rests on it.
+                let button: Element<'_, Message> = match b.tip.trim().is_empty() {
+                    true => button.into(),
+                    false => widget::tooltip(
+                        button,
+                        widget::text::caption(b.tip.clone()),
+                        widget::tooltip::Position::Top,
+                    )
+                    .into(),
+                };
                 row = row.push(
                     widget::context_menu(
                         button,

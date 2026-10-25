@@ -420,3 +420,5 @@
 - [ ] v0.67.0: the window opens maximized; Global Options → Open the window maximized off: the usual size
 - [ ] v0.67.0 regression: open two sessions, a local shell and a note, quit, start again: all four come back in the same order (option on); off: nothing comes back
 - [ ] v0.67.0: the Session / Command Manager reach down to the Button Bar; the status bar and Command Window are under the tabs; About shows two buttons (latest release, report a problem)
+- [ ] v0.68.0: Button Bar → Edit button → Hint: after OK the text shows when the pointer rests on the button (headless cannot show tooltips); empty: no hint
+- [ ] v0.68.0: Session Options → Appearance → Icon lists 36 icons; each draws in the tree and on the tab
