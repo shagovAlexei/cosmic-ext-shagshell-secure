@@ -1,6 +1,6 @@
 # Notes
 
-This is your note: edit it, it is saved by itself. Rename it or open another text / `.md` file with the buttons above. The eye button shows a `.md` file as formatted text.
+This is your note: edit it, it is saved by itself. Rename it or open another text / `.md` file with the buttons above. Ctrl+Z undoes, Ctrl+Shift+Z redoes.
 
 ## ShagShell keys
 

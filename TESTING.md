@@ -438,3 +438,5 @@
 - [ ] v0.74.1 regression: a .md note: the View / Edit button (right of Save) shows an icon in both modes
 - [ ] v0.75.0: Keymap Editor → «Built-in keys»: select one, Edit…, press a key: it works at once, the menu shows it, a «✎» marks it, «Default key» restores; a taken key (Alt+Q…) is refused with a message
 - [ ] v0.75.0: after a restart the changed built-in keys are still in force
+- [ ] v0.76.0: View → Notes: the note opens in COSMIC Edit's editor (line numbers, Markdown colours); typing is saved a second later; Ctrl+C / X / V / A / Z / Shift+Z work; switching the system light / dark changes the colours
+- [ ] v0.76.0: a .py / .sh / .conf note gets its own highlighting
