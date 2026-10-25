@@ -2,6 +2,10 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.70.3 — 2026-10-25
+
+- fix: Scheduler list: the selected job's name was unreadable when the job was off (dimmed text on the accent colour); the toggler label has a gap
+
 ## 0.70.2 — 2026-10-25
 
 - fix: the result of Check for Updates made in the About dialog (latest / error) shows in that dialog, not in the status bar
