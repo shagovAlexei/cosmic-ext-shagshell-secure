@@ -2305,6 +2305,9 @@ impl Tabs {
             let neighbours = Side::ALL.map(|s| grid.adjacent(pane, s.direction()).is_some());
             let mut bar = tab_bar::horizontal(&group.model)
                 .button_spacing(6)
+                // As wide as their text (SecureCRT's «fit to label»), a long name cut at the end.
+                .width(Length::Shrink)
+                .maximum_button_width(240)
                 .on_activate(m(TabsMsg::Activate))
                 .on_close(m(TabsMsg::Close))
                 .on_middle_press(m(TabsMsg::Close))

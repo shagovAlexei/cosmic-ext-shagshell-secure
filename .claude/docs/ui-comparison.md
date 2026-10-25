@@ -25,7 +25,7 @@ Legend: ✅ have · 🟡 partly · ❌ missing · — not planned.
 | Status as icon / background colour / colour rectangle | ❌ | |
 | Tab text = session name, label template `%H %S %U %I %P` | ✅ session name (0.48.0), label template `%S %H %U %P` (0.57.0) | |
 | «(n)» on a second tab of the same session | ❌ | |
-| Tab width: fit / fixed / divide evenly, min width, tooltip | 🟡 divide evenly only | |
+| Tab width: fit / fixed / divide evenly, min width, tooltip | ✅ fit to label, max 240 px (0.69.0) | |
 | Tabs at top or bottom; hide when only one | ✅ bottom (0.55.0), hidden when one (0.60.0) | |
 | Close button on tabs | ✅ | |
 | Double-click action (close / clone / reconnect / new window) | ✅ 0.55.0 | |
