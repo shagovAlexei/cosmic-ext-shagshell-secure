@@ -2,6 +2,10 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.71.0 — 2026-10-25
+
+- feat: an icon for each action (send string, menu function, program, script) in the Keymap Editor's list and in the «Action» lists of the key and Button Bar editors
+
 ## 0.70.5 — 2026-10-25
 
 - feat: Key Map: a «Run script» key has a Browse… button for the script file

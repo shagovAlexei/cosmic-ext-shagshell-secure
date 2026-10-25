@@ -69,6 +69,7 @@ pub struct ButtonBar {
     dialog: Option<Dialog>,
     input_id: widget::Id,
     kinds: Vec<String>,
+    kind_icons: Vec<widget::icon::Handle>,
     /// «none», then `buttonbar::COLORS` by name, and each one's dot.
     colors: Vec<String>,
     color_dots: Vec<widget::icon::Handle>,
@@ -92,6 +93,10 @@ impl ButtonBar {
             dialog: None,
             input_id: widget::Id::unique(),
             kinds: Vec::new(),
+            kind_icons: Kind::ALL
+                .iter()
+                .map(|k| widget::icon::from_name(crate::keymap_editor::kind_icon(*k)).handle())
+                .collect(),
             colors: Vec::new(),
             color_dots: (std::iter::once(
                 r##"<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="none" stroke="#808080" stroke-width="1"/></svg>"##
@@ -461,7 +466,9 @@ impl ButtonBar {
                 col = col.push(
                     widget::column::with_children(vec![
                         widget::text::caption(fl!("bb-action")).into(),
-                        widget::dropdown(&self.kinds, kind, move |i| m(BbMsg::KindSel(i))).into(),
+                        widget::dropdown(&self.kinds, kind, move |i| m(BbMsg::KindSel(i)))
+                            .icons(std::borrow::Cow::Borrowed(&self.kind_icons))
+                            .into(),
                     ])
                     .spacing(2),
                 );
