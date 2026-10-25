@@ -624,3 +624,6 @@ bb-color-none = (нет)
 color-black = Чёрный
 color-grey = Серый
 color-purple = Фиолетовый
+options-tabs-bottom = Вкладки снизу
+options-tab-double = Двойной клик по вкладке
+options-tab-double-none = Ничего

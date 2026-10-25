@@ -623,3 +623,6 @@ bb-color-none = (none)
 color-black = Black
 color-grey = Grey
 color-purple = Purple
+options-tabs-bottom = Tabs at the bottom
+options-tab-double = Double-click on a tab
+options-tab-double-none = Nothing

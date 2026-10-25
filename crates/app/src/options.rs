@@ -370,6 +370,31 @@ pub fn view<'a>(
             ),
         ))
         .add(settings::flex_item(
+            fl!("options-tabs-bottom"),
+            widget::toggler(config.tabs_bottom).on_toggle(set(|c, on| c.tabs_bottom = on)),
+        ))
+        .add(settings::flex_item(
+            fl!("options-tab-double"),
+            widget::dropdown(
+                vec![
+                    fl!("options-tab-double-none"),
+                    fl!("menu-close-tab"),
+                    fl!("menu-clone"),
+                    fl!("menu-reconnect"),
+                    fl!("menu-tab-window"),
+                ],
+                Some(usize::from(config.tab_double_click.min(4))),
+                {
+                    let c = config.clone();
+                    move |i| {
+                        let mut c = c.clone();
+                        c.tab_double_click = u8::try_from(i).unwrap_or(0);
+                        Message::SetConfig(c)
+                    }
+                },
+            ),
+        ))
+        .add(settings::flex_item(
             fl!("options-tab-height"),
             heights(config.tab_height, |c, v| c.tab_height = v),
         ))

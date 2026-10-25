@@ -2,6 +2,10 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.55.0 — 2026-10-25
+
+- feat: Global Options → tabs at the bottom, and what a double-click on a tab does (nothing / close / clone / reconnect / its own window)
+
 ## 0.54.0 — 2026-10-25
 
 - feat: Button Bar buttons can have a colour (SecureCRT's 11 dots), picked in the button's window and kept in `buttonbars.toml`

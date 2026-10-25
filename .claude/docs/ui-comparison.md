@@ -26,10 +26,10 @@ Legend: ✅ have · 🟡 partly · ❌ missing · — not planned.
 | Tab text = session name, label template `%H %S %U %I %P` | 🟡 label field (plain text); else the program's title wins → all ssh tabs read `user@host:~` | |
 | «(n)» on a second tab of the same session | ❌ | |
 | Tab width: fit / fixed / divide evenly, min width, tooltip | 🟡 divide evenly only | |
-| Tabs at top or bottom; hide when only one | ❌ | |
+| Tabs at top or bottom; hide when only one | 🟡 bottom (0.55.0) | not hidden when only one |
 | Close button on tabs | ✅ | |
-| Double-click action (close / clone / reconnect / new window) | ❌ | |
-| Alt+1…0 to tab N; Ctrl+Tab most recent | 🟡 Ctrl+Tab next / previous | |
+| Double-click action (close / clone / reconnect / new window) | ✅ 0.55.0 | |
+| Alt+1…0 to tab N; Ctrl+Tab most recent | 🟡 Alt+1…9, Ctrl+Tab next / previous | not most-recent order |
 | Tab groups (drag to an edge), Tile / Cascade | ✅ groups (menu), drag between groups needs a live check | |
 | Send to new window | ✅ Open in a New Window | |
 | `*` before the name of a tab that gets Command Window input | ❌ | |
