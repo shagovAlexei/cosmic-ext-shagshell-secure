@@ -376,7 +376,10 @@ impl Editor {
                 .push(field(fl!("bb-command"), text(&b.arg, KmMsg::Arg)))
                 .push(widget::text::caption(fl!("bb-command-hint"))),
             Kind::Script => col
-                .push(field(fl!("bb-script-file"), text(&b.arg, KmMsg::Arg)))
+                .push(field(
+                    fl!("bb-script-file"),
+                    crate::script::with_browse(text(&b.arg, KmMsg::Arg), crate::script::Slot::Key),
+                ))
                 .push(field(fl!("bb-script-args"), text(&b.args, KmMsg::Args)))
                 .push(widget::text::caption(fl!("bb-script-hint"))),
         };

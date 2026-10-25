@@ -1415,6 +1415,7 @@ impl App {
                     Slot::Button => {
                         self.update(Message::ButtonBar(crate::button_bar::BbMsg::Arg(s)))
                     }
+                    Slot::Key => self.keymap_dialog(crate::keymap_editor::KmMsg::Arg(s)),
                     Slot::Sched => self.scheduler(crate::scheduler::SchMsg::Script(s)),
                     Slot::Pre => self
                         .session_options(SoMsg::Field(crate::session_options::Field::PreScript, s)),

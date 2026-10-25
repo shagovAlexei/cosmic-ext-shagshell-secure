@@ -1277,6 +1277,8 @@ pub enum Slot {
     /// Session Options: the script before connecting / on opening.
     Pre,
     Open,
+    /// Key Map: a key's script.
+    Key,
 }
 
 /// A script's field with a «Browse…» button beside it.
