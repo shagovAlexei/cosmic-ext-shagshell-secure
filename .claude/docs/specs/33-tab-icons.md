@@ -5,7 +5,7 @@ SecureCRT shows each tab's state as a coloured icon (Connected, Disconnected, Ne
 ## What
 - Each tab has a 16 px icon: a glyph for what it is, in the colour of its state.
   - Glyph: SSH = screen `>_` with a padlock, Telnet = screen, Serial = connector, Local shell = house, SFTP = folder, Note = page, Script Console = screen.
-  - State: amber = connecting (started, nothing printed yet), green = connected, blue = new output while not in front, red = disconnected, purple (with a padlock) = locked by a script, grey = note / console.
+  - State: teal = its unread output stopped 5 s ago (SecureCRT's Inactivity: the command is likely done), amber = connecting (started, nothing printed yet), green = connected, blue = new output while not in front, red = disconnected, purple (with a padlock) = locked by a script, grey = note / console.
 - «New output» clears when the tab comes in front (its group's active tab, or its own window), also when the app brings it (askpass, `crt.GetTab(n).Activate()`).
 - SFTP: amber while its ssh connects (or asks a password), red once it gave up.
 - Title: the session's label, else for a running local shell the program's title, else ours (the session name, «(2)» when opened twice). A session tab no longer shows the `user@host:~` its shell sets.
@@ -17,7 +17,7 @@ SecureCRT shows each tab's state as a coloured icon (Connected, Disconnected, Ne
 ## Not now
 - Connected is set by the first output, so an ssh warning before the login turns it green early.
 - A tab in a window of its own counts as in front even when that window is covered.
-- Inactivity (output stopped for N s), status as background colour or colour rectangle, label templates `%H %S %U`.
+- Status as background colour or colour rectangle, label templates `%H %S %U`.
 
 ## Session Manager (0.49.0)
 - Each session row shows `Glyph::of(protocol)` drawn symbolic (the theme's text colour); folders keep the system folder icons. `rows::Row.protocol`.
