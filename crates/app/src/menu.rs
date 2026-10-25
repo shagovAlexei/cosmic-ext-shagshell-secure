@@ -19,6 +19,7 @@ pub enum Action {
     ToggleCommandManager,
     /// View → Button Bar.
     ToggleButtonBar,
+    ToggleConnectBar,
     /// File → Log Session.
     ToggleLog,
     About,
@@ -256,7 +257,13 @@ fn with_icons(items: Vec<menu::Item<Action, String>>) -> Vec<menu::Item<Action, 
 /// `(tabs, live, splittable)`: any tab open; the active one connected; its group has
 /// more than one tab (`Tabs::menu_state`). `scripting`: a script runs.
 pub fn bar(
-    (session_manager, command_window, button_bar, command_manager): (bool, bool, bool, bool),
+    (session_manager, command_window, button_bar, command_manager, connect_bar): (
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+    ),
     (tabs, live, split, logging, recording): (bool, bool, bool, bool, bool),
     (folder, recent): (&[String], &[String]),
     scripting: bool,
@@ -353,6 +360,12 @@ pub fn bar(
                     None,
                     button_bar,
                     Action::ToggleButtonBar,
+                ),
+                CheckBox(
+                    fl!("menu-connect-bar"),
+                    None,
+                    connect_bar,
+                    Action::ToggleConnectBar,
                 ),
                 Button(fl!("menu-notes"), None, Action::Notes),
                 Divider,
