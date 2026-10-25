@@ -2,6 +2,10 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.79.0 — 2026-10-26
+
+- feat: Lock Session without a password: leave both fields empty; «Unlock Session» then frees the tab at once
+
 ## 0.78.0 — 2026-10-25
 
 - feat: a note's bar has buttons you choose: Save, Save As…, Undo, Redo, Cut, Copy, Paste, Select All, Word Wrap, Line Numbers, Rename, Open…, Lock Session… — ticked in the «⋯» list at the end of the bar (kept in the config; Save, Undo, Redo, Rename, Open by default)
