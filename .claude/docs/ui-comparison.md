@@ -38,7 +38,7 @@ Legend: ✅ have · 🟡 partly · ❌ missing · — not planned.
 
 | SecureCRT | ShagShell | Note |
 |---|---|---|
-| Dockable pane, pin / auto-hide | 🟡 left / right side, collapsible | |
+| Dockable pane, pin / auto-hide | ✅ left / right side, collapsible, folds into a strip (0.70.0) | no hover-to-show |
 | Toolbar: Connect, Quick Connect, New, Cut/Copy/Paste, Delete, Properties, Find, New Folder | 🟡 New, New Folder, Properties, Delete, Connect; Duplicate (0.59.0) | no cut / copy / paste (Duplicate + drag covers it) |
 | Filter box | ✅ | |
 | Icon by protocol (SSH: terminal+lock, Telnet: terminal, Serial: phone, Local: house), folder variants | ✅ by protocol (0.49.0), or picked per session (0.65.0) | SecureCRT has no per-session icon |

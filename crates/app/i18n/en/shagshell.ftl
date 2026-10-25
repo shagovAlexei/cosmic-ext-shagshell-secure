@@ -694,3 +694,4 @@ icon-vm = Virtual machine
 icon-star = Star
 icon-flag = Flag
 bb-tip = Hint (shown when the pointer rests on the button)
+panel-strip = Fold into a strip

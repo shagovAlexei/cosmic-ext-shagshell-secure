@@ -160,6 +160,9 @@ pub struct Config {
     pub notes_open: Vec<String>,
     /// Both managers on one side: the Command Manager is the upper one.
     pub commands_above: bool,
+    /// A side's panes folded into a thin strip of buttons (SecureCRT's auto-hide Session Manager).
+    pub strip_left: bool,
+    pub strip_right: bool,
     /// Only the header of the pane shows.
     pub session_manager_collapsed: bool,
     pub command_manager_collapsed: bool,
@@ -329,6 +332,8 @@ impl Default for Config {
             cursor_shape: 0,
             cursor_blink: false,
             tabs_bottom: false,
+            strip_left: false,
+            strip_right: false,
             toolbar_buttons: Vec::new(),
             tabs_hide_single: false,
             ctrl_tab_recent: false,
