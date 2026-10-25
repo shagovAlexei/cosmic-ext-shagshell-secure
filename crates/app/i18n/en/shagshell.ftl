@@ -632,3 +632,4 @@ sm-duplicate = Duplicate
 options-tabs-hide-single = Hide the tab bar while there is one tab
 options-toolbar = Toolbar
 options-ctrl-tab-recent = Ctrl+Tab goes back to the tab used before
+options-cursor-blink = Blinking cursor

@@ -14,7 +14,7 @@ Legend: ✅ have · 🟡 partly · ❌ missing · — not planned.
 | Icons in menus | ✅ 0.50.0 | submenus (Scripts, Recent) have none: libcosmic folders take no icon |
 | Window transparency (active / inactive) | — | iced on Wayland sets no window opacity |
 | Zoom Ctrl +/−/0 | ✅ 0.53.0 (per tab) | |
-| Cursor style (block / underline / bar), colour, blink | 🟡 shape (0.53.0) | no blink (the terminal would redraw twice a second), colour = the scheme's |
+| Cursor style (block / underline / bar), colour, blink | ✅ shape (0.53.0), blink (0.64.0, off by default) | colour = the scheme's |
 | Full screen Alt+Enter, Always on Top, hide menu bar | 🟡 full screen F11 (0.53.0) | |
 
 ## Session tabs

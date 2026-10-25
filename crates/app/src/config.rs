@@ -204,6 +204,8 @@ pub struct Config {
     pub tabs_hide_single: bool,
     /// Double-click on a tab: 0 nothing, 1 close, 2 clone, 3 reconnect, 4 a window of its own.
     pub tab_double_click: u8,
+    /// The terminal cursor blinks.
+    pub cursor_blink: bool,
     /// Terminal cursor: 0 block, 1 underline, 2 bar; read through `cursor`.
     pub cursor_shape: u8,
     /// Terminal font size, px (0 = 14); read through `font_px`.
@@ -325,6 +327,7 @@ impl Default for Config {
             log_template: "%S_%Y-%M-%D_%h%m%s.log".into(),
             font_family: String::new(),
             cursor_shape: 0,
+            cursor_blink: false,
             tabs_bottom: false,
             toolbar: Vec::new(),
             tabs_hide_single: false,

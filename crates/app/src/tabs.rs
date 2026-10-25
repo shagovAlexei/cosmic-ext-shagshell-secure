@@ -674,6 +674,31 @@ impl Tabs {
         }
     }
 
+    /// Global Options → blinking cursor: the active terminal's cursor goes off / on.
+    pub fn blink(&mut self) {
+        let active = self.active_terminal();
+        self.show_cursors(active);
+        if let Some(t) = active.and_then(|id| self.terminal(id)) {
+            let mut t = t.lock().unwrap_or_else(|e| e.into_inner());
+            t.blink_off = !t.blink_off;
+            t.needs_update = true; // a block cursor is drawn into the text
+        }
+    }
+
+    /// Every terminal but `except` shows its cursor (left in an «off» half by blinking).
+    fn show_cursors(&self, except: Option<TabId>) {
+        for (id, tab) in &self.tabs {
+            if Some(*id) != except
+                && let Some(t) = tab.terminal()
+            {
+                let mut t = t.lock().unwrap_or_else(|e| e.into_inner());
+                if t.blink_off {
+                    (t.blink_off, t.needs_update) = (false, true);
+                }
+            }
+        }
+    }
+
     /// Some tab is connected: the status bar's clock runs.
     pub fn any_live(&self) -> bool {
         self.tabs.values().any(Tab::live)
@@ -2053,6 +2078,9 @@ impl Tabs {
     ) {
         self.scheme = config.color_scheme.clone();
         self.double_click = config.tab_double_click;
+        if !config.cursor_blink {
+            self.show_cursors(None);
+        }
         self.mru = config.ctrl_tab_recent;
         self.cursor = config.cursor();
         for tab in self.tabs.values() {

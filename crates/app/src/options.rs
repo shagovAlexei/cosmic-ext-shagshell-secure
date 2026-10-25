@@ -370,6 +370,10 @@ pub fn view<'a>(
             ),
         ))
         .add(settings::flex_item(
+            fl!("options-cursor-blink"),
+            widget::toggler(config.cursor_blink).on_toggle(set(|c, on| c.cursor_blink = on)),
+        ))
+        .add(settings::flex_item(
             fl!("options-tabs-bottom"),
             widget::toggler(config.tabs_bottom).on_toggle(set(|c, on| c.tabs_bottom = on)),
         ))

@@ -174,6 +174,8 @@ pub struct Terminal {
     locked: bool,
     pub metadata_set: IndexSet<Metadata>,
     pub needs_update: bool,
+    /// Global Options → blinking cursor: the cursor is in its «off» half now.
+    pub blink_off: bool,
     pub term: Arc<FairMutex<Term<EventProxy>>>,
     pub url_regex_search: RegexSearch,
     pub regex_matches: Vec<alacritty_terminal::term::search::Match>,
@@ -318,6 +320,7 @@ impl Terminal {
             metadata_set,
             mouse_reporter: Default::default(),
             needs_update: true,
+            blink_off: false,
             notifier,
             highlights: Vec::new(),
             log,
@@ -916,6 +919,7 @@ impl Terminal {
                     if indexed.point == grid.cursor.point
                         && term.renderable_content().cursor.shape == CursorShape::Block
                         && self.is_focused
+                        && !self.blink_off
                     {
                         //Use specific cursor color if requested
                         if term.colors()[NamedColor::Cursor].is_some() {
