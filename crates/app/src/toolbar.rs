@@ -128,8 +128,9 @@ pub fn shown(config: &[String]) -> Vec<&'static str> {
         .collect()
 }
 
-/// `bar`: what is typed in the Connect Bar; `tools`: the config's toolbar list.
-pub fn view(bar: &str, tools: &[String]) -> Element<'static, Message> {
+/// `bar`: what is typed in the Connect Bar, `list`: the sessions it matches (shown under it);
+/// `tools`: the config's toolbar list.
+pub fn view(bar: &str, list: &[String], tools: &[String]) -> Element<'static, Message> {
     let shown = shown(tools);
     let row = (TOOLS.iter()).filter(|t| shown.contains(&t.0)).map(
         |(_, icon, action, tip)| -> Element<'static, Message> {
@@ -141,16 +142,38 @@ pub fn view(bar: &str, tools: &[String]) -> Element<'static, Message> {
     let mut items = row.collect::<Vec<_>>();
     // SecureCRT's Connect Bar: a session's name or user@host:port, Enter connects.
     items.push(widget::Space::new().width(12.0).into());
-    items.push(
-        widget::search_input(fl!("connect-bar-hint"), bar.to_string())
-            .id(bar_id())
-            .on_focus(Message::FocusField(bar_id()))
-            .on_input(Message::ConnectBar)
-            .on_clear(Message::ConnectBar(String::new()))
-            .on_submit(|_| Message::ConnectBarGo)
-            .width(cosmic::iced::Length::Fixed(300.0))
-            .into(),
-    );
+    let input = widget::search_input(fl!("connect-bar-hint"), bar.to_string())
+        .id(bar_id())
+        .on_focus(Message::FocusField(bar_id()))
+        .on_input(Message::ConnectBar)
+        .on_clear(Message::ConnectBar(String::new()))
+        .on_submit(|_| Message::ConnectBarGo)
+        .width(cosmic::iced::Length::Fixed(300.0));
+    // Always a popover (with or without its list): a field that changed parents would lose its
+    // focus, and the next letter with it.
+    let mut input = widget::popover(input)
+        .position(widget::popover::Position::Bottom)
+        .on_close(Message::ConnectBarClose);
+    if !list.is_empty() {
+        let rows = list.iter().map(|id| {
+            widget::button::custom(widget::text::body(id.clone()))
+                .class(cosmic::theme::Button::MenuItem)
+                .width(cosmic::iced::Length::Fill)
+                .on_press(Message::ConnectBarOpen(id.clone()))
+                .into()
+        });
+        input = input.popup(
+            widget::container(
+                widget::column::with_children(rows.collect::<Vec<Element<Message>>>())
+                    .spacing(2)
+                    .width(cosmic::iced::Length::Fixed(300.0)),
+            )
+            .padding(4)
+            .class(cosmic::theme::Container::Dropdown),
+        );
+    }
+    let input: Element<'static, Message> = input.into();
+    items.push(input);
     widget::row::with_children(items)
         .spacing(4)
         .padding([4, 8])

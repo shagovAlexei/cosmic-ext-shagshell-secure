@@ -85,8 +85,9 @@ pub struct App {
     pre_runs: std::collections::HashMap<u64, AfterPre>,
     /// View → Full Screen.
     full_screen: bool,
-    /// What is typed in the toolbar's Connect Bar.
+    /// What is typed in the toolbar's Connect Bar, and the sessions it matches (its list).
     connect_bar: String,
+    connect_list: Vec<String>,
     /// The scheduled scripts (`schedule.toml`); a broken file is never written over.
     schedule: shagshell_core::schedule::Schedule,
     schedule_broken: bool,
@@ -176,6 +177,9 @@ pub enum Message {
     /// The Connect Bar's text, and its Enter.
     ConnectBar(String),
     ConnectBarGo,
+    /// A session picked from the Connect Bar's list; the list closed.
+    ConnectBarOpen(String),
+    ConnectBarClose,
     /// A field of the main window was clicked: focused by id, which takes the keys from the
     /// terminal (a click focuses the field only, and the terminal would type along).
     FocusField(widget::Id),
@@ -279,6 +283,7 @@ impl Application for App {
             pre_runs: Default::default(),
             full_screen: false,
             connect_bar: String::new(),
+            connect_list: Vec::new(),
             schedule: Default::default(),
             schedule_broken: false,
             sched_state: Default::default(),
@@ -615,7 +620,11 @@ impl Application for App {
             middle = middle.push(c);
         }
         let mut col = widget::column::with_capacity(4)
-            .push(toolbar::view(&self.connect_bar, &self.config.toolbar))
+            .push(toolbar::view(
+                &self.connect_bar,
+                &self.connect_list,
+                &self.config.toolbar,
+            ))
             .push(middle.height(Length::Fill));
         if self.config.command_window_visible {
             col = col.push(self.command.view());
@@ -896,10 +905,21 @@ impl App {
             }
             Message::EditTick => self.tabs.edit_tick(),
             Message::StatusTick => self.tabs.tick(),
-            Message::ConnectBar(t) => self.connect_bar = t,
+            Message::ConnectBar(t) => {
+                self.connect_list =
+                    shagshell_core::connect_bar::matches(&t, &self.sessions.session_ids(), 8);
+                self.connect_bar = t;
+            }
+            Message::ConnectBarClose => self.connect_list.clear(),
+            Message::ConnectBarOpen(id) => {
+                self.connect_bar.clear();
+                self.connect_list.clear();
+                return self.open_sessions(&[id], true);
+            }
             Message::FocusField(id) => return widget::text_input::focus(id),
             Message::ConnectBarGo => {
                 use shagshell_core::connect_bar::{Target, parse};
+                self.connect_list.clear();
                 match parse(&self.connect_bar, &self.sessions.session_ids()) {
                     Some(Target::Session(id)) => {
                         self.connect_bar.clear();
