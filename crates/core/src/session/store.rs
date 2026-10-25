@@ -114,6 +114,25 @@ impl Store {
         })
     }
 
+    /// A copy of session `id` beside it, named «name (2)» (or the next free number); its id.
+    /// Its secrets stay with the original (the copy asks for its password).
+    pub fn duplicate(&self, id: &str) -> io::Result<String> {
+        let s = self.get(id)?;
+        let (folder, name) = (parent(id), id.rsplit('/').next().unwrap_or(id));
+        // «web (2)» copied again: «web (3)», not «web (2) (2)».
+        let base = match name.rsplit_once(" (") {
+            Some((b, n)) if n.strip_suffix(')').is_some_and(|n| n.parse::<u32>().is_ok()) => b,
+            _ => name,
+        };
+        for n in 2..1000 {
+            let copy = format!("{base} ({n})");
+            if !self.exists(&join(folder, &copy)) {
+                return self.add(folder, &copy, &s);
+            }
+        }
+        Err(ErrorKind::AlreadyExists.into())
+    }
+
     pub fn new_folder(&self, parent: &str, name: &str) -> io::Result<String> {
         check_name(name, parent.is_empty())?;
         let id = join(parent, name);
@@ -352,6 +371,22 @@ mod tests {
             host: s.into(),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn a_duplicate_gets_the_next_free_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::new(dir.path().to_path_buf());
+        let s = Session {
+            host: "h1".into(),
+            ..Default::default()
+        };
+        let id = store.add("Lab", "web", &s).unwrap();
+        assert_eq!(store.duplicate(&id).unwrap(), "Lab/web (2)");
+        assert_eq!(store.get("Lab/web (2)").unwrap().host, "h1");
+        assert_eq!(store.duplicate(&id).unwrap(), "Lab/web (3)");
+        assert_eq!(store.duplicate("Lab/web (2)").unwrap(), "Lab/web (4)");
+        assert!(store.duplicate("Lab/none").is_err());
     }
 
     #[test]

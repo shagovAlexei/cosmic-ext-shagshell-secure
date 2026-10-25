@@ -403,3 +403,4 @@
 - [ ] v0.57.0: Session Options → Appearance → Tab label `%S → %H:%P` shows e.g. «server1 → 10.0.0.5:22» on the tab; a label without % stays as typed
 - [ ] v0.58.0: Connect Bar: `rout` + Enter opens the only session containing it; `admin@10.0.0.1:2222` connects without saving; nonsense says why under the tree
 - [ ] v0.58.0 regression: with a terminal focused, click the Session Manager filter (or Command Manager filter, or the Connect Bar) and type — the letters appear only in the field, not in the terminal
+- [ ] v0.59.0: right-click a session → Duplicate: «name (2)» appears selected next to it with the same settings, asks for its own password; a folder's Duplicate is grey

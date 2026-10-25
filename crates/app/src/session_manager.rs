@@ -27,6 +27,8 @@ pub enum SmCmd {
     Delete,
     NewSession,
     NewFolder,
+    /// A copy of the session beside it («name (2)»).
+    Duplicate,
 }
 
 impl menu::Action for SmCmd {
@@ -510,6 +512,17 @@ impl SessionManager {
                     out.task = Some(widget::text_input::focus(self.input_id.clone()));
                 }
             }
+            SmCmd::Duplicate => {
+                if let Some(id) = one.filter(|id| !self.store.is_folder(id)) {
+                    match self.store.duplicate(&id) {
+                        Ok(new) => {
+                            self.reload();
+                            self.select(&new);
+                        }
+                        Err(e) => self.notice = Some(io_text(&e)),
+                    }
+                }
+            }
             SmCmd::Delete => {
                 if let Some(id) = one {
                     // From disk, not the rows: what `delete` will remove.
@@ -811,6 +824,10 @@ fn row_menu(folder: bool) -> Vec<menu::Tree<Message>> {
         true => ButtonDisabled(fl!("sm-edit-menu"), None, SmCmd::Edit),
         false => Button(fl!("sm-edit-menu"), None, SmCmd::Edit),
     };
+    let duplicate = match folder {
+        true => ButtonDisabled(fl!("sm-duplicate"), None, SmCmd::Duplicate),
+        false => Button(fl!("sm-duplicate"), None, SmCmd::Duplicate),
+    };
     menu::items(
         &HashMap::new(),
         vec![
@@ -819,6 +836,7 @@ fn row_menu(folder: bool) -> Vec<menu::Tree<Message>> {
             edit,
             Divider,
             Button(fl!("sm-rename-menu"), None, SmCmd::Rename),
+            duplicate,
             Button(fl!("sm-delete-menu"), None, SmCmd::Delete),
             Divider,
             Button(fl!("sm-new-session-menu"), None, SmCmd::NewSession),
