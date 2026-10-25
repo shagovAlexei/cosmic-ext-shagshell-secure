@@ -9,12 +9,12 @@ Legend: ✅ have · 🟡 partly · ❌ missing · — not planned.
 | SecureCRT | ShagShell | Note |
 |---|---|---|
 | View → Themes (System, Native, Carbon, VS Blue/Dark/White, Office White, legacy) | 🟡 Global Options: System / Dark / Light | COSMIC draws the chrome; a theme = light/dark + accent. Enough for us. |
-| Terminal colours = session colour scheme, «System Color Scheme» follows light/dark | 🟡 colour schemes global + per session | no scheme that follows light/dark |
+| Terminal colours = session colour scheme, «System Color Scheme» follows light/dark | ✅ colour schemes global + per session; the default one follows light / dark | |
 | Flat monochrome toolbar glyphs 16/24/32 | ✅ symbolic icons | |
 | Icons in menus | ✅ 0.50.0 | submenus (Scripts, Recent) have none: libcosmic folders take no icon |
 | Window transparency (active / inactive) | ❌ | |
 | Zoom Ctrl +/−/0 | ✅ 0.53.0 (per tab) | |
-| Cursor style (block / underline / bar), colour, blink | 🟡 shape (0.53.0) | no blink, no colour |
+| Cursor style (block / underline / bar), colour, blink | 🟡 shape (0.53.0) | no blink (the terminal would redraw twice a second), colour = the scheme's |
 | Full screen Alt+Enter, Always on Top, hide menu bar | 🟡 full screen F11 (0.53.0) | |
 
 ## Session tabs
@@ -48,7 +48,7 @@ Legend: ✅ have · 🟡 partly · ❌ missing · — not planned.
 | SecureCRT | ShagShell | Note |
 |---|---|---|
 | Toolbar: Session Manager, Quick Connect, Local Shell, Reconnect, Disconnect, Connect Bar, Copy, Paste, Find, Session Options, Keymap, Public-Key, SecureFX | 🟡 SM, Connect, Reconnect, Disconnect, SFTP, Options | no tooltips check, not customisable |
-| Connect Bar (Alt+R: `ssh2://user@host`, filtered session list) | 🟡 Quick Connect dialog (Alt+Q) | |
+| Connect Bar (Alt+R: `ssh2://user@host`, filtered session list) | ✅ toolbar field (0.58.0) | no drop-down list, no Alt+R |
 | Status bar: message + up to 5 columns (protocol+cipher, cursor, rows×cols, emulation, elapsed time, local time), log file, CAPS/NUM | 🟡 state · protocol · cols×rows · cursor · time up · log file (0.52.0) | no cipher, no local time, not configurable |
 | Command Window: active / all / groups / visible, history, multi-line | ✅ | |
 | Button Bar: several bars, coloured dot icons on buttons | ✅ colours (0.54.0) | |

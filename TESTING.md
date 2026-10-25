@@ -401,3 +401,5 @@
 - [ ] v0.55.0: Global Options → Tabs at the bottom moves every group's tab bar under its terminal; Double-click on a tab = Clone opens a copy, = Close closes it (asks if live), = Nothing does nothing
 - [ ] v0.56.0: run `sleep 2; echo done` in a tab and switch away: its icon turns blue, then teal 5 s after the output stopped; bringing it to front makes it green
 - [ ] v0.57.0: Session Options → Appearance → Tab label `%S → %H:%P` shows e.g. «server1 → 10.0.0.5:22» on the tab; a label without % stays as typed
+- [ ] v0.58.0: Connect Bar: `rout` + Enter opens the only session containing it; `admin@10.0.0.1:2222` connects without saving; nonsense says why under the tree
+- [ ] v0.58.0 regression: with a terminal focused, click the Session Manager filter (or Command Manager filter, or the Connect Bar) and type — the letters appear only in the field, not in the terminal

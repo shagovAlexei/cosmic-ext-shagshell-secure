@@ -6,7 +6,14 @@ use crate::menu::Action;
 use cosmic::Element;
 use cosmic::widget::{self, tooltip};
 
-pub fn view() -> Element<'static, Message> {
+/// The Connect Bar's field (focused through it, so the terminal lets go of the keys).
+pub fn bar_id() -> widget::Id {
+    static ID: std::sync::LazyLock<widget::Id> = std::sync::LazyLock::new(widget::Id::unique);
+    ID.clone()
+}
+
+/// `bar`: what is typed in the Connect Bar.
+pub fn view(bar: &str) -> Element<'static, Message> {
     let buttons = [
         (
             "network-server-symbolic",
@@ -46,9 +53,23 @@ pub fn view() -> Element<'static, Message> {
                 .on_press_maybe(action.map(Message::Action));
             widget::tooltip(b, widget::text(tip), tooltip::Position::Bottom).into()
         });
-    widget::row::with_children(row.collect::<Vec<_>>())
+    let mut items = row.collect::<Vec<_>>();
+    // SecureCRT's Connect Bar: a session's name or user@host:port, Enter connects.
+    items.push(widget::Space::new().width(12.0).into());
+    items.push(
+        widget::search_input(fl!("connect-bar-hint"), bar.to_string())
+            .id(bar_id())
+            .on_focus(Message::FocusField(bar_id()))
+            .on_input(Message::ConnectBar)
+            .on_clear(Message::ConnectBar(String::new()))
+            .on_submit(|_| Message::ConnectBarGo)
+            .width(cosmic::iced::Length::Fixed(300.0))
+            .into(),
+    );
+    widget::row::with_children(items)
         .spacing(4)
         .padding([4, 8])
+        .align_y(cosmic::iced::Alignment::Center)
         .into()
 }
 

@@ -627,3 +627,5 @@ color-purple = Фиолетовый
 options-tabs-bottom = Вкладки снизу
 options-tab-double = Двойной клик по вкладке
 options-tab-double-none = Ничего
+connect-bar-hint = Сессия или user@host:port
+connect-bar-none = Нет такой сессии, и это не адрес: введите имя сессии или user@host:port

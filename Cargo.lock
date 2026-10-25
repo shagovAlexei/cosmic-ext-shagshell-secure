@@ -4330,7 +4330,7 @@ dependencies = [
 
 [[package]]
 name = "shagshell"
-version = "0.57.0"
+version = "0.58.0"
 dependencies = [
  "alacritty_terminal",
  "ashpd 0.12.3",
@@ -4353,7 +4353,7 @@ dependencies = [
 
 [[package]]
 name = "shagshell-core"
-version = "0.57.0"
+version = "0.58.0"
 dependencies = [
  "jiff",
  "log",

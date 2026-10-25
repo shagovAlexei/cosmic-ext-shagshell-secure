@@ -85,6 +85,8 @@ pub struct App {
     pre_runs: std::collections::HashMap<u64, AfterPre>,
     /// View → Full Screen.
     full_screen: bool,
+    /// What is typed in the toolbar's Connect Bar.
+    connect_bar: String,
     /// The scheduled scripts (`schedule.toml`); a broken file is never written over.
     schedule: shagshell_core::schedule::Schedule,
     schedule_broken: bool,
@@ -171,6 +173,12 @@ pub enum Message {
     SchedTick,
     /// The status bar's clock: nothing to do but draw again.
     StatusTick,
+    /// The Connect Bar's text, and its Enter.
+    ConnectBar(String),
+    ConnectBarGo,
+    /// A field of the main window was clicked: focused by id, which takes the keys from the
+    /// terminal (a click focuses the field only, and the terminal would type along).
+    FocusField(widget::Id),
     /// Global Options: the master-password keyring wanted on / off.
     SetSeparate(bool),
     /// …and how it is now (or why it could not be changed).
@@ -270,6 +278,7 @@ impl Application for App {
             script_files: Vec::new(),
             pre_runs: Default::default(),
             full_screen: false,
+            connect_bar: String::new(),
             schedule: Default::default(),
             schedule_broken: false,
             sched_state: Default::default(),
@@ -590,7 +599,7 @@ impl Application for App {
             middle = middle.push(c);
         }
         let mut col = widget::column::with_capacity(4)
-            .push(toolbar::view())
+            .push(toolbar::view(&self.connect_bar))
             .push(middle.height(Length::Fill));
         if self.config.command_window_visible {
             col = col.push(self.command.view());
@@ -871,6 +880,31 @@ impl App {
             }
             Message::EditTick => self.tabs.edit_tick(),
             Message::StatusTick => self.tabs.tick(),
+            Message::ConnectBar(t) => self.connect_bar = t,
+            Message::FocusField(id) => return widget::text_input::focus(id),
+            Message::ConnectBarGo => {
+                use shagshell_core::connect_bar::{Target, parse};
+                match parse(&self.connect_bar, &self.sessions.session_ids()) {
+                    Some(Target::Session(id)) => {
+                        self.connect_bar.clear();
+                        return self.open_sessions(&[id], true);
+                    }
+                    Some(Target::Host { user, host, port }) => {
+                        self.connect_bar.clear();
+                        let session = shagshell_core::session::Session {
+                            host,
+                            port,
+                            user,
+                            ..Default::default()
+                        };
+                        return self.quick_connected(crate::quick_connect::Request {
+                            session,
+                            save_as: None,
+                        });
+                    }
+                    None => self.sessions.notice = Some(fl!("connect-bar-none")),
+                }
+            }
             Message::CommandWindow(m) => {
                 // A click takes the keys from the terminal (it takes them from every widget).
                 if matches!(
