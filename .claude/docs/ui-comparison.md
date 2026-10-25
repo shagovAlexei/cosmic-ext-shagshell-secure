@@ -23,7 +23,7 @@ Legend: ✅ have · 🟡 partly · ❌ missing · — not planned.
 |---|---|---|
 | Status icons: Connected, Disconnected, **New Input**, **Inactivity** (N s), Locked overlay, script running | ✅ coloured icons (0.48.0), inactivity (0.56.0, fixed 5 s) | |
 | Status as icon / background colour / colour rectangle | ❌ | |
-| Tab text = session name, label template `%H %S %U %I %P` | 🟡 label field (plain text); else the program's title wins → all ssh tabs read `user@host:~` | |
+| Tab text = session name, label template `%H %S %U %I %P` | ✅ session name (0.48.0), label template `%S %H %U %P` (0.57.0) | |
 | «(n)» on a second tab of the same session | ❌ | |
 | Tab width: fit / fixed / divide evenly, min width, tooltip | 🟡 divide evenly only | |
 | Tabs at top or bottom; hide when only one | 🟡 bottom (0.55.0) | not hidden when only one |
