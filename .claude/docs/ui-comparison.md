@@ -51,7 +51,7 @@ Legend: ✅ have · 🟡 partly · ❌ missing · — not planned.
 | Connect Bar (Alt+R: `ssh2://user@host`, filtered session list) | 🟡 Quick Connect dialog (Alt+Q) | |
 | Status bar: message + up to 5 columns (protocol+cipher, cursor, rows×cols, emulation, elapsed time, local time), log file, CAPS/NUM | 🟡 state · protocol · cols×rows · cursor · time up · log file (0.52.0) | no cipher, no local time, not configurable |
 | Command Window: active / all / groups / visible, history, multi-line | ✅ | |
-| Button Bar: several bars, coloured dot icons on buttons | 🟡 no button colours | |
+| Button Bar: several bars, coloured dot icons on buttons | ✅ colours (0.54.0) | |
 | Command Manager | ✅ | |
 | Title bar template | ❌ | |
 | Activator (tray) | — | |

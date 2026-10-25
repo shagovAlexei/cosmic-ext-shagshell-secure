@@ -44,6 +44,32 @@ pub struct Button {
     pub args: String,
     #[serde(skip_serializing_if = "is_current")]
     pub target: Target,
+    /// Its dot (SecureCRT's button colours): a name of `COLORS`, empty = none.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub color: String,
+}
+
+/// The button colours (SecureCRT's 11) and how they are drawn.
+pub const COLORS: [(&str, &str); 11] = [
+    ("black", "#1e1e1e"),
+    ("blue", "#2f6fdf"),
+    ("cyan", "#1fb6c9"),
+    ("green", "#2ea043"),
+    ("grey", "#8b949e"),
+    ("magenta", "#d63dc1"),
+    ("orange", "#f08c2e"),
+    ("purple", "#8957e5"),
+    ("red", "#da3633"),
+    ("white", "#f0f0f0"),
+    ("yellow", "#e3c21a"),
+];
+
+/// The dot of colour `name` (12×12 SVG, a thin outline so black / white show on any theme).
+pub fn dot_svg(name: &str) -> Option<String> {
+    let (_, hex) = COLORS.iter().find(|(n, _)| *n == name)?;
+    Some(format!(
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="{hex}" stroke="#808080" stroke-width="0.8"/></svg>"##
+    ))
 }
 
 fn is_current(t: &Target) -> bool {
@@ -182,6 +208,17 @@ pub fn substitute(cmd: &str, host: &str, port: &str, user: &str, session: &str) 
 mod tests {
     use super::*;
 
+    #[test]
+    fn a_button_colour_is_kept_and_drawn() {
+        let mut b = button("x", Kind::Send, "ls\\r");
+        assert!(!toml::to_string(&b).unwrap().contains("color")); // none: not written
+        b.color = "green".into();
+        let back: Button = toml::from_str(&toml::to_string(&b).unwrap()).unwrap();
+        assert_eq!(back.color, "green");
+        assert!(dot_svg("green").unwrap().contains("#2ea043"));
+        assert_eq!(dot_svg("nope"), None);
+    }
+
     fn button(label: &str, kind: Kind, arg: &str) -> Button {
         Button {
             label: label.into(),
@@ -189,6 +226,7 @@ mod tests {
             arg: arg.into(),
             args: String::new(),
             target: Target::Current,
+            color: String::new(),
         }
     }
 
@@ -198,6 +236,7 @@ mod tests {
         let i = b.add("cisco").unwrap();
         b.bars[i].buttons.push(Button {
             target: Target::All,
+            color: String::new(),
             ..button("save", Kind::Send, "wr\\r")
         });
         b.bars[i]
