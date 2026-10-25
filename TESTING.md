@@ -407,3 +407,4 @@
 - [ ] v0.60.0: the window title reads «<tab> — ShagShell Secure» and follows the tab in front
 - [ ] v0.60.0: Command Window → All tabs: every terminal tab reads «* name»; Visible: only the front ones; back to Current: the marks go
 - [ ] v0.60.0: Global Options → Hide the tab bar while there is one tab: one tab, no bar; a second tab brings it back
+- [ ] v0.61.0: Global Options → Toolbar: turning a button on / off shows / hides it at once and after a restart; all off leaves only the Connect Bar

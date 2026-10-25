@@ -12,47 +12,132 @@ pub fn bar_id() -> widget::Id {
     ID.clone()
 }
 
-/// `bar`: what is typed in the Connect Bar.
-pub fn view(bar: &str) -> Element<'static, Message> {
-    let buttons = [
-        (
-            "network-server-symbolic",
-            fl!("menu-connect"),
-            Some(Action::Connect),
-        ),
-        (
-            "media-playback-start-symbolic",
-            fl!("menu-quick-connect"),
-            Some(Action::QuickConnect),
-        ),
-        (
-            "view-refresh-symbolic",
-            fl!("menu-reconnect"),
-            Some(Action::Reconnect),
-        ),
-        (
-            "process-stop-symbolic",
-            fl!("menu-disconnect"),
-            Some(Action::Disconnect),
-        ),
-        (
-            "folder-remote-symbolic",
-            fl!("menu-connect-sftp"),
-            Some(Action::ConnectSftp),
-        ),
-        (
-            "emblem-system-symbolic",
-            fl!("menu-session-options"),
-            Some(Action::SessionOptions),
-        ),
-    ];
-    let row = buttons
-        .into_iter()
-        .map(|(icon, tip, action)| -> Element<'static, Message> {
-            let b = widget::button::icon(widget::icon::from_name(icon))
-                .on_press_maybe(action.map(Message::Action));
-            widget::tooltip(b, widget::text(tip), tooltip::Position::Bottom).into()
-        });
+/// The buttons the toolbar can show, in their order: (name in the config, icon, action, label).
+pub type Tool = (&'static str, &'static str, Action, fn() -> String);
+pub const TOOLS: [Tool; 16] = [
+    (
+        "SessionManager",
+        "view-list-symbolic",
+        Action::ToggleSessionManager,
+        || fl!("menu-session-manager"),
+    ),
+    (
+        "Connect",
+        "network-server-symbolic",
+        Action::Connect,
+        || fl!("menu-connect"),
+    ),
+    (
+        "QuickConnect",
+        "media-playback-start-symbolic",
+        Action::QuickConnect,
+        || fl!("menu-quick-connect"),
+    ),
+    (
+        "LocalShell",
+        "utilities-terminal-symbolic",
+        Action::NewLocalShell,
+        || fl!("menu-new-local-shell"),
+    ),
+    (
+        "Reconnect",
+        "view-refresh-symbolic",
+        Action::Reconnect,
+        || fl!("menu-reconnect"),
+    ),
+    (
+        "Disconnect",
+        "process-stop-symbolic",
+        Action::Disconnect,
+        || fl!("menu-disconnect"),
+    ),
+    (
+        "Sftp",
+        "folder-remote-symbolic",
+        Action::ConnectSftp,
+        || fl!("menu-connect-sftp"),
+    ),
+    (
+        "SessionOptions",
+        "emblem-system-symbolic",
+        Action::SessionOptions,
+        || fl!("menu-session-options"),
+    ),
+    ("Copy", "edit-copy-symbolic", Action::Copy, || {
+        fl!("menu-copy")
+    }),
+    ("Paste", "edit-paste-symbolic", Action::Paste, || {
+        fl!("menu-paste")
+    }),
+    (
+        "CommandWindow",
+        "input-keyboard-symbolic",
+        Action::ToggleCommandWindow,
+        || fl!("menu-command-window"),
+    ),
+    (
+        "RunScript",
+        "system-run-symbolic",
+        Action::RunScript,
+        || fl!("menu-script-run"),
+    ),
+    (
+        "KeyMap",
+        "preferences-desktop-keyboard-shortcuts-symbolic",
+        Action::KeyMap,
+        || fl!("menu-keymap"),
+    ),
+    (
+        "CreateKey",
+        "dialog-password-symbolic",
+        Action::CreateKey,
+        || fl!("menu-create-key"),
+    ),
+    (
+        "Notes",
+        "accessories-text-editor-symbolic",
+        Action::Notes,
+        || fl!("menu-notes"),
+    ),
+    (
+        "GlobalOptions",
+        "preferences-system-symbolic",
+        Action::GlobalOptions,
+        || fl!("menu-global-options"),
+    ),
+];
+
+/// The toolbar until the user picks: as it always was.
+pub const DEFAULT: [&str; 6] = [
+    "Connect",
+    "QuickConnect",
+    "Reconnect",
+    "Disconnect",
+    "Sftp",
+    "SessionOptions",
+];
+
+/// The names shown: the config's list (empty: `DEFAULT`), in `TOOLS` order.
+pub fn shown(config: &[String]) -> Vec<&'static str> {
+    (TOOLS.iter())
+        .map(|t| t.0)
+        .filter(|n| match config.is_empty() {
+            true => DEFAULT.contains(n),
+            false => config.iter().any(|c| c == n),
+        })
+        .collect()
+}
+
+/// `bar`: what is typed in the Connect Bar; `tools`: the config's toolbar list.
+pub fn view(bar: &str, tools: &[String]) -> Element<'static, Message> {
+    let shown = shown(tools);
+    let row = (TOOLS.iter()).filter(|t| shown.contains(&t.0)).map(
+        |(_, icon, action, tip)| -> Element<'static, Message> {
+            let b = widget::button::icon(widget::icon::from_name(*icon))
+                .on_press(Message::Action(*action));
+            widget::tooltip(b, widget::text(tip()), tooltip::Position::Bottom).into()
+        },
+    );
     let mut items = row.collect::<Vec<_>>();
     // SecureCRT's Connect Bar: a session's name or user@host:port, Enter connects.
     items.push(widget::Space::new().width(12.0).into());
@@ -87,4 +172,17 @@ pub fn tip_button<'a>(
         widget::tooltip::Position::Bottom,
     )
     .into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_toolbar_shows_the_picked_buttons_in_their_order() {
+        assert_eq!(shown(&[]), DEFAULT.to_vec());
+        let picked = ["Paste".to_string(), "LocalShell".to_string()];
+        assert_eq!(shown(&picked), vec!["LocalShell", "Paste"]);
+        assert!(shown(&["none".to_string()]).is_empty()); // all turned off
+    }
 }

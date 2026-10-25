@@ -436,8 +436,32 @@ pub fn view<'a>(
             widget::button::standard(fl!("options-open"))
                 .on_press(Message::Action(crate::menu::Action::Credentials)),
         ));
+    // The toolbar's buttons, each on or off (SecureCRT's toolbar is customisable too).
+    let shown = crate::toolbar::shown(&config.toolbar);
+    let mut toolbar = settings::section().title(fl!("options-toolbar"));
+    for (name, _, _, label) in crate::toolbar::TOOLS.iter() {
+        let c = config.clone();
+        let now = shown.clone();
+        toolbar = toolbar.add(settings::flex_item(
+            label(),
+            widget::toggler(now.contains(name)).on_toggle(move |on| {
+                let mut c = c.clone();
+                let mut list: Vec<String> = now.iter().map(|n| n.to_string()).collect();
+                list.retain(|n| n != name);
+                if on {
+                    list.push(name.to_string());
+                }
+                if list.is_empty() {
+                    list.push("none".into()); // empty would mean «the default ones»
+                }
+                c.toolbar = list;
+                Message::SetConfig(c)
+            }),
+        ));
+    }
     let content = widget::column::with_children(vec![
         interface.into(),
+        toolbar.into(),
         terminal.into(),
         colours.into(),
         logging.into(),

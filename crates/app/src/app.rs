@@ -615,7 +615,7 @@ impl Application for App {
             middle = middle.push(c);
         }
         let mut col = widget::column::with_capacity(4)
-            .push(toolbar::view(&self.connect_bar))
+            .push(toolbar::view(&self.connect_bar, &self.config.toolbar))
             .push(middle.height(Length::Fill));
         if self.config.command_window_visible {
             col = col.push(self.command.view());
