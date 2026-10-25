@@ -181,6 +181,8 @@ pub struct Config {
     pub command_window_visible: bool,
     /// View → Button Bar.
     pub button_bar_visible: bool,
+    /// View → Connect Bar (the toolbar's field).
+    pub connect_bar_visible: bool,
     /// View → Command Manager.
     pub command_manager_visible: bool,
     /// Terminal colour scheme: "" (the theme's), or a key of `terminal_theme::schemes`.
@@ -321,6 +323,7 @@ impl Default for Config {
             app_theme: AppTheme::System,
             command_window_visible: false,
             button_bar_visible: true,
+            connect_bar_visible: true,
             command_manager_visible: false,
             color_scheme: String::new(),
             highlight_enabled: true,

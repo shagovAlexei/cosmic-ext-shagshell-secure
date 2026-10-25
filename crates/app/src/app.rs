@@ -616,6 +616,7 @@ impl Application for App {
                 self.config.command_window_visible,
                 self.config.button_bar_visible,
                 self.config.command_manager_visible,
+                self.config.connect_bar_visible,
             ),
             self.tabs.menu_state(),
             (
@@ -687,6 +688,7 @@ impl Application for App {
                 &self.connect_list,
                 self.connect_pick,
                 &toolbar::buttons(&self.config.toolbar_buttons),
+                self.config.connect_bar_visible,
             ))
             .push(middle.height(Length::Fill));
         if self.config.button_bar_visible {
@@ -1633,6 +1635,10 @@ impl App {
                 let _ = std::fs::remove_file(askpass_sock(&self.control_dir));
                 return cosmic::iced::exit();
             }
+            Action::ToggleConnectBar => {
+                self.config.connect_bar_visible = !self.config.connect_bar_visible;
+                self.save_config();
+            }
             Action::ToggleButtonBar => {
                 self.config.button_bar_visible = !self.config.button_bar_visible;
                 self.save_config();
@@ -1758,7 +1764,14 @@ impl App {
             }
             Action::ScriptConsole => return self.open_console(true),
             Action::Find => return self.find(FindMsg::Open),
-            Action::ConnectBar => return widget::text_input::focus(toolbar::bar_id()),
+            Action::ConnectBar => {
+                // Hidden: the key shows it again, then puts the cursor in it.
+                if !self.config.connect_bar_visible {
+                    self.config.connect_bar_visible = true;
+                    self.save_config();
+                }
+                return widget::text_input::focus(toolbar::bar_id());
+            }
             Action::FullScreen => {
                 self.full_screen = !self.full_screen;
                 // Full screen is the terminal's: the menu bar goes too (F11 brings it back).

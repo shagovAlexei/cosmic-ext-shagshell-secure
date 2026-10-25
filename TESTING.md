@@ -434,3 +434,4 @@
 - [ ] v0.72.0: F11: full screen without the menu bar; F11 again: window and menu back
 - [ ] v0.73.0: toolbar editor: «Connect Bar» is in the list; Up / Down moves the field on the bar, Delete removes it
 - [ ] v0.73.0: Ctrl+Shift+R (or File → Connect Bar) in a terminal: the cursor is in the Connect Bar, letters go there
+- [ ] v0.74.0: View → Connect Bar: unticked hides the field (kept after a restart), ticked shows it; Ctrl+Shift+R with it hidden shows it with the cursor in it

@@ -220,17 +220,19 @@ pub fn tip(b: &ToolButton) -> String {
 }
 
 /// `bar`: what is typed in the Connect Bar, `list`: the sessions it matches (shown under it),
-/// `picked`: the row chosen with the arrows; `tools`: the bar's buttons. A right click on the bar
+/// `picked`: the row chosen with the arrows; `tools`: the bar's buttons; `connect`: View → Connect
+/// Bar (the field shown). A right click on the bar
 /// opens its editor.
 pub fn view(
     bar: &str,
     list: &[String],
     picked: Option<usize>,
     tools: &[ToolButton],
+    connect: bool,
 ) -> Element<'static, Message> {
     // SecureCRT's Connect Bar: a session's name or user@host:port, Enter connects. Drawn once,
     // where its item stands (one field, one id).
-    let mut field = Some(connect_bar(bar, list, picked));
+    let mut field = connect.then(|| connect_bar(bar, list, picked));
     let items =
         (tools.iter().enumerate()).filter_map(|(i, b)| -> Option<Element<'static, Message>> {
             if b.is_sep() {
