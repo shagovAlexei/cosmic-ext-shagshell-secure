@@ -176,6 +176,8 @@ pub enum Message {
     Credentials(crate::credentials_window::CwMsg),
     Scheduler(crate::scheduler::SchMsg),
     Note(crate::term::TabId, crate::notes::NoteMsg),
+    /// A note bar's button shown / hidden (index into `core::notes::BUTTONS`).
+    NoteButton(u8),
     NoteTick,
     /// The note chooser answered.
     NotePicked(Option<std::path::PathBuf>),
@@ -262,6 +264,7 @@ impl Application for App {
         let hl_broken = hl_error.is_some();
         let mut tabs = Tabs::default();
         tabs.set_sftp_prefs(&config);
+        tabs.note_buttons = config.note_buttons.clone();
         tabs.set_log_prefs(&config);
         let scripts = crate::script::Scripts::new(tabs.taps.clone(), control_dir.clone());
         scripts
@@ -966,6 +969,7 @@ impl App {
                     self.refresh_scripts();
                 }
                 self.tabs.set_sftp_prefs(&self.config);
+                self.tabs.note_buttons = self.config.note_buttons.clone();
                 self.tabs.set_log_prefs(&self.config);
                 self.tabs
                     .set_looks(&self.config, &self.hl, &look(&self.config));
@@ -1010,6 +1014,14 @@ impl App {
                     // Reaped off the UI thread, or each click leaves a zombie until exit.
                     Ok(mut child) => drop(std::thread::spawn(move || child.wait())),
                     Err(e) => log::warn!("xdg-open: {e}"),
+                }
+            }
+            Message::NoteButton(i) => {
+                if let Some(name) = shagshell_core::notes::BUTTONS.get(usize::from(i)) {
+                    self.config.note_buttons =
+                        shagshell_core::notes::toggle(&self.config.note_buttons, name);
+                    self.tabs.note_buttons = self.config.note_buttons.clone();
+                    self.save_config();
                 }
             }
             Message::CloseAbout => {

@@ -96,6 +96,40 @@ pub fn rename(path: &Path, name: &str) -> io::Result<PathBuf> {
     Ok(to)
 }
 
+/// The buttons a note's bar can show (the tab's menu ticks which), in the bar's order.
+pub const BUTTONS: [&str; 13] = [
+    "Save",
+    "SaveAs",
+    "Undo",
+    "Redo",
+    "Cut",
+    "Copy",
+    "Paste",
+    "SelectAll",
+    "Wrap",
+    "LineNumbers",
+    "Rename",
+    "Open",
+    "Lock",
+];
+
+/// Shown until the user picks: the editing and saving ones.
+pub fn default_buttons() -> Vec<String> {
+    ["Save", "Undo", "Redo", "Rename", "Open"]
+        .map(String::from)
+        .to_vec()
+}
+
+/// `name` shown or hidden; the list stays in `BUTTONS` order, unknown names dropped.
+pub fn toggle(list: &[String], name: &str) -> Vec<String> {
+    let on = |b: &str| (b == name) != list.iter().any(|l| l == b);
+    BUTTONS
+        .iter()
+        .filter(|b| on(b))
+        .map(|b| b.to_string())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -198,5 +232,17 @@ mod tests {
         // Was: «Notes.md: No such file» every time View → Notes was used.
         assert_eq!(ensure_default(tmp.path(), false).unwrap(), renamed);
         assert_eq!(std::fs::read_dir(tmp.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn buttons_toggle_in_bar_order() {
+        let d = default_buttons();
+        assert!(d.iter().all(|b| BUTTONS.contains(&b.as_str())));
+        let l = toggle(&d, "Lock");
+        assert_eq!(l.last().map(String::as_str), Some("Lock"));
+        assert_eq!(toggle(&l, "Lock"), d);
+        let l = toggle(&["Open".into(), "Gone".into()], "Save");
+        assert_eq!(l, vec!["Save".to_string(), "Open".to_string()]);
+        assert!(toggle(&["Save".into()], "Save").is_empty());
     }
 }

@@ -203,6 +203,8 @@ pub struct Config {
     pub toolbar_buttons: Vec<shagshell_core::toolbar::ToolButton>,
     /// The tab bar under the tabs' content (SecureCRT's «tabs at the bottom»).
     pub tabs_bottom: bool,
+    /// The buttons a note's bar shows (`core::notes::BUTTONS`), ticked in a note tab's menu.
+    pub note_buttons: Vec<String>,
     /// Ctrl+Tab goes back to the tab used before (SecureCRT's option), not the next one.
     pub ctrl_tab_recent: bool,
     /// No tab bar while there is one tab (in one group).
@@ -335,6 +337,7 @@ impl Default for Config {
             cursor_shape: 0,
             cursor_blink: false,
             tabs_bottom: false,
+            note_buttons: shagshell_core::notes::default_buttons(),
             strip_left: false,
             strip_right: false,
             toolbar_buttons: Vec::new(),

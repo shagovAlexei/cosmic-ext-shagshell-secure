@@ -31,6 +31,19 @@ pub enum NoteMsg {
     SaveAs(Option<PathBuf>),
     Wrap,
     LineNumbers,
+    /// The bar's buttons (Copy / Cut / Paste / Lock / Save As go through the tabs: clipboard,
+    /// dialogs).
+    Undo,
+    Redo,
+    Cut,
+    Copy,
+    Paste,
+    PasteText(String),
+    SelectAll,
+    Lock,
+    SaveAsAsk,
+    /// The «⋯» list of which buttons the bar shows: open / closed.
+    Picker,
 }
 
 pub struct NoteView {
@@ -46,6 +59,8 @@ pub struct NoteView {
     pub numbers: bool,
     /// Lock Session: read only (moving, selecting, copying).
     pub locked: bool,
+    /// The «⋯» list is open.
+    picker: bool,
 }
 
 impl Drop for NoteView {
@@ -83,6 +98,7 @@ impl NoteView {
             wrap: true,
             numbers: true,
             locked: false,
+            picker: false,
         })
     }
 
@@ -157,6 +173,29 @@ impl NoteView {
                 crate::editor::set_wrap(&self.editor, self.wrap);
             }
             NoteMsg::LineNumbers => self.numbers = !self.numbers,
+            // Edits by a button: no `Changed` from the editor, so written from here.
+            NoteMsg::Undo if !self.locked => {
+                crate::editor::undo(&self.editor);
+                self.dirty = Some(Instant::now());
+            }
+            NoteMsg::Redo if !self.locked => {
+                crate::editor::redo(&self.editor);
+                self.dirty = Some(Instant::now());
+            }
+            NoteMsg::PasteText(t) if !self.locked => {
+                crate::editor::paste(&self.editor, &t);
+                self.dirty = Some(Instant::now());
+            }
+            NoteMsg::SelectAll => crate::editor::select_all(&self.editor),
+            NoteMsg::Undo
+            | NoteMsg::Redo
+            | NoteMsg::PasteText(_)
+            | NoteMsg::Cut
+            | NoteMsg::Copy
+            | NoteMsg::Paste
+            | NoteMsg::Lock
+            | NoteMsg::SaveAsAsk => {}
+            NoteMsg::Picker => self.picker = !self.picker,
             NoteMsg::RenameEdit(v) => self.rename = Some(v),
             NoteMsg::RenameCancel => self.rename = None,
             NoteMsg::RenameDo => {
@@ -180,11 +219,138 @@ impl NoteView {
         false
     }
 
+    /// A bar button by its name (`core::notes::BUTTONS`); disabled when it would edit a locked
+    /// note.
+    fn button<'a>(
+        &self,
+        name: &str,
+        m: impl Fn(NoteMsg) -> Message,
+    ) -> Option<Element<'a, Message>> {
+        let edit = !self.locked;
+        let (icon, tip, msg, on) = match name {
+            "Save" => (
+                "document-save-symbolic",
+                fl!("note-save"),
+                NoteMsg::Save,
+                true,
+            ),
+            "SaveAs" => (
+                "document-save-as-symbolic",
+                fl!("note-save-as"),
+                NoteMsg::SaveAsAsk,
+                true,
+            ),
+            "Undo" => ("edit-undo-symbolic", fl!("note-undo"), NoteMsg::Undo, edit),
+            "Redo" => ("edit-redo-symbolic", fl!("note-redo"), NoteMsg::Redo, edit),
+            "Cut" => ("edit-cut-symbolic", fl!("note-cut"), NoteMsg::Cut, edit),
+            "Copy" => ("edit-copy-symbolic", fl!("menu-copy"), NoteMsg::Copy, true),
+            "Paste" => (
+                "edit-paste-symbolic",
+                fl!("menu-paste"),
+                NoteMsg::Paste,
+                edit,
+            ),
+            "SelectAll" => (
+                "edit-select-all-symbolic",
+                fl!("menu-select-all"),
+                NoteMsg::SelectAll,
+                true,
+            ),
+            "Wrap" => (
+                "format-justify-fill-symbolic",
+                fl!("note-wrap"),
+                NoteMsg::Wrap,
+                true,
+            ),
+            "LineNumbers" => (
+                "format-justify-left-symbolic",
+                fl!("note-numbers"),
+                NoteMsg::LineNumbers,
+                true,
+            ),
+            "Rename" => (
+                "edit-symbolic",
+                fl!("note-rename"),
+                NoteMsg::RenameStart,
+                edit,
+            ),
+            "Open" => (
+                "document-open-symbolic",
+                fl!("note-open"),
+                NoteMsg::Open,
+                true,
+            ),
+            "Lock" => (
+                "system-lock-screen-symbolic",
+                match self.locked {
+                    true => fl!("menu-unlock"),
+                    false => fl!("menu-lock"),
+                },
+                NoteMsg::Lock,
+                true,
+            ),
+            _ => return None,
+        };
+        Some(tip_button(icon, tip, on.then(|| m(msg))))
+    }
+
+    /// «⋯» at the end of the bar: a list that ticks which buttons the bar shows (every note's).
+    fn picker_view<'a>(
+        &self,
+        buttons: &[String],
+        m: impl Fn(NoteMsg) -> Message,
+    ) -> Element<'a, Message> {
+        let more = tip_button(
+            "view-more-symbolic",
+            fl!("note-buttons"),
+            Some(m(NoteMsg::Picker)),
+        );
+        let mut p = widget::popover(more)
+            .position(widget::popover::Position::Bottom)
+            .on_close(m(NoteMsg::Picker));
+        if self.picker {
+            let rows = (notes::BUTTONS.iter().enumerate()).map(|(i, b)| -> Element<'a, Message> {
+                let on = buttons.iter().any(|n| n == b);
+                widget::checkbox(on)
+                    .label(button_label(b))
+                    .on_toggle(move |_| Message::NoteButton(u8::try_from(i).unwrap_or(0)))
+                    .into()
+            });
+            p = p.popup(
+                widget::container(
+                    widget::column::with_children(rows.collect::<Vec<_>>()).spacing(8),
+                )
+                .padding(12)
+                .class(cosmic::theme::Container::Dropdown),
+            );
+        }
+        p.into()
+    }
+
+    /// The selection to the clipboard; cut takes it out (not in a locked note).
+    pub fn copy(&self) -> Option<String> {
+        crate::editor::copy(&self.editor)
+    }
+
+    pub fn cut(&mut self) -> Option<String> {
+        if self.locked {
+            return None;
+        }
+        let t = crate::editor::cut(&self.editor)?;
+        self.dirty = Some(Instant::now());
+        Some(t)
+    }
+
     pub fn rename_field(&self) -> widget::Id {
         self.rename_id.clone()
     }
 
-    pub fn view(&self, id: crate::term::TabId, editor_id: widget::Id) -> Element<'_, Message> {
+    pub fn view(
+        &self,
+        id: crate::term::TabId,
+        editor_id: widget::Id,
+        buttons: &[String],
+    ) -> Element<'_, Message> {
         let m = move |x| Message::Note(id, x);
         let mut bar = widget::row::with_capacity(4)
             .spacing(8)
@@ -214,16 +380,8 @@ impl NoteView {
                     .spacing(4)
                     .align_y(cosmic::iced::Alignment::Center)
                 }))
-                .push(tip_button(
-                    "edit-symbolic",
-                    fl!("note-rename"),
-                    (!self.locked).then(|| m(NoteMsg::RenameStart)),
-                ))
-                .push(tip_button(
-                    "document-open-symbolic",
-                    fl!("note-open"),
-                    Some(m(NoteMsg::Open)),
-                )),
+                .extend(buttons.iter().filter_map(|b| self.button(b, m)))
+                .push(self.picker_view(buttons, m)),
         };
         crate::editor::follow_theme(&self.editor);
         // The tab's widget id: the app's «focus the tab» then gives it the keys.
@@ -245,6 +403,26 @@ impl NoteView {
             col = col.push(widget::text::body(e.clone()).class(theme::Text::Accent));
         }
         col.push(body).into()
+    }
+}
+
+/// A bar button's name (the «⋯» list).
+fn button_label(name: &str) -> String {
+    match name {
+        "Save" => fl!("note-save"),
+        "SaveAs" => fl!("note-save-as"),
+        "Undo" => fl!("note-undo"),
+        "Redo" => fl!("note-redo"),
+        "Cut" => fl!("note-cut"),
+        "Copy" => fl!("menu-copy"),
+        "Paste" => fl!("menu-paste"),
+        "SelectAll" => fl!("menu-select-all"),
+        "Wrap" => fl!("note-wrap"),
+        "LineNumbers" => fl!("note-numbers"),
+        "Rename" => fl!("note-rename"),
+        "Open" => fl!("note-open"),
+        "Lock" => fl!("menu-lock"),
+        other => other.to_string(),
     }
 }
 
