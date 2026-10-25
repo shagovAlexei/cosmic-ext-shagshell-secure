@@ -425,3 +425,4 @@
 - [ ] v0.69.0: tabs fit their names (a long one is cut at 240 px); many tabs: the bar scrolls with arrows
 - [ ] v0.70.0: the «<» in a manager's header folds its side into a strip (a button per pane, a tooltip with its name); a click unfolds it; it stays so after a restart
 - [ ] v0.70.1 regression: Help → About opens a small dialog in the middle (also in a narrow window), Close closes it; donate / update / release / issues buttons work
+- [ ] v0.70.2: Help → About → Check for Updates: «you have the latest version» (or the error) appears in the dialog under the button; a newer release closes About and opens the update window

@@ -2,6 +2,10 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.70.2 — 2026-10-25
+
+- fix: the result of Check for Updates made in the About dialog (latest / error) shows in that dialog, not in the status bar
+
 ## 0.70.1 — 2026-10-25
 
 - fix: Help → About is a dialog, not a side drawer (a drawer is at least 344 px wide and covered a narrow window)

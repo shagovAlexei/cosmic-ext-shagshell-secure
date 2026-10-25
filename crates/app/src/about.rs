@@ -10,7 +10,7 @@ use cosmic::widget;
 
 const REPO: &str = "https://github.com/shagovAlexei/cosmic-ext-shagshell-secure";
 
-pub fn view<'a>() -> Element<'a, Message> {
+pub fn view(note: Option<&str>) -> Element<'_, Message> {
     use crate::menu::Action;
     let mut col = widget::column::with_capacity(12)
         .spacing(16)
@@ -41,6 +41,7 @@ pub fn view<'a>() -> Element<'a, Message> {
             widget::button::standard(fl!("menu-check-updates"))
                 .on_press(Message::Action(Action::CheckUpdates)),
         )
+        .push_maybe(note.map(widget::text::body))
         .push(widget::text::body(fl!("about-comments")))
         .push(widget::text::caption(format!(
             "{} Shagov Alexei · GPL-3.0-only",
