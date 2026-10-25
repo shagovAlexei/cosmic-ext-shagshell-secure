@@ -31,6 +31,10 @@ const PERM_W: f32 = 100.0;
 /// The size and date columns (header and rows).
 const SIZE_W: f32 = 90.0;
 const DATE_W: f32 = 130.0;
+/// The name column never gets narrower than this: the other columns go first.
+const NAME_MIN: f32 = 140.0;
+/// An F-key button's narrowest width before the row wraps.
+const FKEY_W: f32 = 80.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Key {
@@ -1521,6 +1525,11 @@ impl SftpView {
     }
 
     pub fn view(&self) -> Element<'_, Message> {
+        // Its width decides how the F-key buttons are laid out.
+        widget::responsive(move |size| self.view_at(size.width)).into()
+    }
+
+    fn view_at(&self, width: f32) -> Element<'_, Message> {
         let m = move |x| Message::Sftp(self.id, x);
         let panels = widget::row::with_children(vec![self.panel(LOCAL), self.panel(REMOTE)])
             .spacing(4)
@@ -1545,14 +1554,14 @@ impl SftpView {
             (None, _) => widget::Space::new().into(),
         };
         col = col.push(widget::container(status).padding([2, 4]));
-        col = col.push(self.fkeys());
+        col = col.push(self.fkeys(width - 8.0));
         widget::mouse_area(col.spacing(4).padding(4))
             .on_release(m(SftpMsg::Release(None)))
             .into()
     }
 
     /// The commander's keys as buttons (a click is the key).
-    fn fkeys(&self) -> Element<'_, Message> {
+    fn fkeys(&self, width: f32) -> Element<'_, Message> {
         let keys = [
             (fl!("sftp-fk-switch"), Key::Switch),
             (fl!("sftp-fk-edit"), Key::Edit),
@@ -1568,27 +1577,51 @@ impl SftpView {
             (fl!("sftp-fk-refresh"), Key::Refresh),
         ];
         let id = self.id;
-        widget::row::with_children(
-            keys.into_iter()
-                .map(|(label, k)| {
-                    widget::button::custom(
-                        widget::text::caption(label)
-                            .wrapping(cosmic::iced::widget::text::Wrapping::None)
-                            .width(Length::Fill)
-                            .align_x(cosmic::iced::alignment::Horizontal::Center),
-                    )
-                    .padding([6, 4])
-                    .width(Length::Fill)
-                    .on_press(Message::Sftp(id, SftpMsg::Key(k)))
-                    .into()
+        // One row when they fit (each at least FKEY_W), else wrapped onto more rows.
+        let one_row = width >= keys.len() as f32 * (FKEY_W + 3.0);
+        let buttons = (keys.into_iter())
+            .map(|(label, k)| {
+                widget::button::custom(
+                    widget::text::caption(label)
+                        .wrapping(cosmic::iced::widget::text::Wrapping::None)
+                        .width(Length::Fill)
+                        .align_x(cosmic::iced::alignment::Horizontal::Center),
+                )
+                .padding([6, 4])
+                .width(match one_row {
+                    true => Length::Fill,
+                    false => Length::Fixed(FKEY_W),
                 })
-                .collect::<Vec<Element<Message>>>(),
-        )
-        .spacing(3)
-        .into()
+                .on_press(Message::Sftp(id, SftpMsg::Key(k)))
+                .into()
+            })
+            .collect::<Vec<Element<Message>>>();
+        match one_row {
+            true => widget::row::with_children(buttons).spacing(3).into(),
+            false => widget::flex_row(buttons).spacing(3).into(),
+        }
     }
 
     fn panel(&self, side: usize) -> Element<'_, Message> {
+        // The columns that fit this panel's width (a narrow group: fewer).
+        let body = widget::responsive(move |size| {
+            let c = shagshell_core::panel::columns(
+                size.width - 16.0,
+                side == REMOTE,
+                (PERM_W, SIZE_W, DATE_W),
+                NAME_MIN,
+                8.0,
+            );
+            self.panel_body(side, c)
+        });
+        let card = widget::container(body)
+            .width(Length::FillPortion(1))
+            .height(Length::Fill)
+            .class(theme::Container::Card);
+        self.panel_area(side, card.into())
+    }
+
+    fn panel_body(&self, side: usize, c: shagshell_core::panel::Columns) -> Element<'_, Message> {
         let m = move |x| Message::Sftp(self.id, x);
         let p = &self.panels[side];
         let active = self.active == side;
@@ -1613,7 +1646,7 @@ impl SftpView {
                     p.is_marked(e),
                     (side, i),
                     self.id,
-                    side == REMOTE,
+                    c,
                 )
             })
             .collect();
@@ -1647,28 +1680,33 @@ impl SftpView {
             Length::Fill,
             false,
         ));
-        if side == REMOTE {
+        if c.rights {
             cols =
                 cols.push(widget::text::caption(fl!("sftp-col-perm")).width(Length::Fixed(PERM_W)));
         }
-        cols = cols.push(col(
-            fl!("sftp-col-size"),
-            SortKey::Size,
-            Length::Fixed(SIZE_W),
-            true,
-        ));
-        cols = cols.push(col(
-            fl!("sftp-col-date"),
-            SortKey::Date,
-            Length::Fixed(DATE_W),
-            true,
-        ));
-        let body =
-            widget::column::with_children(vec![header.into(), cols.into(), list.into()]).spacing(2);
-        let card = widget::container(body)
-            .width(Length::FillPortion(1))
-            .height(Length::Fill)
-            .class(theme::Container::Card);
+        if c.size {
+            cols = cols.push(col(
+                fl!("sftp-col-size"),
+                SortKey::Size,
+                Length::Fixed(SIZE_W),
+                true,
+            ));
+        }
+        if c.date {
+            cols = cols.push(col(
+                fl!("sftp-col-date"),
+                SortKey::Date,
+                Length::Fixed(DATE_W),
+                true,
+            ));
+        }
+        widget::column::with_children(vec![header.into(), cols.into(), list.into()])
+            .spacing(2)
+            .into()
+    }
+
+    fn panel_area<'a>(&'a self, side: usize, card: Element<'a, Message>) -> Element<'a, Message> {
+        let m = move |x| Message::Sftp(self.id, x);
         let area: Element<'_, Message> = match side {
             // Files dropped from a file manager go up to the server's folder shown.
             REMOTE => {
@@ -1687,7 +1725,7 @@ impl SftpView {
                 )
                 .into()
             }
-            _ => card.into(),
+            _ => card,
         };
         widget::mouse_area(area)
             .on_release(m(SftpMsg::Release(Some(side))))
@@ -1821,17 +1859,17 @@ fn row(
     marked: bool,
     (side, i): (usize, usize),
     id: TabId,
-    perm: bool,
+    c: shagshell_core::panel::Columns,
 ) -> Element<'static, Message> {
     let m = move |x| Message::Sftp(id, x);
     // A newline or another control character in a name would break the row: shown as `?`.
     let name: String = (e.name.to_string_lossy().chars())
         .map(|c| if c.is_control() { '?' } else { c })
         .collect();
-    let name = match (e.dir, e.is_parent()) {
-        (_, true) => name,
-        (true, _) => format!("[{name}]"),
-        (false, _) => name,
+    let icon = match (e.dir, e.is_parent()) {
+        (_, true) => "go-up-symbolic",
+        (true, _) => "folder-symbolic",
+        (false, _) => "text-x-generic-symbolic",
     };
     // Marked: also a bullet, so it shows under the cursor too.
     let name = if marked { format!("● {name}") } else { name };
@@ -1848,24 +1886,36 @@ fn row(
             false => t,
         }
     };
-    let mut cells: Vec<Element<'static, Message>> = vec![text(name).width(Length::Fill).into()];
-    if perm {
+    let mut cells: Vec<Element<'static, Message>> = vec![
+        widget::icon::from_name(icon).size(16).into(),
+        text(name)
+            .width(Length::Fill)
+            .wrapping(cosmic::iced::widget::text::Wrapping::None)
+            .into(),
+    ];
+    if c.rights {
         let rights = match (e.is_parent(), e.mode) {
             (false, Some(mode)) => mode_text(mode, e.dir),
             _ => String::new(),
         };
         cells.push(text(rights).width(Length::Fixed(PERM_W)).into());
     }
-    cells.extend([
-        text(size)
-            .width(Length::Fixed(SIZE_W))
-            .align_x(Alignment::End)
-            .into(),
-        text(date)
-            .width(Length::Fixed(DATE_W))
-            .align_x(Alignment::End)
-            .into(),
-    ]);
+    if c.size {
+        cells.push(
+            text(size)
+                .width(Length::Fixed(SIZE_W))
+                .align_x(Alignment::End)
+                .into(),
+        );
+    }
+    if c.date {
+        cells.push(
+            text(date)
+                .width(Length::Fixed(DATE_W))
+                .align_x(Alignment::End)
+                .into(),
+        );
+    }
     let content = widget::row::with_children(cells)
         .spacing(8)
         .padding([0, 8])

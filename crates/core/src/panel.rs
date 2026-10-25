@@ -336,6 +336,59 @@ pub fn time_text(secs: i64) -> String {
         .unwrap_or_default()
 }
 
+/// The optional columns of a file panel that are shown.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Columns {
+    pub rights: bool,
+    pub size: bool,
+    pub date: bool,
+}
+
+/// The columns that fit a panel `width` px wide, the name keeping at least `name_min`; each
+/// column costs its width plus `gap`. In a narrow panel the rights go first, then the date, then
+/// the size (the name always stays). `rights`: the panel has that column at all.
+pub fn columns(
+    width: f32,
+    rights: bool,
+    (rights_w, size_w, date_w): (f32, f32, f32),
+    name_min: f32,
+    gap: f32,
+) -> Columns {
+    let tries = [
+        Columns {
+            rights,
+            size: true,
+            date: true,
+        },
+        Columns {
+            rights: false,
+            size: true,
+            date: true,
+        },
+        Columns {
+            rights: false,
+            size: true,
+            date: false,
+        },
+    ];
+    let cost = |c: &Columns| {
+        name_min
+            + [(c.rights, rights_w), (c.size, size_w), (c.date, date_w)]
+                .iter()
+                .filter(|(on, _)| *on)
+                .map(|(_, w)| w + gap)
+                .sum::<f32>()
+    };
+    tries
+        .into_iter()
+        .find(|c| cost(c) <= width)
+        .unwrap_or(Columns {
+            rights: false,
+            size: false,
+            date: false,
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -355,6 +408,26 @@ mod tests {
             .iter()
             .map(|e| e.name.to_string_lossy().into_owned())
             .collect()
+    }
+
+    #[test]
+    fn a_narrow_panel_drops_rights_then_date_then_size() {
+        let w = (100.0, 90.0, 130.0);
+        let all = Columns {
+            rights: true,
+            size: true,
+            date: true,
+        };
+        assert_eq!(columns(800.0, true, w, 120.0, 8.0), all);
+        // 120 + 108 + 98 + 138 = 464
+        assert_eq!(columns(464.0, true, w, 120.0, 8.0), all);
+        let c = columns(400.0, true, w, 120.0, 8.0);
+        assert!(!c.rights && c.size && c.date);
+        let c = columns(300.0, true, w, 120.0, 8.0);
+        assert!(!c.rights && c.size && !c.date);
+        let c = columns(150.0, true, w, 120.0, 8.0);
+        assert!(!c.rights && !c.size && !c.date);
+        assert!(!columns(800.0, false, w, 120.0, 8.0).rights); // a local panel has none
     }
 
     #[test]
