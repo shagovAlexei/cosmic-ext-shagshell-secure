@@ -103,3 +103,9 @@ SecureCRT for Windows runs under wine; its config root is
 | Credentials, known hosts, menus, saved commands | `Credentials/`, `KnownHosts/`, `Menus/`, `Commands/` |
 
 These hold the user's real hosts, script paths and (encrypted) passwords: use them to learn the formats, never copy their content into the repository (fixtures are anonymised) and never print secrets.
+
+## Tabs and UI chrome (9.7.1, from its help and resources)
+- Tab status (Global Options → Terminal → Tabs/Tiling): shown as icons, background colours or colour rectangles; states Connected, Disconnected, New Input, Inactivity (N s, default 5), Locked (overlay), script running.
+- Session Manager icons by protocol: screen `>_` + padlock (SSH), screen (Telnet), telephone (Serial/TAPI), house (Local Shell), folders with the same marks.
+- Themes: View → Themes (System, Native, Carbon, VS Blue/Dark/White, Office White + legacy); on Linux it follows the system light/dark.
+- Full comparison with ours: `.claude/docs/ui-comparison.md`.

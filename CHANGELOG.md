@@ -2,6 +2,10 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.48.0 — 2026-10-25
+
+- feat: tabs show a coloured icon for their protocol and state (connecting, connected, new output, disconnected, locked); a session tab keeps the session's name instead of the shell's `user@host:~`
+
 ## 0.47.0 — 2026-10-25
 
 - feat: a session's pre-script also runs before Reconnect and Clone of its tab; if it fails the tab is left as it was
