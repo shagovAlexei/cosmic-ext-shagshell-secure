@@ -392,3 +392,4 @@
 - [ ] v0.48.0: tabs show icons — ssh: screen with padlock, local: house, SFTP: folder; amber while ssh connects, green when connected, red after exit
 - [ ] v0.48.0: output in a tab that is not in front turns its icon blue; bringing it to front turns it green again
 - [ ] v0.48.0: ssh session tabs are titled by the session name (not user@host:~); a local shell shows its program's title while it runs
+- [ ] v0.49.0: Session Manager icons by protocol: ssh screen with padlock, telnet screen, serial connector, local house; readable in light and dark themes

@@ -18,3 +18,6 @@ SecureCRT shows each tab's state as a coloured icon (Connected, Disconnected, Ne
 - Connected is set by the first output, so an ssh warning before the login turns it green early.
 - A tab in a window of its own counts as in front even when that window is covered.
 - Inactivity (output stopped for N s), status as background colour or colour rectangle, label templates `%H %S %U`.
+
+## Session Manager (0.49.0)
+- Each session row shows `Glyph::of(protocol)` drawn symbolic (the theme's text colour); folders keep the system folder icons. `rows::Row.protocol`.

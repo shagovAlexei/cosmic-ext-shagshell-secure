@@ -13,6 +13,19 @@ pub enum Glyph {
     Console,
 }
 
+impl Glyph {
+    /// A saved session's (the Session Manager's icon).
+    pub fn of(p: crate::session::Protocol) -> Self {
+        use crate::session::Protocol as P;
+        match p {
+            P::Ssh2 => Glyph::Ssh,
+            P::Telnet => Glyph::Telnet,
+            P::Serial => Glyph::Serial,
+            P::Local => Glyph::Local,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum State {
     /// Started, nothing received yet (ssh still connecting / logging in).
@@ -98,6 +111,14 @@ mod tests {
         assert_eq!(state(true, true, true, false), State::Output);
         assert_eq!(state(true, true, true, true), State::Locked);
         assert_eq!(state(false, true, true, true), State::Disconnected);
+    }
+
+    #[test]
+    fn a_session_gets_the_glyph_of_its_protocol() {
+        use crate::session::Protocol as P;
+        assert_eq!(Glyph::of(P::Ssh2), Glyph::Ssh);
+        assert_eq!(Glyph::of(P::Serial), Glyph::Serial);
+        assert_eq!(Glyph::of(P::Local), Glyph::Local);
     }
 
     #[test]

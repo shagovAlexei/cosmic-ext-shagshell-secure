@@ -748,15 +748,20 @@ impl SessionManager {
             }
             false => widget::Space::new().width(20.0).into(),
         };
-        let icon = match (r.folder, r.expanded) {
-            (true, true) => "folder-open-symbolic",
-            (true, false) => "folder-symbolic",
-            (false, _) => "network-server-symbolic",
+        // A session: its protocol's glyph (as on its tab), in the text colour.
+        let icon = match (r.protocol, r.expanded) {
+            (Some(p), _) => {
+                use shagshell_core::tab_icon::{Glyph, State, svg};
+                let svg = svg(Glyph::of(p), State::Plain).into_bytes();
+                widget::icon::from_svg_bytes(svg).symbolic(true)
+            }
+            (None, true) => widget::icon::from_name("folder-open-symbolic").handle(),
+            (None, false) => widget::icon::from_name("folder-symbolic").handle(),
         };
         let line = widget::row::with_children(vec![
             widget::Space::new().width(f32::from(r.depth) * 16.0).into(),
             chevron,
-            widget::icon::from_name(icon).size(16).into(),
+            widget::icon(icon).size(16).into(),
             widget::text::body(r.name.clone()).into(),
         ])
         .spacing(4)
