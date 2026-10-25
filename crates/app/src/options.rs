@@ -84,8 +84,8 @@ pub fn view<'a>(
             widget::toggler(config.tabs_on_start).on_toggle(set(|c, on| c.tabs_on_start = on)),
         ))
         .add(settings::flex_item(
-            fl!("options-notes-on-start"),
-            widget::toggler(config.notes_on_start).on_toggle(set(|c, on| c.notes_on_start = on)),
+            fl!("options-start-maximized"),
+            widget::toggler(config.start_maximized).on_toggle(set(|c, on| c.start_maximized = on)),
         ))
         .add(settings::flex_item(
             fl!("options-theme"),

@@ -154,8 +154,8 @@ pub struct Config {
     pub tabs_on_start: bool,
     /// The saved sessions (ids) with a tab open now, in the order they were opened.
     pub tabs_open: Vec<String>,
-    /// Notes: the files open at the last exit come back at the start.
-    pub notes_on_start: bool,
+    /// The main window opens maximized.
+    pub start_maximized: bool,
     /// The files the note tabs showed (newest state; written when one opens / closes).
     pub notes_open: Vec<String>,
     /// Both managers on one side: the Command Manager is the upper one.
@@ -305,7 +305,7 @@ impl Default for Config {
             script_console_auto: true,
             tabs_on_start: true,
             tabs_open: Vec::new(),
-            notes_on_start: false,
+            start_maximized: true,
             notes_open: Vec::new(),
             commands_above: false,
             session_manager_collapsed: false,

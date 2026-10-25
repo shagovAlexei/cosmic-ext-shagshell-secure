@@ -2,6 +2,14 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.67.0 — 2026-10-25
+
+- feat: the window opens maximized (Global Options, on by default)
+- feat: «Open the last session at startup» brings back the tabs (saved sessions and local shells, in their order) and the notes; one option instead of two
+- feat: the side panes reach down to the Button Bar, the Command Window and the status bar sit under the tabs
+- feat: About: buttons to the latest release and to the issues instead of links
+- fix: the tabs of the last time were never reopened at startup (they were opened before the terminals' channel was up)
+
 ## 0.66.0 — 2026-10-25
 
 - feat: the toolbar is edited like shagoff-commander's button bar: buttons and gaps in any order, an app function or a program with `%H %S %U %P`, any icon of the theme (picker), its own hint; right click on the toolbar or Global Options → Toolbar

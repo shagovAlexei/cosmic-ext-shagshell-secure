@@ -1,5 +1,6 @@
 //! Help → About, in the context drawer: the support note on top, then the name, version with
-//! the update check right under it, what the program is, and the links.
+//! the update check right under it, what the program is, and buttons to the latest release and
+//! the issues.
 
 use crate::app::{APP_ID, Message};
 use crate::fl;
@@ -23,8 +24,11 @@ pub fn view<'a>() -> ContextDrawer<'a, Message> {
             )
             .push(widget::divider::horizontal::default());
     }
-    let link =
-        |label: String, url: String| widget::button::link(label).on_press(Message::OpenUrl(url));
+    let button = |label: String, icon: &'static str, url: String| {
+        widget::button::standard(label)
+            .leading_icon(widget::icon::from_name(icon).size(16))
+            .on_press(Message::OpenUrl(url))
+    };
     let content = col
         .push(widget::icon::from_name(APP_ID).size(96))
         .push(widget::text::title3(fl!("app-title")))
@@ -42,8 +46,23 @@ pub fn view<'a>() -> ContextDrawer<'a, Message> {
             "{} Shagov Alexei · GPL-3.0-only",
             fl!("about-author")
         )))
-        .push(link(fl!("about-source"), REPO.to_string()))
-        .push(link(fl!("about-issues"), format!("{REPO}/issues")));
+        .push(
+            widget::row::with_children(vec![
+                button(
+                    fl!("about-release"),
+                    "software-update-available-symbolic",
+                    format!("{REPO}/releases/latest"),
+                )
+                .into(),
+                button(
+                    fl!("about-issues"),
+                    "dialog-warning-symbolic",
+                    format!("{REPO}/issues"),
+                )
+                .into(),
+            ])
+            .spacing(8),
+        );
     context_drawer::context_drawer(
         widget::scrollable(content).width(cosmic::iced::Length::Fill),
         Message::CloseDrawer,

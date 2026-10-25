@@ -533,9 +533,23 @@ impl Tabs {
     }
 
     /// The saved sessions with a tab open (not their SFTP tabs), oldest tab first.
+    /// The tabs to open again at the next start, in their order: saved sessions' ids and local
+    /// shells (`rules::LOCAL`); notes are kept apart, SFTP and the rest are not.
     pub fn session_ids(&self) -> Vec<String> {
         let mut v: Vec<_> = (self.tabs.iter())
-            .filter_map(|(id, t)| Some((*id, t.launch.session.clone()?)))
+            .filter_map(|(id, t)| {
+                let l = &t.launch;
+                let local = matches!(l.protocol, Protocol::Local)
+                    && !l.sftp
+                    && l.note.is_none()
+                    && !l.console
+                    && matches!(t.body, Body::Terminal(_));
+                match (&l.session, local) {
+                    (Some(s), _) => Some((*id, s.clone())),
+                    (None, true) => Some((*id, rules::LOCAL.to_string())),
+                    _ => None,
+                }
+            })
             .collect();
         v.sort();
         v.into_iter().map(|(_, s)| s).collect()

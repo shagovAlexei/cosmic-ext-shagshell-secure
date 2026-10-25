@@ -20,6 +20,23 @@ pub fn cycle(pos: usize, len: usize, forward: bool) -> usize {
     }
 }
 
+/// A tab remembered for the next start: a saved session (its id), or a local shell.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Restore {
+    Session(String),
+    Local,
+}
+
+/// How a local shell is written among session ids (an id never starts with `/`).
+pub const LOCAL: &str = "//local";
+
+pub fn restore(entry: &str) -> Restore {
+    match entry {
+        LOCAL => Restore::Local,
+        id => Restore::Session(id.to_string()),
+    }
+}
+
 /// `id` came to the front: first in `recent` (most recent first), kept to the `alive` ones.
 pub fn touch(recent: &mut Vec<u64>, id: u64, alive: impl Fn(u64) -> bool) {
     recent.retain(|r| *r != id && alive(*r));
@@ -35,6 +52,12 @@ pub fn after_close(pos: usize, len_before: usize) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn regression_local_shells_are_remembered_with_the_sessions() {
+        use super::{LOCAL, Restore, restore};
+        assert_eq!(restore(LOCAL), Restore::Local);
+        assert_eq!(restore("Lab/router"), Restore::Session("Lab/router".into()));
+    }
     #[test]
     fn the_most_recent_tab_comes_first() {
         let mut r = vec![];

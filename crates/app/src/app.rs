@@ -93,6 +93,8 @@ pub struct App {
     connect_pick: Option<usize>,
     /// The toolbar's editor (and its function names for the dropdown), while open.
     tool_edit: Option<(shagshell_core::toolbar::ToolEdit, Vec<String>)>,
+    /// The tabs of the last time, opened when the terminals can start (`TermTx`).
+    restore: Vec<String>,
     /// Edit → Find: the text looked for in the active terminal (`None`: the bar is closed).
     find: Option<String>,
     /// The scheduled scripts (`schedule.toml`); a broken file is never written over.
@@ -302,6 +304,7 @@ impl Application for App {
             connect_pick: None,
             find: None,
             tool_edit: None,
+            restore: Vec::new(),
             schedule: Default::default(),
             schedule_broken: false,
             sched_state: Default::default(),
@@ -339,11 +342,9 @@ impl Application for App {
         });
         app.refresh_scripts();
         let mut note_tasks = Vec::new();
+        // The terminals start once their event channel is up (`TermTx`): opened there.
         if app.config.tabs_on_start {
-            let ids = app.config.tabs_open.clone();
-            note_tasks.push(app.open_sessions(&ids, true));
-        }
-        if app.config.notes_on_start {
+            app.restore = app.config.tabs_open.clone();
             for f in app.config.notes_open.clone() {
                 note_tasks.push(app.open_note(std::path::Path::new(&f)));
             }
@@ -353,6 +354,11 @@ impl Application for App {
             false => Task::none(),
         };
         note_tasks.extend([theme.unwrap_or_else(Task::none), check]);
+        if app.config.start_maximized
+            && let Some(id) = app.core.main_window_id()
+        {
+            note_tasks.push(cosmic::iced::window::maximize(id, true));
+        }
         (app, Task::batch(note_tasks))
     }
 
@@ -650,15 +656,25 @@ impl Application for App {
             ),
             self.config.commands_above,
         );
+        // Under the tabs: the Command Window and the status bar; the side panes reach down to the
+        // Button Bar.
+        let mut centre = widget::column::with_capacity(3).push(center);
+        if self.config.command_window_visible {
+            centre = centre.push(self.command.view());
+        }
+        centre = centre.push(status_bar::view(
+            self.tabs.status(),
+            self.sessions.notice.as_deref(),
+        ));
         let mut middle = widget::row::with_capacity(3).spacing(2);
         if let Some(c) = self.side_column(&left, window, false) {
             middle = middle.push(c);
         }
-        middle = middle.push(center);
+        middle = middle.push(centre.width(Length::Fill).height(Length::Fill));
         if let Some(c) = self.side_column(&right, window, true) {
             middle = middle.push(c);
         }
-        let mut col = widget::column::with_capacity(4)
+        let mut col = widget::column::with_capacity(3)
             .push(toolbar::view(
                 &self.connect_bar,
                 &self.connect_list,
@@ -666,13 +682,6 @@ impl Application for App {
                 &toolbar::buttons(&self.config.toolbar_buttons),
             ))
             .push(middle.height(Length::Fill));
-        if self.config.command_window_visible {
-            col = col.push(self.command.view());
-        }
-        col = col.push(status_bar::view(
-            self.tabs.status(),
-            self.sessions.notice.as_deref(),
-        ));
         if self.config.button_bar_visible {
             col = col.push(
                 self.buttons
@@ -954,16 +963,25 @@ impl App {
             }
             Message::TermTx(tx) => {
                 self.tabs.set_sender(tx);
+                let mut tasks = Vec::new();
+                for entry in std::mem::take(&mut self.restore) {
+                    use shagshell_core::tabs::Restore;
+                    tasks.push(match shagshell_core::tabs::restore(&entry) {
+                        Restore::Local => self
+                            .tabs
+                            .open(tabs::Launch::local_shell(), &look(&self.config)),
+                        Restore::Session(id) => self.open_sessions(&[id], true),
+                    });
+                }
                 if let Some((path, args)) = self.startup.take() {
                     // The shell is the active tab at once; what it prints waits in the script's buffer.
-                    let open = self
-                        .tabs
-                        .open(tabs::Launch::local_shell(), &look(&self.config));
-                    return Task::batch([
-                        open,
-                        self.script(crate::script::ScMsg::Start(path, args)),
-                    ]);
+                    tasks.push(
+                        self.tabs
+                            .open(tabs::Launch::local_shell(), &look(&self.config)),
+                    );
+                    tasks.push(self.script(crate::script::ScMsg::Start(path, args)));
                 }
+                return Task::batch(tasks);
             }
             Message::Term(id, e) => {
                 use alacritty_terminal::event::Event;
