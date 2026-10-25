@@ -368,6 +368,8 @@ pub enum TabsMsg {
     Context(pane_grid::Pane, Entity),
     Reorder(pane_grid::Pane, ReorderEvent),
     /// A tab was dropped on this group (its bar or its body).
+    /// A tab drag over its own bar: which tab is under the pointer (the first: the dragged one).
+    DropHint(pane_grid::Pane, Option<(Entity, bool)>),
     Drop(pane_grid::Pane),
     PaneClicked(pane_grid::Pane),
     Resized(pane_grid::ResizeEvent),
@@ -424,6 +426,10 @@ pub struct Tabs {
     locks: HashMap<TabId, u64>,
     /// The tab pressed last: a drag that starts is about it (the drag carries no tab).
     pressed: Option<(pane_grid::Pane, Entity)>,
+    /// The tab being dragged. libcosmic says which only through its drop hints (the drag data
+    /// is one byte, and `on_activate` comes on release, so not for a drag): only the source bar
+    /// gives hints, and the first is the tab under the pointer when the drag began.
+    drag_src: Option<(pane_grid::Pane, Entity)>,
     /// The last tab clicked and when: a second click soon after is a double-click.
     last_click: Option<(Entity, std::time::Instant)>,
     /// Global Options → double-click on a tab (`Config::tab_double_click`).
@@ -1203,7 +1209,7 @@ impl Tabs {
 
     /// A dragged tab (the one pressed last) goes to group `dst`: the same tab, still running.
     fn move_pressed_to(&mut self, dst: pane_grid::Pane) {
-        let Some((src, e)) = self.pressed.take() else {
+        let Some((src, e)) = self.drag_src.take().or(self.pressed.take()) else {
             return;
         };
         let Some(grid) = self.grid.as_mut() else {
@@ -2108,6 +2114,7 @@ impl Tabs {
             }
             TabsMsg::Activate(pane, e) => {
                 self.focus = Some(pane);
+                self.drag_src = None; // a click, not a drag
                 self.pressed = Some((pane, e));
                 if let Some(group) = self.grid.as_mut().and_then(|g| g.get_mut(pane)) {
                     group.model.activate(e);
@@ -2158,6 +2165,11 @@ impl Tabs {
             TabsMsg::Reorder(pane, ev) => {
                 if let Some(group) = self.grid.as_mut().and_then(|g| g.get_mut(pane)) {
                     group.model.reorder(ev.dragged, ev.target, ev.position);
+                }
+            }
+            TabsMsg::DropHint(pane, hint) => {
+                if let (None, Some((e, _))) = (self.drag_src, hint) {
+                    self.drag_src = Some((pane, e));
                 }
             }
             TabsMsg::Drop(pane) => {
@@ -2273,6 +2285,7 @@ impl Tabs {
                 .on_surface_action(move |a| app(Message::Surface(a)))
                 .enable_tab_drag(TAB_MIME.to_string())
                 .on_reorder(move |ev| app(Message::Tabs(TabsMsg::Reorder(pane, ev))))
+                .on_drop_hint(move |h| app(Message::Tabs(TabsMsg::DropHint(pane, h))))
                 .on_dnd_drop::<TabDrop>(move |_, _, _| app(Message::Tabs(TabsMsg::Drop(pane))));
             if let Some(h) = config.tab_px() {
                 bar = bar.button_height(h);

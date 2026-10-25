@@ -411,3 +411,4 @@
 - [ ] v0.62.0: typing in the Connect Bar shows up to 8 matching sessions under it (those starting with the text first); a click opens it; a click elsewhere closes the list
 - [ ] v0.63.0: Global Options → Ctrl+Tab goes back…: with 4 tabs, pick the 1st, Ctrl+Tab returns to the one before, again to the 1st; off: Ctrl+Tab steps to the next tab
 - [ ] v0.64.0: Global Options → Blinking cursor: the active terminal's cursor blinks (block, underline, bar); turned off, it stays shown; other tabs never keep a hidden cursor
+- [ ] v0.64.1 regression: two groups; click tab A, then drag tab B (not A) onto the other group's bar or body — B moves, A stays; drag another tab right after — it moves too (not «nothing»)
