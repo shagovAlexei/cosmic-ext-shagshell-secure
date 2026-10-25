@@ -408,6 +408,10 @@ pub struct Tabs {
     locks: HashMap<TabId, u64>,
     /// The tab pressed last: a drag that starts is about it (the drag carries no tab).
     pressed: Option<(pane_grid::Pane, Entity)>,
+    /// The last tab clicked and when: a second click soon after is a double-click.
+    last_click: Option<(Entity, std::time::Instant)>,
+    /// Global Options → double-click on a tab (`Config::tab_double_click`).
+    double_click: u8,
     /// The tab right-clicked last: `TabCmd`s are about it.
     context: Option<(pane_grid::Pane, Entity)>,
     /// Every terminal's tap, for the scripts running on other threads.
@@ -1975,6 +1979,7 @@ impl Tabs {
         look: &Look,
     ) {
         self.scheme = config.color_scheme.clone();
+        self.double_click = config.tab_double_click;
         self.cursor = config.cursor();
         for tab in self.tabs.values() {
             if let Some(t) = tab.terminal() {
@@ -2004,6 +2009,22 @@ impl Tabs {
                 self.pressed = Some((pane, e));
                 if let Some(group) = self.grid.as_mut().and_then(|g| g.get_mut(pane)) {
                     group.model.activate(e);
+                }
+                let now = std::time::Instant::now();
+                let double = self.last_click.is_some_and(|(at, t)| {
+                    at == e && now.duration_since(t) < std::time::Duration::from_millis(400)
+                });
+                self.last_click = (!double).then_some((e, now));
+                let cmd = match (double, self.double_click) {
+                    (true, 1) => Some(TabCmd::Close),
+                    (true, 2) => Some(TabCmd::Clone),
+                    (true, 3) => Some(TabCmd::Reconnect),
+                    (true, 4) => Some(TabCmd::Detach),
+                    _ => None,
+                };
+                if let (Some(cmd), Some(t)) = (cmd, self.tab_at(pane, e)) {
+                    self.pressed = None; // not the start of a drag
+                    return self.cmd(cmd, t, look);
                 }
                 return self.focus_active();
             }
@@ -2167,7 +2188,11 @@ impl Tabs {
                 )
                 .into();
             let active = many && focus == Some(pane);
-            let content = widget::container(widget::column::with_children(vec![bar, body]))
+            let parts = match config.tabs_bottom {
+                true => vec![body, bar],
+                false => vec![bar, body],
+            };
+            let content = widget::container(widget::column::with_children(parts))
                 .padding(1)
                 .class(cosmic::theme::Container::custom(move |theme| {
                     let mut s = widget::container::Style::default();
