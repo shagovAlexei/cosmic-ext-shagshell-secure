@@ -213,8 +213,8 @@ impl NoteView {
         };
         if notes::is_markdown(&self.path) {
             let (icon, label) = match self.preview {
-                true => ("text-editor-symbolic", fl!("note-edit")),
-                false => ("view-reveal-symbolic", fl!("note-view")),
+                true => ("edit-symbolic", fl!("note-edit")),
+                false => ("view-paged-symbolic", fl!("note-view")),
             };
             if self.preview {
                 bar = bar.push(tip_button(

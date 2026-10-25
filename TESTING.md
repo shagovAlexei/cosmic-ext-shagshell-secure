@@ -435,3 +435,4 @@
 - [ ] v0.73.0: toolbar editor: «Connect Bar» is in the list; Up / Down moves the field on the bar, Delete removes it
 - [ ] v0.73.0: Ctrl+Shift+R (or File → Connect Bar) in a terminal: the cursor is in the Connect Bar, letters go there
 - [ ] v0.74.0: View → Connect Bar: unticked hides the field (kept after a restart), ticked shows it; Ctrl+Shift+R with it hidden shows it with the cursor in it
+- [ ] v0.74.1 regression: a .md note: the View / Edit button (right of Save) shows an icon in both modes

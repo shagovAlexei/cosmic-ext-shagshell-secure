@@ -2,6 +2,10 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.74.1 — 2026-10-25
+
+- fix: Notes: the View / Edit button had no icon in the Cosmic icon theme (it lacks the Adwaita names); now uses icons the theme has
+
 ## 0.74.0 — 2026-10-25
 
 - feat: View → Connect Bar shows / hides the toolbar's Connect Bar; Ctrl+Shift+R shows a hidden one and puts the cursor in it
