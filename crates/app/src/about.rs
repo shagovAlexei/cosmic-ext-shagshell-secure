@@ -10,7 +10,20 @@ use cosmic::widget;
 
 const REPO: &str = "https://github.com/shagovAlexei/cosmic-ext-shagshell-secure";
 
+/// Room the dialog's title, Close row and paddings take beside the scrolled content.
+const CHROME: f32 = 200.0;
+
+/// Sized to the window: in a small one the content scrolls and Close stays in sight.
 pub fn view(note: Option<&str>) -> Element<'_, Message> {
+    widget::responsive(move |size| {
+        widget::container(dialog(note, (size.height - CHROME).max(80.0)))
+            .center(cosmic::iced::Length::Fill)
+            .into()
+    })
+    .into()
+}
+
+fn dialog(note: Option<&str>, max_height: f32) -> Element<'_, Message> {
     use crate::menu::Action;
     let mut col = widget::column::with_capacity(12)
         .spacing(16)
@@ -66,7 +79,10 @@ pub fn view(note: Option<&str>) -> Element<'_, Message> {
         );
     widget::dialog()
         .title(fl!("menu-about"))
-        .control(widget::scrollable(content).width(cosmic::iced::Length::Fill))
+        .control(
+            widget::container(widget::scrollable(content).width(cosmic::iced::Length::Fill))
+                .max_height(max_height),
+        )
         .primary_action(widget::button::standard(fl!("close")).on_press(Message::CloseAbout))
         .into()
 }
