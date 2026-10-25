@@ -607,6 +607,7 @@ impl ButtonBar {
                     ));
                 let mut inner = widget::row::with_capacity(2)
                     .spacing(6)
+                    .height(Length::Fill)
                     .align_y(Alignment::Center);
                 if let Some(svg) = shagshell_core::buttonbar::dot_svg(&b.color) {
                     inner = inner.push(
