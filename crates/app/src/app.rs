@@ -83,6 +83,8 @@ pub struct App {
     script_files: Vec<std::path::PathBuf>,
     /// Sessions waiting for their pre-script: run id → what to do when it ended well.
     pre_runs: std::collections::HashMap<u64, AfterPre>,
+    /// View → Full Screen.
+    full_screen: bool,
     /// The scheduled scripts (`schedule.toml`); a broken file is never written over.
     schedule: shagshell_core::schedule::Schedule,
     schedule_broken: bool,
@@ -267,6 +269,7 @@ impl Application for App {
             startup: None,
             script_files: Vec::new(),
             pre_runs: Default::default(),
+            full_screen: false,
             schedule: Default::default(),
             schedule_broken: false,
             sched_state: Default::default(),
@@ -544,6 +547,7 @@ impl Application for App {
                 &self.script_labels(&self.recent_files()),
             ),
             self.scripts.running(),
+            self.full_screen,
         )]
     }
 
@@ -1441,6 +1445,16 @@ impl App {
                 );
             }
             Action::ScriptConsole => return self.open_console(true),
+            Action::FullScreen => {
+                self.full_screen = !self.full_screen;
+                let mode = match self.full_screen {
+                    true => cosmic::iced::window::Mode::Fullscreen,
+                    false => cosmic::iced::window::Mode::Windowed,
+                };
+                if let Some(id) = self.core.main_window_id() {
+                    return cosmic::iced::window::set_mode(id, mode);
+                }
+            }
             Action::CancelScript => {
                 self.scripts.cancel();
                 return self.script_window();
@@ -3202,6 +3216,10 @@ fn builtin_action(key: &Physical, mods: Modifiers) -> Option<Action> {
         (Code::KeyV, m) if m == ctrl_shift => Action::Paste,
         (Code::Tab, Modifiers::CTRL) => Action::NextTab,
         (Code::Tab, m) if m == ctrl_shift => Action::PrevTab,
+        (Code::Equal | Code::NumpadAdd, Modifiers::CTRL) => Action::ZoomIn,
+        (Code::Minus | Code::NumpadSubtract, Modifiers::CTRL) => Action::ZoomOut,
+        (Code::Digit0 | Code::Numpad0, Modifiers::CTRL) => Action::ZoomReset,
+        (Code::F11, m) if m.is_empty() => Action::FullScreen,
         (_, Modifiers::ALT) => Action::SelectTab(digits.iter().position(|d| *d == code)? as u8),
         _ => return None,
     })
@@ -3220,6 +3238,16 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn zoom_and_full_screen_keys() {
+        let k = |code, mods| key_action(&Physical::Code(code), mods);
+        assert_eq!(k(Code::Equal, Modifiers::CTRL), Some(Action::ZoomIn));
+        assert_eq!(k(Code::Minus, Modifiers::CTRL), Some(Action::ZoomOut));
+        assert_eq!(k(Code::Digit0, Modifiers::CTRL), Some(Action::ZoomReset));
+        assert_eq!(k(Code::F11, Modifiers::empty()), Some(Action::FullScreen));
+        assert_eq!(k(Code::F11, Modifiers::SHIFT), None); // the program's
+    }
 
     #[test]
     fn terminal_keys_stay_in_the_terminal() {

@@ -351,6 +351,25 @@ pub fn view<'a>(
             ),
         ))
         .add(settings::flex_item(
+            fl!("options-cursor"),
+            widget::dropdown(
+                vec![
+                    fl!("options-cursor-block"),
+                    fl!("options-cursor-underline"),
+                    fl!("options-cursor-bar"),
+                ],
+                Some(usize::from(config.cursor_shape.min(2))),
+                {
+                    let c = config.clone();
+                    move |i| {
+                        let mut c = c.clone();
+                        c.cursor_shape = u8::try_from(i).unwrap_or(0);
+                        Message::SetConfig(c)
+                    }
+                },
+            ),
+        ))
+        .add(settings::flex_item(
             fl!("options-tab-height"),
             heights(config.tab_height, |c, v| c.tab_height = v),
         ))

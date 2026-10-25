@@ -13,9 +13,9 @@ Legend: ✅ have · 🟡 partly · ❌ missing · — not planned.
 | Flat monochrome toolbar glyphs 16/24/32 | ✅ symbolic icons | |
 | Icons in menus | ✅ 0.50.0 | submenus (Scripts, Recent) have none: libcosmic folders take no icon |
 | Window transparency (active / inactive) | ❌ | |
-| Zoom Ctrl +/−/0 | ❌ | |
-| Cursor style (block / underline / bar), colour, blink | ❌ | |
-| Full screen Alt+Enter, Always on Top, hide menu bar | ❌ | |
+| Zoom Ctrl +/−/0 | ✅ 0.53.0 (per tab) | |
+| Cursor style (block / underline / bar), colour, blink | 🟡 shape (0.53.0) | no blink, no colour |
+| Full screen Alt+Enter, Always on Top, hide menu bar | 🟡 full screen F11 (0.53.0) | |
 
 ## Session tabs
 

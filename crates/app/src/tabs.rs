@@ -396,6 +396,8 @@ pub struct Tabs {
     /// Global Options: the terminal colour scheme ("": the theme's) and keyword highlighting.
     scheme: String,
     highlights: Vec<shagshell_core::highlight::Rule>,
+    /// Global Options → Cursor.
+    cursor: alacritty_terminal::vte::ansi::CursorShape,
     /// What the last log action had to say (a log that could not start / stopped).
     notice: Mutex<Option<String>>,
     /// A live tab asked to close: waits for the dialog.
@@ -821,6 +823,7 @@ impl Tabs {
             .unwrap_or_else(|e| e.into_inner())
             .insert(id, tap.clone());
         t.set_highlights(self.highlights.clone());
+        t.set_cursor_shape(self.cursor);
         if let Some(spec) = launch.log.as_ref().filter(|s| !s.file.is_empty())
             && let Err(e) = self.begin_log(&tap, launch, spec)
         {
@@ -1769,6 +1772,18 @@ impl Tabs {
             Action::NewLocalShell => self.open(Launch::local_shell(), look),
             Action::CloseTab => on_active(self, TabCmd::Close),
             Action::Reconnect => on_active(self, TabCmd::Reconnect),
+            Action::ZoomIn | Action::ZoomOut | Action::ZoomReset => {
+                if let Some(t) = self.active_terminal().and_then(|id| self.terminal(id)) {
+                    let mut t = t.lock().unwrap_or_else(|e| e.into_inner());
+                    let by = match action {
+                        Action::ZoomIn => 1,
+                        Action::ZoomOut => -1,
+                        _ => -t.zoom_adj(),
+                    };
+                    t.zoom(by);
+                }
+                Task::none()
+            }
             Action::Disconnect => on_active(self, TabCmd::Disconnect),
             Action::ToggleLog => {
                 if let Err(e) = self.toggle_log() {
@@ -1960,6 +1975,12 @@ impl Tabs {
         look: &Look,
     ) {
         self.scheme = config.color_scheme.clone();
+        self.cursor = config.cursor();
+        for tab in self.tabs.values() {
+            if let Some(t) = tab.terminal() {
+                (t.lock().unwrap_or_else(|e| e.into_inner())).set_cursor_shape(self.cursor);
+            }
+        }
         self.set_highlights(config, rules);
         self.restyle(look);
     }

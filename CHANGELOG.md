@@ -2,6 +2,10 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.53.0 — 2026-10-25
+
+- feat: zoom the active terminal (Ctrl+= / Ctrl+− / Ctrl+0, View menu), full screen (F11), cursor shape in Global Options (block / underline / bar)
+
 ## 0.52.0 — 2026-10-25
 
 - feat: the status bar also shows the cursor position, how long the tab has been connected and the log file's name while logging

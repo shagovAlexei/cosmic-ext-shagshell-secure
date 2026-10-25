@@ -194,6 +194,8 @@ pub struct Config {
     pub zmodem_auto: bool,
     /// Terminal font family ("" = the system's monospace).
     pub font_family: String,
+    /// Terminal cursor: 0 block, 1 underline, 2 bar; read through `cursor`.
+    pub cursor_shape: u8,
     /// Terminal font size, px (0 = 14); read through `font_px`.
     pub font_size: u16,
     /// Tab header height, px (0 = the theme's); read through `tab_px`.
@@ -211,6 +213,15 @@ pub struct Config {
 }
 
 impl Config {
+    pub fn cursor(&self) -> alacritty_terminal::vte::ansi::CursorShape {
+        use alacritty_terminal::vte::ansi::CursorShape as C;
+        match self.cursor_shape {
+            1 => C::Underline,
+            2 => C::Beam,
+            _ => C::Block,
+        }
+    }
+
     /// The folder of session logs: `~`, `~/x` or absolute; a relative one is under home too.
     pub fn log_dir(&self) -> std::path::PathBuf {
         let home = std::env::home_dir().unwrap_or_else(std::env::temp_dir);
@@ -303,6 +314,7 @@ impl Default for Config {
             zmodem_auto: true,
             log_template: "%S_%Y-%M-%D_%h%m%s.log".into(),
             font_family: String::new(),
+            cursor_shape: 0,
             font_size: 14,
             tab_height: 0,
             button_height: 0,
