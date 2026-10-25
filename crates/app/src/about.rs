@@ -1,16 +1,16 @@
-//! Help → About, in the context drawer: the support note on top, then the name, version with
+//! Help → About, a dialog: the support note on top, then the name, version with
 //! the update check right under it, what the program is, and buttons to the latest release and
 //! the issues.
 
 use crate::app::{APP_ID, Message};
 use crate::fl;
-use cosmic::app::context_drawer::{self, ContextDrawer};
+use cosmic::Element;
 use cosmic::iced::Alignment;
 use cosmic::widget;
 
 const REPO: &str = "https://github.com/shagovAlexei/cosmic-ext-shagshell-secure";
 
-pub fn view<'a>() -> ContextDrawer<'a, Message> {
+pub fn view<'a>() -> Element<'a, Message> {
     use crate::menu::Action;
     let mut col = widget::column::with_capacity(12)
         .spacing(16)
@@ -63,9 +63,9 @@ pub fn view<'a>() -> ContextDrawer<'a, Message> {
             ])
             .spacing(8),
         );
-    context_drawer::context_drawer(
-        widget::scrollable(content).width(cosmic::iced::Length::Fill),
-        Message::CloseDrawer,
-    )
-    .title(fl!("menu-about"))
+    widget::dialog()
+        .title(fl!("menu-about"))
+        .control(widget::scrollable(content).width(cosmic::iced::Length::Fill))
+        .primary_action(widget::button::standard(fl!("close")).on_press(Message::CloseAbout))
+        .into()
 }
