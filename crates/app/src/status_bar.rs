@@ -57,5 +57,5 @@ pub fn view(tab: Option<Status>, notice: Option<&str>) -> Element<'_, Message> {
     if let Some(n) = notice {
         row = row.push(widget::text::body(n.to_string()).class(cosmic::theme::Text::Accent));
     }
-    widget::container(row).padding([6, 12]).into()
+    widget::container(row).padding([6, 6]).into()
 }

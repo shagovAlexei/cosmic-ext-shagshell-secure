@@ -417,3 +417,6 @@
 - [ ] v0.65.0: Connect Bar: ↓ / ↑ walk the list (the row is filled), Enter opens it, Esc closes the list
 - [ ] v0.65.0: Button Bar → Edit button → Colour list shows a dot per colour; a long label stays on one line, cut on the right
 - [ ] v0.66.0: right click on the toolbar opens its editor; Add / gap / Delete / ↑ ↓ change the bar after OK (Cancel: nothing); Pick… shows the theme's icons, the filter narrows them; a program button (e.g. `xterm` with `-e ssh %H`) starts it for the active session; Default brings the usual bar back
+- [ ] v0.67.0: the window opens maximized; Global Options → Open the window maximized off: the usual size
+- [ ] v0.67.0 regression: open two sessions, a local shell and a note, quit, start again: all four come back in the same order (option on); off: nothing comes back
+- [ ] v0.67.0: the Session / Command Manager reach down to the Button Bar; the status bar and Command Window are under the tabs; About shows two buttons (latest release, report a problem)
