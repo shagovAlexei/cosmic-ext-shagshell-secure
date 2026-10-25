@@ -1436,6 +1436,12 @@ impl Tabs {
         let note = |m: NoteMsg| Some(m);
         let msg = match cmd {
             TabCmd::Lock => {
+                // Locked without a password: freed at once.
+                if self.user_locks.get(&id).is_some_and(|l| l.open()) {
+                    self.user_locks.remove(&id);
+                    self.set_user_lock(id, false);
+                    return Some(self.focus_active());
+                }
                 let unlock = self.user_locks.contains_key(&id);
                 let field = widget::Id::unique();
                 self.lock_ask = Some(LockAsk {
@@ -2361,10 +2367,6 @@ impl Tabs {
                             self.user_locks.insert(id, l);
                             self.lock_ask = None;
                             self.set_user_lock(id, true);
-                        }
-                        Err(LockError::Empty) => {
-                            a.error = Some(fl!("lock-empty"));
-                            return Task::none();
                         }
                         Err(LockError::Mismatch) => {
                             a.error = Some(fl!("lock-mismatch"));

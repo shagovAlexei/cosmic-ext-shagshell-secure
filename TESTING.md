@@ -443,3 +443,4 @@
 - [ ] v0.77.0: right click on a note tab: Save, Save As…, Word Wrap, Line Numbers (ticks follow), Rename, Lock Session…
 - [ ] v0.77.0: Lock Session… on a terminal tab (ssh too): typing, paste, Command Window and Button Bar sends do nothing, the icon shows the lock; Unlock with a wrong password says so, with the right one frees it
 - [ ] v0.78.0: a note's «⋯» lists the buttons; ticking one shows it on the bar at once (every note), kept after a restart; Cut / Copy / Paste go through the system clipboard; in a locked note the editing ones are greyed
+- [ ] v0.79.0: Lock Session… with empty fields locks; Unlock Session frees it without a dialog
