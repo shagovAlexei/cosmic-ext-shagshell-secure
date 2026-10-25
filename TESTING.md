@@ -396,3 +396,4 @@
 - [ ] v0.50.0: every menu shows icons beside its items (checkboxes keep the check mark), text lines up; Script → Cancel is grey with no script running
 - [ ] v0.51.0: SFTP rows show folder / file icons (`..` an up arrow); in a narrow group the rights, then the date go, names stay readable; the F-key buttons wrap onto a second row
 - [ ] v0.52.0: status bar: «Ln N, Col M» follows the cursor, ⏱ counts up each second while connected and stops when it ends, «● REC file.log» while logging
+- [ ] v0.53.0: Ctrl+= / Ctrl+− change the active terminal's font, Ctrl+0 brings it back; F11 and View → Full Screen toggle full screen; Global Options → Cursor block / underline / bar applies to open tabs at once

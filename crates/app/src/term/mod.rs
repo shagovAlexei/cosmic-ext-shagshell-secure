@@ -20,7 +20,7 @@ pub type TabId = u64;
 pub type Events = UnboundedSender<(TabId, Event)>;
 
 /// Lines kept above the screen.
-const HISTORY: usize = 10_000;
+pub(crate) const HISTORY: usize = 10_000;
 
 /// Start `program` with `args` in the home dir. `dark`: the COSMIC theme's colors; `bg`: the window's
 /// background (0xAARRGGBB), the terminal's own.

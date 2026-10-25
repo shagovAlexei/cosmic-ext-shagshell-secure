@@ -85,6 +85,12 @@ pub enum Action {
     ScriptsFolder,
     /// Script → Refresh the list.
     ScriptsRefresh,
+    /// View → Zoom In / Out / Reset: the active terminal's font.
+    ZoomIn,
+    ZoomOut,
+    ZoomReset,
+    /// View → Full Screen (F11).
+    FullScreen,
     // Shown, not working yet (later phases).
     Disconnect,
     ConnectSftp,
@@ -93,7 +99,7 @@ pub enum Action {
 
 /// The functions a Button Bar button can call: the name in `buttonbars.toml` and its label.
 pub type NamedFn = (&'static str, fn() -> String);
-pub const NAMED: [NamedFn; 16] = [
+pub const NAMED: [NamedFn; 20] = [
     ("Connect", || fl!("menu-connect")),
     ("QuickConnect", || fl!("menu-quick-connect")),
     ("NewLocalShell", || fl!("menu-new-local-shell")),
@@ -110,6 +116,10 @@ pub const NAMED: [NamedFn; 16] = [
     ("ToggleRecording", || fl!("menu-script-record")),
     ("GlobalOptions", || fl!("menu-global-options")),
     ("Notes", || fl!("menu-notes")),
+    ("ZoomIn", || fl!("menu-zoom-in")),
+    ("ZoomOut", || fl!("menu-zoom-out")),
+    ("ZoomReset", || fl!("menu-zoom-reset")),
+    ("FullScreen", || fl!("menu-full-screen")),
 ];
 
 impl Action {
@@ -134,6 +144,10 @@ impl Action {
             "ScriptConsole" => Action::ScriptConsole,
             "Scheduler" => Action::Scheduler,
             "Notes" => Action::Notes,
+            "ZoomIn" => Action::ZoomIn,
+            "ZoomOut" => Action::ZoomOut,
+            "ZoomReset" => Action::ZoomReset,
+            "FullScreen" => Action::FullScreen,
             _ => return None,
         })
     }
@@ -162,6 +176,10 @@ fn key_binds() -> HashMap<KeyBind, Action> {
         bind(vec![Ctrl, Shift], c("v"), Action::Paste),
         bind(vec![Ctrl], Key::Named(Named::Tab), Action::NextTab),
         bind(vec![Ctrl, Shift], Key::Named(Named::Tab), Action::PrevTab),
+        bind(vec![Ctrl], c("="), Action::ZoomIn),
+        bind(vec![Ctrl], c("-"), Action::ZoomOut),
+        bind(vec![Ctrl], c("0"), Action::ZoomReset),
+        bind(vec![], Key::Named(Named::F11), Action::FullScreen),
     ])
 }
 
@@ -205,6 +223,10 @@ fn icon_of(a: Action) -> Option<cosmic::widget::icon::Handle> {
         Action::Donate => "emblem-favorite-symbolic",
         Action::About => "help-about-symbolic",
         Action::Pending => "edit-find-symbolic",
+        Action::ZoomIn => "zoom-in-symbolic",
+        Action::ZoomOut => "zoom-out-symbolic",
+        Action::ZoomReset => "zoom-original-symbolic",
+        Action::FullScreen => "view-fullscreen-symbolic",
         _ => return None,
     };
     Some(cosmic::widget::icon::from_name(name).handle())
@@ -231,6 +253,7 @@ pub fn bar(
     (tabs, live, split, logging, recording): (bool, bool, bool, bool, bool),
     (folder, recent): (&[String], &[String]),
     scripting: bool,
+    full_screen: bool,
 ) -> Element<'static, Message> {
     use menu::Item::{Button, ButtonDisabled, CheckBox, Divider};
     let off = |label: String| ButtonDisabled(label, None, Action::Pending);
@@ -325,6 +348,16 @@ pub fn bar(
                     Action::ToggleButtonBar,
                 ),
                 Button(fl!("menu-notes"), None, Action::Notes),
+                Divider,
+                tab(fl!("menu-zoom-in"), Action::ZoomIn),
+                tab(fl!("menu-zoom-out"), Action::ZoomOut),
+                tab(fl!("menu-zoom-reset"), Action::ZoomReset),
+                CheckBox(
+                    fl!("menu-full-screen"),
+                    None,
+                    full_screen,
+                    Action::FullScreen,
+                ),
             ],
         ),
         (

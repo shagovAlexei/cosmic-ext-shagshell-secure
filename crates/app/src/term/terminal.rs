@@ -398,6 +398,20 @@ impl Terminal {
         self.update_cell_size();
     }
 
+    /// Global Options → Cursor: its shape until a program asks for another (DECSCUSR).
+    pub fn set_cursor_shape(&mut self, shape: CursorShape) {
+        self.term
+            .lock()
+            .set_options(alacritty_terminal::term::Config {
+                scrolling_history: super::HISTORY,
+                default_cursor_style: alacritty_terminal::vte::ansi::CursorStyle {
+                    shape,
+                    blinking: false,
+                },
+                ..Default::default()
+            });
+    }
+
     pub fn set_zoom_adj(&mut self, value: i8) {
         self.zoom_adj = value;
     }
