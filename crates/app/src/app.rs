@@ -174,6 +174,8 @@ pub enum Message {
     SchedTick,
     /// The status bar's clock: nothing to do but draw again.
     StatusTick,
+    /// The blinking cursor's half-period.
+    Blink,
     /// The Connect Bar's text, and its Enter.
     ConnectBar(String),
     ConnectBarGo,
@@ -471,6 +473,11 @@ impl Application for App {
             match self.tabs.has_unsaved_notes() {
                 true => cosmic::iced::time::every(std::time::Duration::from_millis(500))
                     .map(|_| Message::NoteTick),
+                false => Subscription::none(),
+            },
+            match self.config.cursor_blink {
+                true => cosmic::iced::time::every(std::time::Duration::from_millis(530))
+                    .map(|_| Message::Blink),
                 false => Subscription::none(),
             },
             match self.tabs.any_live() {
@@ -905,6 +912,7 @@ impl App {
             }
             Message::EditTick => self.tabs.edit_tick(),
             Message::StatusTick => self.tabs.tick(),
+            Message::Blink => self.tabs.blink(),
             Message::ConnectBar(t) => {
                 self.connect_list =
                     shagshell_core::connect_bar::matches(&t, &self.sessions.session_ids(), 8);

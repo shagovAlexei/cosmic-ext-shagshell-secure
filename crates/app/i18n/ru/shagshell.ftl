@@ -633,3 +633,4 @@ sm-duplicate = Дублировать
 options-tabs-hide-single = Скрывать вкладки, когда открыта одна
 options-toolbar = Панель инструментов
 options-ctrl-tab-recent = Ctrl+Tab — к предыдущей использованной вкладке
+options-cursor-blink = Мигающий курсор
