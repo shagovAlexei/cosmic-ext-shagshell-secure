@@ -518,6 +518,18 @@ pub fn new_session(args: &[Value]) -> Result<NewSession, String> {
     })
 }
 
+/// How long a Wait* call gives up after: seconds given; 0 or missing = `DEFAULT_WAIT` (SecureCRT
+/// waits forever, but a prompt that never comes would hang the script); negative = no limit.
+pub const DEFAULT_WAIT: Duration = Duration::from_secs(60);
+
+pub fn wait_limit(secs: Option<f64>) -> Option<Duration> {
+    match secs.unwrap_or(0.0) {
+        s if s < 0.0 => None,
+        0.0 => Some(DEFAULT_WAIT),
+        s => Some(Duration::from_secs_f64(s)),
+    }
+}
+
 fn handle(req: &Value, host: &dyn Host, cancel: &AtomicBool) -> Result<Value, String> {
     let call = req["call"].as_str().ok_or("no call")?;
     let tab = req["tab"].as_u64().unwrap_or(0);
@@ -528,11 +540,7 @@ fn handle(req: &Value, host: &dyn Host, cancel: &AtomicBool) -> Result<Value, St
             .map(str::to_string)
             .ok_or_else(|| format!("{call}: argument {} must be a string", i + 1))
     };
-    // Seconds; 0 or missing: no limit (SecureCRT: 0 waits forever).
-    let timeout = |i: usize| {
-        let s = args.get(i).and_then(Value::as_f64).unwrap_or(0.0);
-        (s > 0.0).then(|| Duration::from_secs_f64(s))
-    };
+    let timeout = |i: usize| wait_limit(args.get(i).and_then(Value::as_f64));
     let fold = |i: usize| args.get(i).and_then(Value::as_bool).unwrap_or(false);
     let buffer = || host.buffer(tab).ok_or_else(|| "no such tab".to_string());
     match call {
@@ -635,6 +643,16 @@ pub fn command(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn regression_a_wait_without_a_timeout_gives_up() {
+        use super::{DEFAULT_WAIT, wait_limit};
+        use std::time::Duration;
+        assert_eq!(wait_limit(None), Some(DEFAULT_WAIT));
+        assert_eq!(wait_limit(Some(0.0)), Some(DEFAULT_WAIT));
+        assert_eq!(wait_limit(Some(2.5)), Some(Duration::from_millis(2500)));
+        assert_eq!(wait_limit(Some(-1.0)), None);
+    }
+
     #[test]
     fn list_dir_takes_visible_py_files_by_name() {
         let d = std::env::temp_dir().join(format!("shagshell-list-{}", std::process::id()));

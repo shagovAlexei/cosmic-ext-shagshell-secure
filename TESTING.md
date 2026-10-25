@@ -387,3 +387,4 @@
 - [ ] v0.45.1: opening a note puts it in the right-hand group (a new group at the right if there is only one); notes restored at start go there too
 - [ ] v0.46.0: Update (a newer release, e.g. via SHAGSHELL_UPDATE_URL=file://… and a real tag) downloads the .deb, says the checksum matches, asks for the password and installs
 - [ ] v0.46.0: a tampered package (hash differs) is refused with the mismatch shown and nothing is installed
+- [ ] v0.46.1: a script that does `crt.Screen.WaitForString("$")` on a tab with no such prompt returns False after about 60 s (it no longer hangs); with a timeout of -1 it waits until Cancel

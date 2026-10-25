@@ -2,6 +2,10 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.46.1 — 2026-10-25
+
+- fix: a `WaitForString` / `ReadString` / `WaitForStrings` without a timeout gives up after 60 s instead of hanging the script (a negative timeout waits forever)
+
 ## 0.46.0 — 2026-10-25
 
 - Update downloads the new .deb and SHA256SUMS from the release, checks the SHA-256 (a mismatch deletes the package and installs nothing), then installs it with apt through polkit

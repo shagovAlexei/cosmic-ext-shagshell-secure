@@ -48,3 +48,6 @@
 - Если устройство перерисовывает строку (`\r`, `ESC[K`), уже «использованная» часть строки считается по смещению: после перерисовки на более короткую строку ожидание может пропустить начало новой, пока она не вырастет. Ожидайте строки целиком, а не обрывки приглашения, и не полагайтесь на перерисовываемую строку (`--More--`).
 - `MessageBox` всегда возвращает 1 (кнопки не выбираются); `WaitForStrings` — только подстроки.
 - Первая команда `--script` может уйти в терминал раньше, чем оболочка напечатает приглашение (она лежит в буфере tty и выполнится, но выглядит в окне раньше приглашения).
+
+## Wait timeout (0.46.1)
+`WaitForString` / `WaitForStrings` / `ReadString` with a timeout of 0 (or none) give up after 60 s and return False / empty, so a missing prompt cannot hang a script. SecureCRT waits forever here; a negative timeout does that in ShagShell.
