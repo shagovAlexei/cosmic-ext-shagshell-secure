@@ -284,6 +284,7 @@ Every release, newest first, rebuilt from the merged pull requests. GitHub keeps
 
 Documentation and CI changes that did not bump the version.
 
+- No Flatpak: decision recorded in the roadmap (2026-10-25)
 - Keep only the last 5 releases ([#49](https://github.com/shagovAlexei/cosmic-ext-shagshell-secure/pull/49), 2026-10-24)
 - Roadmap backlog cleanup ([#36](https://github.com/shagovAlexei/cosmic-ext-shagshell-secure/pull/36), 2026-10-24)
 - Roadmap — update check and donate (priority) ([#33](https://github.com/shagovAlexei/cosmic-ext-shagshell-secure/pull/33), 2026-10-24)
