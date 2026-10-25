@@ -60,7 +60,7 @@ Legend: ✅ have · 🟡 partly · ❌ missing · — not planned.
 
 1. Tab status = text marks, all ssh tabs titled `user@host:~` (can't tell them apart).
 2. Menus: no icons; «Log Session» / «Record Script» indented, their neighbours not; Copy / Paste / Cancel enabled with nothing to act on.
-3. SFTP: folders as `[name]`, no file / folder icons; in a narrow group the name column disappears, dates overlap, F-key buttons are cut.
+3. SFTP: folders as `[name]`, no file / folder icons; in a narrow group the name column disappears, dates overlap, F-key buttons are cut. — fixed in 0.51.0.
 4. Session Manager: one grey icon for every session and protocol.
 
 ## Order of work
