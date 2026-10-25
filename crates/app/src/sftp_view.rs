@@ -427,6 +427,11 @@ impl SftpView {
         self.browse = Some(self.worker());
     }
 
+    /// Its ssh is starting (or asking a password): not connected yet, not given up either.
+    pub fn connecting(&self) -> bool {
+        !self.connected && self.browse.is_some()
+    }
+
     /// Disconnect: both workers go (a running copy is cancelled, for a Retry).
     pub fn disconnect(&mut self) {
         if let Some(id) = self.queue.running().map(|j| j.id) {

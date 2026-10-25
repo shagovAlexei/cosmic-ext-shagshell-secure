@@ -211,27 +211,51 @@ pub struct Tab {
     /// OSC 0 / 2 from the program; empty: none.
     program_title: String,
     pub alive: bool,
+    /// It printed something since it started (else: still connecting).
+    seen: bool,
+    /// It printed something while not in front.
+    unread: bool,
     widget_id: widget::Id,
 }
 
 impl Tab {
+    /// The label, else (a running shell) the program's title, else ours: a session's tab keeps its name
+    /// (SecureCRT), not the `user@host:~` its shell sets.
     fn title(&self) -> String {
-        let t = match (self.launch.label.is_empty(), self.program_title.is_empty()) {
-            (false, _) => &self.launch.label,
-            (_, true) => &self.base,
-            (_, false) => &self.program_title,
+        // An ended shell's last title is a command («exit»): ours then.
+        let local =
+            matches!(self.launch.protocol, Protocol::Local) && !self.launch.sftp && self.alive;
+        match (
+            self.launch.label.is_empty(),
+            local && !self.program_title.is_empty(),
+        ) {
+            (false, _) => self.launch.label.clone(),
+            (_, true) => self.program_title.clone(),
+            _ => self.base.clone(),
+        }
+    }
+
+    /// What it is, in the colour of its state.
+    fn icon(&self) -> widget::Icon {
+        use shagshell_core::tab_icon::{Glyph, State, state, svg};
+        let glyph = match (&self.body, &self.launch.protocol) {
+            (Body::Note(_), _) => Glyph::Note,
+            (Body::Console, _) => Glyph::Console,
+            (Body::Sftp(_), _) => Glyph::Sftp,
+            (_, Protocol::Ssh { .. }) => Glyph::Ssh,
+            (_, Protocol::Telnet { .. }) => Glyph::Telnet,
+            (_, Protocol::Serial { .. }) => Glyph::Serial,
+            (_, Protocol::Local) => Glyph::Local,
         };
         let locked = self
             .terminal()
             .is_some_and(|t| t.lock().unwrap_or_else(|e| e.into_inner()).locked());
-        let mark = match (&self.body, self.live()) {
-            (Body::Terminal(_), true) if locked => "🔒",
-            (Body::Note(_), _) => "✎",
-            (Body::Console, _) => "»",
-            (_, true) => "✓",
-            (_, false) => "✗",
+        let st = match &self.body {
+            Body::Note(_) | Body::Console => State::Plain,
+            Body::Sftp(v) => state(v.connected || v.connecting(), v.connected, false, false),
+            Body::Terminal(_) => state(self.live(), self.seen, self.unread, locked),
         };
-        format!("{mark} {t}")
+        widget::icon(widget::icon::from_svg_bytes(svg(glyph, st).into_bytes())).size(16)
     }
 
     /// Its program runs (a terminal), or it is connected (SFTP).
@@ -639,9 +663,10 @@ impl Tabs {
             if let Some(e) = found {
                 group.model.activate(e);
                 self.focus = Some(*pane);
-                return;
+                break;
             }
         }
+        self.mark_read();
     }
 
     /// The saved session the active tab was opened from.
@@ -708,6 +733,8 @@ impl Tabs {
             base,
             program_title: String::new(),
             alive: true,
+            seen: false,
+            unread: false,
             widget_id: widget_id.clone(),
         };
         let title = tab.title();
@@ -729,6 +756,7 @@ impl Tabs {
                 .closable()
                 .activate();
         }
+        self.retitle(id);
         focus(widget_id)
     }
 
@@ -1054,6 +1082,7 @@ impl Tabs {
         self.forget_tap(id);
         (tab.body, tab.alive) = (terminal, true);
         (tab.started, tab.stopped) = (std::time::Instant::now(), false);
+        (tab.seen, tab.unread) = (false, false);
         tab.program_title.clear();
         let widget_id = tab.widget_id.clone();
         self.tabs.insert(new_id, tab);
@@ -1098,6 +1127,7 @@ impl Tabs {
             grid.close(src);
         }
         self.focus = Some(dst);
+        self.retitle(id);
     }
 
     /// The tab into a window of its own: it leaves its group, the program goes on.
@@ -1166,6 +1196,7 @@ impl Tabs {
                 .closable()
                 .activate();
         }
+        self.retitle(id);
         Task::batch([iced::window::close(window), self.focus_active()])
     }
 
@@ -1334,16 +1365,31 @@ impl Tabs {
         }
     }
 
-    /// A tab's title without the ✓ / ✗.
+    /// Shown now: the active tab of its group, or alone in a window of its own.
+    fn in_front(&self, id: TabId) -> bool {
+        self.detached.iter().any(|(_, t)| *t == id)
+            || (self.grid.iter().flat_map(|g| g.iter()))
+                .any(|(_, g)| g.model.active_data::<TabId>() == Some(&id))
+    }
+
+    /// The tabs in front have been seen: their «new output» goes.
+    fn mark_read(&mut self) {
+        let ids: Vec<TabId> = (self.tabs.iter())
+            .filter(|(_, t)| t.unread)
+            .map(|(id, _)| *id)
+            .filter(|id| self.in_front(*id))
+            .collect();
+        for id in ids {
+            if let Some(t) = self.tabs.get_mut(&id) {
+                t.unread = false;
+            }
+            self.retitle(id);
+        }
+    }
+
+    /// A tab's title.
     pub fn caption(&self, id: TabId) -> Option<String> {
-        let t = self.tabs.get(&id)?;
-        Some(
-            match (t.launch.label.is_empty(), t.program_title.is_empty()) {
-                (false, _) => t.launch.label.clone(),
-                (_, true) => t.base.clone(),
-                (_, false) => t.program_title.clone(),
-            },
-        )
+        self.tabs.get(&id).map(Tab::title)
     }
 
     /// Every tab's text again (a session's label changed).
@@ -1427,12 +1473,13 @@ impl Tabs {
     }
 
     fn retitle(&mut self, id: TabId) {
-        let Some(title) = self.tabs.get(&id).map(Tab::title) else {
+        let Some((title, icon)) = self.tabs.get(&id).map(|t| (t.title(), t.icon())) else {
             return;
         };
         for (_, group) in self.grid.iter_mut().flat_map(|g| g.iter_mut()) {
             if let Some(e) = entity_of(&group.model, id) {
                 group.model.text_set(e, title.clone());
+                group.model.icon_set(e, icon.clone());
             }
         }
     }
@@ -1629,6 +1676,7 @@ impl Tabs {
         if let Some((new_pane, _)) = grid.split(axis, pane, new) {
             self.focus = Some(new_pane);
         }
+        self.retitle(id);
         self.focus_active()
     }
 
@@ -1686,6 +1734,12 @@ impl Tabs {
 
     /// Actions about tabs from keys and the menu bar: on the active tab. `None`: not ours.
     pub fn act(&mut self, action: Action, look: &Look) -> Option<Task<Message>> {
+        let task = self.act_inner(action, look);
+        self.mark_read();
+        task
+    }
+
+    fn act_inner(&mut self, action: Action, look: &Look) -> Option<Task<Message>> {
         let on_active = |this: &mut Self, cmd| {
             if let Some(id) = this.front {
                 return this.cmd_in_window(cmd, id, look);
@@ -1795,6 +1849,14 @@ impl Tabs {
         };
         match term::on_event(terminal, event) {
             Outcome::None => {}
+            Outcome::Output => {
+                let unread = !self.in_front(id);
+                let tab = self.tabs.get_mut(&id).expect("looked up above");
+                if !tab.seen || (unread && !tab.unread) {
+                    (tab.seen, tab.unread) = (true, tab.unread || unread);
+                    self.retitle(id);
+                }
+            }
             Outcome::Copy(text) => return cosmic::iced::clipboard::write(text),
             Outcome::Title(title) => {
                 tab.program_title = title;
@@ -1887,6 +1949,12 @@ impl Tabs {
     }
 
     pub fn update(&mut self, msg: TabsMsg, look: &Look) -> Task<Message> {
+        let task = self.update_inner(msg, look);
+        self.mark_read();
+        task
+    }
+
+    fn update_inner(&mut self, msg: TabsMsg, look: &Look) -> Task<Message> {
         match msg {
             TabsMsg::Cmd(cmd) => {
                 let target = self.context.take().and_then(|(p, e)| self.tab_at(p, e));
@@ -1994,7 +2062,6 @@ impl Tabs {
         };
         let id = *self.grid.as_ref()?.get(pane)?.model.data::<TabId>(e)?;
         let name = self.tabs.get(&id)?.title();
-        let name = name.trim_start_matches(['✓', '✗', ' ']).to_string();
         let msg = |m| Message::Tabs(m);
         Some(
             widget::dialog()
@@ -2036,6 +2103,7 @@ impl Tabs {
             // The sides that have a group beside this one: the tab can move there.
             let neighbours = Side::ALL.map(|s| grid.adjacent(pane, s.direction()).is_some());
             let mut bar = tab_bar::horizontal(&group.model)
+                .button_spacing(6)
                 .on_activate(m(TabsMsg::Activate))
                 .on_close(m(TabsMsg::Close))
                 .on_middle_press(m(TabsMsg::Close))

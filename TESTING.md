@@ -389,3 +389,6 @@
 - [ ] v0.46.0: a tampered package (hash differs) is refused with the mismatch shown and nothing is installed
 - [ ] v0.46.1: a script that does `crt.Screen.WaitForString("$")` on a tab with no such prompt returns False after about 60 s (it no longer hangs); with a timeout of -1 it waits until Cancel
 - [ ] v0.47.0: a session with a pre-script: Reconnect and Clone (tab menu, key, Enter on a dead tab) run the script first; when it fails nothing reconnects or opens; Open SFTP and auto-reconnect do not run it
+- [ ] v0.48.0: tabs show icons — ssh: screen with padlock, local: house, SFTP: folder; amber while ssh connects, green when connected, red after exit
+- [ ] v0.48.0: output in a tab that is not in front turns its icon blue; bringing it to front turns it green again
+- [ ] v0.48.0: ssh session tabs are titled by the session name (not user@host:~); a local shell shows its program's title while it runs

@@ -137,12 +137,18 @@ pub enum Outcome {
     Copy(String),
     /// OSC 0 / 2; empty: reset to ours.
     Title(String),
+    /// Something new on screen.
+    Output,
 }
 
 pub fn on_event(t: &Mutex<Terminal>, event: Event) -> Outcome {
     let mut t = t.lock().unwrap_or_else(|e| e.into_inner());
     match event {
-        Event::Wakeup | Event::MouseCursorDirty => t.needs_update = true,
+        Event::Wakeup => {
+            t.needs_update = true;
+            return Outcome::Output;
+        }
+        Event::MouseCursorDirty => t.needs_update = true,
         Event::ChildExit(code) => return Outcome::Exit(Some(code)),
         Event::Exit => return Outcome::Exit(None),
         Event::Title(title) => return Outcome::Title(title),

@@ -24,6 +24,7 @@ pub mod session;
 pub mod sftp;
 pub mod shell;
 pub mod sshconfig;
+pub mod tab_icon;
 pub mod tabs;
 pub mod update;
 pub mod uri;
