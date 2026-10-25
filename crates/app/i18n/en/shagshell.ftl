@@ -629,3 +629,4 @@ options-tab-double-none = Nothing
 connect-bar-hint = Session or user@host:port
 connect-bar-none = No such session, and not a host: type a session's name or user@host:port
 sm-duplicate = Duplicate
+options-tabs-hide-single = Hide the tab bar while there is one tab

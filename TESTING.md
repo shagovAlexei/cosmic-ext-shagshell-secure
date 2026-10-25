@@ -404,3 +404,6 @@
 - [ ] v0.58.0: Connect Bar: `rout` + Enter opens the only session containing it; `admin@10.0.0.1:2222` connects without saving; nonsense says why under the tree
 - [ ] v0.58.0 regression: with a terminal focused, click the Session Manager filter (or Command Manager filter, or the Connect Bar) and type — the letters appear only in the field, not in the terminal
 - [ ] v0.59.0: right-click a session → Duplicate: «name (2)» appears selected next to it with the same settings, asks for its own password; a folder's Duplicate is grey
+- [ ] v0.60.0: the window title reads «<tab> — ShagShell Secure» and follows the tab in front
+- [ ] v0.60.0: Command Window → All tabs: every terminal tab reads «* name»; Visible: only the front ones; back to Current: the marks go
+- [ ] v0.60.0: Global Options → Hide the tab bar while there is one tab: one tab, no bar; a second tab brings it back

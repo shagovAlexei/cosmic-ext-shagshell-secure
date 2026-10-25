@@ -374,6 +374,11 @@ pub fn view<'a>(
             widget::toggler(config.tabs_bottom).on_toggle(set(|c, on| c.tabs_bottom = on)),
         ))
         .add(settings::flex_item(
+            fl!("options-tabs-hide-single"),
+            widget::toggler(config.tabs_hide_single)
+                .on_toggle(set(|c, on| c.tabs_hide_single = on)),
+        ))
+        .add(settings::flex_item(
             fl!("options-tab-double"),
             widget::dropdown(
                 vec![

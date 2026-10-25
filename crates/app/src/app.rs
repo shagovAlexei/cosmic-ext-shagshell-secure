@@ -344,6 +344,22 @@ impl Application for App {
         if tabs_changed {
             self.remember_notes();
         }
+        self.tabs
+            .set_broadcast((self.config.command_window_visible).then_some(self.command.to));
+        // The window's title names the tab in front (SecureCRT's «%S — SecureCRT»).
+        let title = match self.tabs.active_id().and_then(|id| self.tabs.caption(id)) {
+            Some(t) => format!("{t} — {}", fl!("app-title")),
+            None => fl!("app-title"),
+        };
+        if self.core.window.header_title != title
+            && let Some(window) = self.core.main_window_id()
+        {
+            self.core.window.header_title = title.clone();
+            task = Task::batch([
+                task,
+                cosmic::ApplicationExt::set_window_title(self, title, window),
+            ]);
+        }
         self.remember_sessions();
         // A tab went into a window of its own: titled.
         for (window, title) in self.tabs.take_new_windows() {
