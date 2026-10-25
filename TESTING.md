@@ -400,3 +400,4 @@
 - [ ] v0.54.0: Button Bar → Edit button → Colour: the dot shows before the label, «(none)» removes it, it survives a restart
 - [ ] v0.55.0: Global Options → Tabs at the bottom moves every group's tab bar under its terminal; Double-click on a tab = Clone opens a copy, = Close closes it (asks if live), = Nothing does nothing
 - [ ] v0.56.0: run `sleep 2; echo done` in a tab and switch away: its icon turns blue, then teal 5 s after the output stopped; bringing it to front makes it green
+- [ ] v0.57.0: Session Options → Appearance → Tab label `%S → %H:%P` shows e.g. «server1 → 10.0.0.5:22» on the tab; a label without % stays as typed

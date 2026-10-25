@@ -2074,11 +2074,11 @@ impl App {
                     match s.protocol {
                         P::Local => {
                             let l = tabs::Launch {
-                                title: name,
                                 log: Some(log_spec(&s)),
                                 logon: logon_spec(&s, Some(id)),
                                 scheme: s.color_scheme.clone(),
-                                label: s.label.clone(),
+                                label: tab_label(&s, &name),
+                                title: name,
                                 ..tabs::Launch::local_shell()
                             };
                             tasks.push(self.open_session_tab(l, id, &s, scripts));
@@ -3011,6 +3011,7 @@ fn ssh_launch(
     let sock = askpass_sock(control_dir);
     let env =
         shagshell_core::launch::askpass_env(&exe, &sock, session, credential.map(String::as_str));
+    let label = tab_label(s, &title);
     Ok(tabs::Launch {
         program,
         args: argv,
@@ -3031,9 +3032,27 @@ fn ssh_launch(
         log: Some(log_spec(s)),
         logon: logon_spec(s, session),
         scheme: s.color_scheme.clone(),
-        label: s.label.clone(),
+        label,
         session: None,
     })
+}
+
+/// The session's tab label, `%S %H %U %P` (and the log's date / time codes) filled in.
+fn tab_label(s: &shagshell_core::session::Session, name: &str) -> String {
+    use shagshell_core::logfile::{Ctx, expand, now};
+    match s.label.contains('%') {
+        false => s.label.clone(),
+        true => expand(
+            &s.label,
+            &Ctx {
+                host: &s.host,
+                session: name,
+                port: s.port,
+                user: s.user.as_deref().unwrap_or_default(),
+                now: now(),
+            },
+        ),
+    }
 }
 
 /// The session's log wishes (the file name template, how to write it).
@@ -3093,6 +3112,7 @@ fn program_launch(
     if !found.iter().any(|(_, ok)| *ok) {
         return Err(fl!("proto-missing", program = program));
     }
+    let label = tab_label(s, &title);
     Ok(tabs::Launch {
         program,
         args: argv,
@@ -3106,7 +3126,7 @@ fn program_launch(
         auto_reconnect: None,
         logon: logon_spec(s, id),
         scheme: s.color_scheme.clone(),
-        label: s.label.clone(),
+        label,
         session: None,
     })
 }
