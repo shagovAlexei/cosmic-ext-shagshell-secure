@@ -523,7 +523,7 @@ menu-move-up = Move to Group — Up
 menu-move-down = Move to Group — Down
 
 up-title = Version { $tag } is available
-up-body = You have { $current }. The new version is on the releases page.
+up-body = You have { $current }. Update downloads the new version, checks its SHA-256 and installs it.
 up-support = ShagShell Secure is free. If it helps you, please support the project: the price of one lunch at McDonald's or a couple of cups of coffee.
 up-update = Update
 up-skip = Skip this version
@@ -607,3 +607,7 @@ menu-close-others = Close Other Tabs
 menu-close-all = Close All Tabs
 close-many-title = Close { $n } tabs?
 options-tabs-on-start = Open the sessions from the last time at startup
+up-downloading = Downloading { $tag } and checking its SHA-256…
+up-verified = The checksum matches. Installing (the system asks for your password)…
+up-installed = Updated. Restart ShagShell Secure to use the new version.
+up-update-failed = The update did not install: { $error }

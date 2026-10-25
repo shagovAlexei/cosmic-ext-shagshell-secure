@@ -1740,8 +1740,38 @@ impl App {
             UpMsg::Checked(..) => {}
             UpMsg::Update => {
                 if let Some(tag) = self.update.take() {
-                    return self.update(Message::OpenUrl(crate::updates::release_url(&tag)));
+                    self.sessions.notice = Some(fl!("up-downloading", tag = tag.clone()));
+                    let dir = crate::updates::cache_dir();
+                    return off_ui(
+                        move || shagshell_core::update::download(&tag, &dir),
+                        |r| Message::Update(UpMsg::Downloaded(r)),
+                    );
                 }
+            }
+            // The hash matched: apt installs it (polkit asks for the password).
+            UpMsg::Downloaded(Ok(deb)) => {
+                self.sessions.notice = Some(fl!("up-verified"));
+                return off_ui(
+                    move || {
+                        let out = std::process::Command::new("pkexec")
+                            .args(["apt-get", "install", "-y", "--"])
+                            .arg(&deb)
+                            .output()
+                            .map_err(|e| format!("pkexec: {e}"))?;
+                        match out.status.success() {
+                            true => Ok(()),
+                            false => Err(String::from_utf8_lossy(&out.stderr).trim().to_string()),
+                        }
+                    },
+                    |r| Message::Update(UpMsg::Installed(r)),
+                );
+            }
+            UpMsg::Downloaded(Err(error)) => {
+                self.sessions.notice = Some(fl!("up-update-failed", error = error));
+            }
+            UpMsg::Installed(Ok(())) => self.sessions.notice = Some(fl!("up-installed")),
+            UpMsg::Installed(Err(error)) => {
+                self.sessions.notice = Some(fl!("up-update-failed", error = error));
             }
             UpMsg::Skip => {
                 if let Some(tag) = self.update.take() {
