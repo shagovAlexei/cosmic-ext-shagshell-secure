@@ -379,6 +379,10 @@ pub fn view<'a>(
                 .on_toggle(set(|c, on| c.tabs_hide_single = on)),
         ))
         .add(settings::flex_item(
+            fl!("options-ctrl-tab-recent"),
+            widget::toggler(config.ctrl_tab_recent).on_toggle(set(|c, on| c.ctrl_tab_recent = on)),
+        ))
+        .add(settings::flex_item(
             fl!("options-tab-double"),
             widget::dropdown(
                 vec![

@@ -631,3 +631,4 @@ connect-bar-none = No such session, and not a host: type a session's name or use
 sm-duplicate = Duplicate
 options-tabs-hide-single = Hide the tab bar while there is one tab
 options-toolbar = Toolbar
+options-ctrl-tab-recent = Ctrl+Tab goes back to the tab used before

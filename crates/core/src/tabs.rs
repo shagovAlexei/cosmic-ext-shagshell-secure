@@ -20,6 +20,12 @@ pub fn cycle(pos: usize, len: usize, forward: bool) -> usize {
     }
 }
 
+/// `id` came to the front: first in `recent` (most recent first), kept to the `alive` ones.
+pub fn touch(recent: &mut Vec<u64>, id: u64, alive: impl Fn(u64) -> bool) {
+    recent.retain(|r| *r != id && alive(*r));
+    recent.insert(0, id);
+}
+
 /// Which position to activate after closing `pos` of `len_before` tabs: the right neighbour
 /// (it slides into `pos`), else the left one; `None` when it was the only tab.
 pub fn after_close(pos: usize, len_before: usize) -> Option<usize> {
@@ -29,6 +35,16 @@ pub fn after_close(pos: usize, len_before: usize) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_most_recent_tab_comes_first() {
+        let mut r = vec![];
+        for id in [1, 2, 3, 2] {
+            super::touch(&mut r, id, |_| true);
+        }
+        assert_eq!(r, [2, 3, 1]);
+        super::touch(&mut r, 1, |id| id != 3); // 3 was closed
+        assert_eq!(r, [1, 2]);
+    }
     use super::*;
 
     #[test]

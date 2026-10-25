@@ -2,6 +2,10 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.63.0 — 2026-10-25
+
+- feat: Global Options → Ctrl+Tab goes back to the tab used before (SecureCRT's option); off: the next tab, as before
+
 ## 0.62.0 — 2026-10-25
 
 - feat: the Connect Bar lists the sessions matching what is typed; a click opens one

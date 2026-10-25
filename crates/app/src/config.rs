@@ -198,6 +198,8 @@ pub struct Config {
     pub toolbar: Vec<String>,
     /// The tab bar under the tabs' content (SecureCRT's «tabs at the bottom»).
     pub tabs_bottom: bool,
+    /// Ctrl+Tab goes back to the tab used before (SecureCRT's option), not the next one.
+    pub ctrl_tab_recent: bool,
     /// No tab bar while there is one tab (in one group).
     pub tabs_hide_single: bool,
     /// Double-click on a tab: 0 nothing, 1 close, 2 clone, 3 reconnect, 4 a window of its own.
@@ -326,6 +328,7 @@ impl Default for Config {
             tabs_bottom: false,
             toolbar: Vec::new(),
             tabs_hide_single: false,
+            ctrl_tab_recent: false,
             tab_double_click: 0,
             font_size: 14,
             tab_height: 0,

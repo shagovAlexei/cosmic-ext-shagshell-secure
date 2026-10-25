@@ -29,7 +29,7 @@ Legend: ✅ have · 🟡 partly · ❌ missing · — not planned.
 | Tabs at top or bottom; hide when only one | ✅ bottom (0.55.0), hidden when one (0.60.0) | |
 | Close button on tabs | ✅ | |
 | Double-click action (close / clone / reconnect / new window) | ✅ 0.55.0 | |
-| Alt+1…0 to tab N; Ctrl+Tab most recent | 🟡 Alt+1…9, Ctrl+Tab next / previous | not most-recent order |
+| Alt+1…0 to tab N; Ctrl+Tab most recent | ✅ Alt+1…9, Ctrl+Tab next / previous or most recent (0.63.0) | |
 | Tab groups (drag to an edge), Tile / Cascade | ✅ groups (menu), drag between groups needs a live check | |
 | Send to new window | ✅ Open in a New Window | |
 | `*` before the name of a tab that gets Command Window input | ✅ 0.60.0 | |
