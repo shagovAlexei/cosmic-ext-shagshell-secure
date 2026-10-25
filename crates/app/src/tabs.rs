@@ -261,6 +261,7 @@ impl Tab {
             .terminal()
             .is_some_and(|t| t.lock().unwrap_or_else(|e| e.into_inner()).locked());
         let st = match &self.body {
+            Body::Note(v) if v.locked => State::Locked,
             Body::Note(_) | Body::Console => State::Plain,
             Body::Sftp(v) => state(
                 v.connected || v.connecting(),
@@ -324,6 +325,14 @@ pub enum TabCmd {
     /// Every other tab of the window.
     CloseOthers,
     CloseAll,
+    /// Lock Session / Unlock Session (a password asked).
+    Lock,
+    /// A note's own: write now, write as…, wrap long lines, line numbers, rename.
+    NoteSave,
+    NoteSaveAs,
+    NoteWrap,
+    NoteNumbers,
+    NoteRename,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -388,6 +397,22 @@ pub enum TabsMsg {
     Send(Vec<TabId>, Vec<shagshell_core::macros::Piece>),
     /// The wait before an automatic reconnect is over.
     AutoReconnect(TabId),
+    /// The Lock / Unlock dialog: the password, again, OK, Cancel.
+    LockPw(String),
+    LockPw2(String),
+    LockOk,
+    LockCancel,
+}
+
+/// The Lock / Unlock Session dialog.
+struct LockAsk {
+    id: TabId,
+    /// Unlocking (one field), else locking (two).
+    unlock: bool,
+    pw: String,
+    pw2: String,
+    error: Option<String>,
+    field: widget::Id,
 }
 
 #[derive(Default)]
@@ -428,6 +453,9 @@ pub struct Tabs {
     confirm: Option<(pane_grid::Pane, Entity)>,
     /// «Close others / all» with live tabs among them: asked once (the tabs, then closed).
     confirm_many: Option<Vec<(pane_grid::Pane, Entity)>>,
+    /// Tabs locked by the user (Lock Session), with their passwords (memory only).
+    user_locks: HashMap<TabId, shagshell_core::tablock::Lock>,
+    lock_ask: Option<LockAsk>,
     /// `crt.Session.Lock`: tab → the script run that locked it.
     locks: HashMap<TabId, u64>,
     /// The tab pressed last: a drag that starts is about it (the drag carries no tab).
@@ -1337,7 +1365,7 @@ impl Tabs {
     /// A tab command about a tab in a window of its own (no group: splitting, moving and
     /// closing mean bringing it back).
     fn cmd_in_window(&mut self, cmd: TabCmd, id: TabId, look: &Look) -> Task<Message> {
-        if let Some(task) = self.gate(cmd, id) {
+        if let Some(task) = self.gate(cmd, id).or_else(|| self.own_cmd(cmd, id)) {
             return task;
         }
         match cmd {
@@ -1362,8 +1390,67 @@ impl Tabs {
                     None => Task::none(),
                 }
             }
-            TabCmd::SplitRight | TabCmd::SplitDown | TabCmd::MoveTo(_) => Task::none(),
+            _ => Task::none(),
         }
+    }
+
+    /// Lock and the note's commands: the same in a group or a window of its own.
+    fn own_cmd(&mut self, cmd: TabCmd, id: TabId) -> Option<Task<Message>> {
+        use crate::notes::NoteMsg;
+        let note = |m: NoteMsg| Some(m);
+        let msg = match cmd {
+            TabCmd::Lock => {
+                let unlock = self.user_locks.contains_key(&id);
+                let field = widget::Id::unique();
+                self.lock_ask = Some(LockAsk {
+                    id,
+                    unlock,
+                    pw: String::new(),
+                    pw2: String::new(),
+                    error: None,
+                    field: field.clone(),
+                });
+                return Some(widget::text_input::focus(field));
+            }
+            TabCmd::NoteSave => note(NoteMsg::Save),
+            TabCmd::NoteWrap => note(NoteMsg::Wrap),
+            TabCmd::NoteNumbers => note(NoteMsg::LineNumbers),
+            TabCmd::NoteRename => note(NoteMsg::RenameStart),
+            TabCmd::NoteSaveAs => {
+                let dir = self.note_path(id)?.parent()?.to_path_buf();
+                return Some(Task::perform(
+                    crate::notes::save_as(fl!("note-save-as"), dir),
+                    move |p| cosmic::Action::App(Message::Note(id, NoteMsg::SaveAs(p))),
+                ));
+            }
+            _ => None,
+        }?;
+        Some(self.on_note(id, msg).1)
+    }
+
+    fn note_path(&self, id: TabId) -> Option<std::path::PathBuf> {
+        match &self.tabs.get(&id)?.body {
+            Body::Note(v) => Some(v.path.clone()),
+            _ => None,
+        }
+    }
+
+    /// Lock Session on (or off): a terminal drops what is typed, a note is read only.
+    fn set_user_lock(&mut self, id: TabId, on: bool) {
+        let Some(tab) = self.tabs.get_mut(&id) else {
+            return;
+        };
+        match &mut tab.body {
+            Body::Note(v) => v.locked = on,
+            // A script's own lock stays until that script lets go.
+            Body::Terminal(t) if !self.locks.contains_key(&id) => {
+                t.get_mut()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .set_locked(on);
+            }
+            _ => {}
+        }
+        self.retitle(id);
     }
 
     fn window_of(&self, id: TabId) -> Option<iced::window::Id> {
@@ -1578,7 +1665,11 @@ impl Tabs {
             }
             _ => {}
         }
-        t.lock().unwrap_or_else(|e| e.into_inner()).set_locked(on);
+        // The user's own lock stays when the script lets go.
+        let user = self.user_locks.contains_key(&id);
+        t.lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .set_locked(on || user);
         match on {
             true => self.locks.insert(id, run),
             false => self.locks.remove(&id),
@@ -1684,6 +1775,7 @@ impl Tabs {
             {
                 v.save();
             }
+            self.user_locks.remove(&id);
             self.tabs.remove(&id); // its Drop ends the program
             self.taps
                 .lock()
@@ -1830,7 +1922,7 @@ impl Tabs {
         t: (pane_grid::Pane, Entity, TabId),
         look: &Look,
     ) -> Task<Message> {
-        if let Some(task) = self.gate(cmd, t.2) {
+        if let Some(task) = self.gate(cmd, t.2).or_else(|| self.own_cmd(cmd, t.2)) {
             return task;
         }
         match cmd {
@@ -1872,6 +1964,7 @@ impl Tabs {
             TabCmd::Close => self.update(TabsMsg::Close(t.0, t.1), look),
             TabCmd::CloseOthers => self.close_many(Some((t.0, t.1))),
             TabCmd::CloseAll => self.close_many(None),
+            _ => Task::none(),
         }
     }
 
@@ -2188,6 +2281,60 @@ impl Tabs {
                 return self.focus_active();
             }
             TabsMsg::Context(pane, e) => self.context = Some((pane, e)),
+            TabsMsg::LockPw(v) => {
+                if let Some(a) = &mut self.lock_ask {
+                    a.pw = v;
+                    a.error = None;
+                }
+            }
+            TabsMsg::LockPw2(v) => {
+                if let Some(a) = &mut self.lock_ask {
+                    a.pw2 = v;
+                    a.error = None;
+                }
+            }
+            TabsMsg::LockCancel => {
+                self.lock_ask = None;
+                return self.focus_active();
+            }
+            TabsMsg::LockOk => {
+                use shagshell_core::tablock::{Lock, LockError};
+                let Some(a) = &mut self.lock_ask else {
+                    return Task::none();
+                };
+                let id = a.id;
+                if a.unlock {
+                    match self.user_locks.get(&id) {
+                        Some(l) if !l.opens(&a.pw) => {
+                            a.error = Some(fl!("lock-wrong"));
+                            a.pw.clear();
+                            return Task::none();
+                        }
+                        _ => {}
+                    }
+                    self.user_locks.remove(&id);
+                    self.lock_ask = None;
+                    self.set_user_lock(id, false);
+                } else {
+                    match Lock::new(&a.pw, &a.pw2) {
+                        Ok(l) => {
+                            self.user_locks.insert(id, l);
+                            self.lock_ask = None;
+                            self.set_user_lock(id, true);
+                        }
+                        Err(LockError::Empty) => {
+                            a.error = Some(fl!("lock-empty"));
+                            return Task::none();
+                        }
+                        Err(LockError::Mismatch) => {
+                            a.error = Some(fl!("lock-mismatch"));
+                            a.pw2.clear();
+                            return Task::none();
+                        }
+                    }
+                }
+                return self.focus_active();
+            }
             TabsMsg::Reorder(pane, ev) => {
                 if let Some(group) = self.grid.as_mut().and_then(|g| g.get_mut(pane)) {
                     group.model.reorder(ev.dragged, ev.target, ev.position);
@@ -2232,6 +2379,45 @@ impl Tabs {
 
     /// Asks before closing a live tab, as SecureCRT's "Confirm disconnect".
     pub fn dialog(&self) -> Option<Element<'_, Message>> {
+        if let Some(a) = &self.lock_ask {
+            let msg = |m| Message::Tabs(m);
+            let name = self.tabs.get(&a.id).map(Tab::title).unwrap_or_default();
+            let mut col = widget::column::with_capacity(4).spacing(8).push(
+                widget::secure_input(fl!("lock-password"), a.pw.clone(), None, true)
+                    .id(a.field.clone())
+                    .on_input(|v| Message::Tabs(TabsMsg::LockPw(v)))
+                    .on_submit(move |_| msg(TabsMsg::LockOk)),
+            );
+            if !a.unlock {
+                col = col.push(
+                    widget::secure_input(fl!("lock-again"), a.pw2.clone(), None, true)
+                        .on_input(|v| Message::Tabs(TabsMsg::LockPw2(v)))
+                        .on_submit(move |_| msg(TabsMsg::LockOk)),
+                );
+            }
+            if let Some(e) = &a.error {
+                col = col.push(widget::text::body(e.clone()).class(cosmic::theme::Text::Accent));
+            }
+            let (title, ok) = match a.unlock {
+                true => (fl!("lock-unlock-title", name = name), fl!("lock-unlock")),
+                false => (fl!("lock-title", name = name), fl!("lock-lock")),
+            };
+            return Some(
+                widget::dialog()
+                    .icon(crate::dialog_icons::Kind::Lock.icon(48))
+                    .title(title)
+                    .body(match a.unlock {
+                        true => fl!("lock-unlock-body"),
+                        false => fl!("lock-body"),
+                    })
+                    .control(col)
+                    .primary_action(widget::button::suggested(ok).on_press(msg(TabsMsg::LockOk)))
+                    .secondary_action(
+                        widget::button::standard(fl!("cancel")).on_press(msg(TabsMsg::LockCancel)),
+                    )
+                    .into(),
+            );
+        }
         if let Some(list) = &self.confirm_many {
             let msg = |m| Message::Tabs(m);
             return Some(
@@ -2309,7 +2495,12 @@ impl Tabs {
                 .on_close(m(TabsMsg::Close))
                 .on_middle_press(m(TabsMsg::Close))
                 .on_context(m(TabsMsg::Context))
-                .context_menu(Some(tab_menu(&group.model, &self.tabs, neighbours)))
+                .context_menu(Some(tab_menu(
+                    &group.model,
+                    &self.tabs,
+                    &self.user_locks,
+                    neighbours,
+                )))
                 .window_id(window)
                 .on_surface_action(move |a| app(Message::Surface(a)))
                 .enable_tab_drag(TAB_MIME.to_string())
@@ -2388,27 +2579,50 @@ fn detach(model: &mut SingleSelectModel, e: Entity) -> bool {
 fn tab_menu(
     model: &SingleSelectModel,
     tabs: &HashMap<TabId, Tab>,
+    user_locks: &HashMap<TabId, shagshell_core::tablock::Lock>,
     neighbours: [bool; 4],
 ) -> Vec<menu::Tree<cosmic::Action<Message>>> {
-    use menu::Item::{Button, ButtonDisabled, Divider};
+    use menu::Item::{Button, ButtonDisabled, CheckBox, Divider};
     let can_split = model.len() > 1;
     let on = |yes: bool, label: String, cmd| match yes {
         true => Button(label, None, cmd),
         false => ButtonDisabled(label, None, cmd),
     };
     let one = |e: Entity| {
-        let tab = model.data::<TabId>(e).and_then(|id| tabs.get(id));
+        let id = model.data::<TabId>(e).copied();
+        let tab = id.and_then(|id| tabs.get(&id));
         let live = tab.is_some_and(Tab::live);
         let sftp = tab.is_some_and(|t| t.launch.sftp().is_some());
-        let mut items = vec![
-            Button(fl!("menu-reconnect"), None, TabCmd::Reconnect),
-            on(live, fl!("menu-disconnect"), TabCmd::Disconnect),
-            Button(fl!("menu-clone"), None, TabCmd::Clone),
-            on(sftp, fl!("menu-connect-sftp"), TabCmd::Sftp),
+        let locked = id.is_some_and(|id| user_locks.contains_key(&id));
+        let lock = match locked {
+            true => Button(fl!("menu-unlock"), None, TabCmd::Lock),
+            false => Button(fl!("menu-lock"), None, TabCmd::Lock),
+        };
+        let mut items = match tab.map(|t| &t.body) {
+            // A note: its editor's commands (SecureCRT's scratchpad menu).
+            Some(Body::Note(v)) => vec![
+                Button(fl!("note-save"), None, TabCmd::NoteSave),
+                Button(fl!("note-save-as"), None, TabCmd::NoteSaveAs),
+                Divider,
+                CheckBox(fl!("note-wrap"), None, v.wrap, TabCmd::NoteWrap),
+                CheckBox(fl!("note-numbers"), None, v.numbers, TabCmd::NoteNumbers),
+                Divider,
+                on(!v.locked, fl!("note-rename"), TabCmd::NoteRename),
+                lock,
+            ],
+            _ => vec![
+                Button(fl!("menu-reconnect"), None, TabCmd::Reconnect),
+                on(live, fl!("menu-disconnect"), TabCmd::Disconnect),
+                Button(fl!("menu-clone"), None, TabCmd::Clone),
+                on(sftp, fl!("menu-connect-sftp"), TabCmd::Sftp),
+                lock,
+            ],
+        };
+        items.extend([
             Divider,
             on(can_split, fl!("menu-split-right"), TabCmd::SplitRight),
             on(can_split, fl!("menu-split-down"), TabCmd::SplitDown),
-        ];
+        ]);
         // Into a group already there (dragging the tab onto it does the same).
         for (side, has) in Side::ALL.into_iter().zip(neighbours) {
             if has {

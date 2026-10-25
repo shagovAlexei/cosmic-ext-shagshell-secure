@@ -56,6 +56,8 @@ pub struct TextBox<'a, Message> {
     on_context_menu: Option<Box<dyn Fn(bool) -> Message + 'a>>,
     highlight_current_line: bool,
     line_numbers: bool,
+    /// Ours: a locked note: moving, selecting and copying only.
+    read_only: bool,
 }
 
 impl<'a, Message> TextBox<'a, Message>
@@ -76,6 +78,7 @@ where
             on_context_menu: None,
             highlight_current_line: false,
             line_numbers: false,
+            read_only: false,
         }
     }
 
@@ -119,8 +122,13 @@ where
         self
     }
 
-    pub fn line_numbers(mut self) -> Self {
-        self.line_numbers = true;
+    pub fn line_numbers(mut self, on: bool) -> Self {
+        self.line_numbers = on;
+        self
+    }
+
+    pub fn read_only(mut self, on: bool) -> Self {
+        self.read_only = on;
         self
     }
 
@@ -1047,7 +1055,9 @@ where
                 && modifiers.control()
                 && !modifiers.alt()
                 && !modifiers.logo()
-                && edit_key(*code, modifiers.shift()).is_some() =>
+                && edit_key(*code, modifiers.shift()).is_some_and(|k| {
+                    !self.read_only || matches!(k, EditKey::Copy | EditKey::SelectAll)
+                }) =>
             {
                 use cosmic::iced::core::clipboard::Kind;
                 match edit_key(*code, modifiers.shift()) {
@@ -1127,23 +1137,23 @@ where
                     editor.action(Action::Escape);
                     shell.capture_event();
                 }
-                Named::Enter => {
+                Named::Enter if !self.read_only => {
                     editor.action(Action::Enter);
                     shell.capture_event();
                 }
-                Named::Backspace => {
+                Named::Backspace if !self.read_only => {
                     delete_modifiers(&mut editor, Motion::LeftWord, *modifiers);
                     editor.action(Action::Backspace);
                     editor.set_redraw(true);
                     shell.capture_event();
                 }
-                Named::Delete => {
+                Named::Delete if !self.read_only => {
                     delete_modifiers(&mut editor, Motion::RightWord, *modifiers);
                     editor.action(Action::Delete);
                     editor.set_redraw(true);
                     shell.capture_event();
                 }
-                Named::Tab if !modifiers.control() && !modifiers.alt() => {
+                Named::Tab if !modifiers.control() && !modifiers.alt() && !self.read_only => {
                     if modifiers.shift() {
                         editor.action(Action::Unindent);
                     } else {
@@ -1153,7 +1163,9 @@ where
                 }
                 _ => (),
             },
-            Event::Keyboard(KeyEvent::KeyPressed { text, .. }) if state.is_focused => {
+            Event::Keyboard(KeyEvent::KeyPressed { text, .. })
+                if state.is_focused && !self.read_only =>
+            {
                 let character = text
                     .clone()
                     .unwrap_or_default()
@@ -1196,7 +1208,7 @@ where
                     }
                 }
                 InputMethodEvent::Commit(text) => {
-                    if state.is_focused {
+                    if state.is_focused && !self.read_only {
                         editor.start_change();
                         editor.insert_string(text, None);
                         editor.finish_change();

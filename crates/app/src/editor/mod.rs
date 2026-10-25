@@ -99,3 +99,15 @@ pub fn follow_theme(editor: &Mutex<ViEditor<'static, 'static>>) {
     let mut e = editor.lock().unwrap_or_else(|e| e.into_inner());
     e.update_theme(theme_name());
 }
+
+/// Long lines wrapped at the edge, or one screen line each.
+pub fn set_wrap(editor: &Mutex<ViEditor<'static, 'static>>, on: bool) {
+    let mut e = editor.lock().unwrap_or_else(|e| e.into_inner());
+    let mut fs = font_system().write().unwrap_or_else(|e| e.into_inner());
+    let wrap = match on {
+        true => Wrap::WordOrGlyph,
+        false => Wrap::None,
+    };
+    e.borrow_with(fs.raw())
+        .with_buffer_mut(|b| b.set_wrap(wrap));
+}

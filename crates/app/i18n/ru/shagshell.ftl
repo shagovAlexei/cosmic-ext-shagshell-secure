@@ -698,3 +698,23 @@ icon-star = Звезда
 icon-flag = Флажок
 bb-tip = Подсказка (появляется при наведении мыши на кнопку)
 panel-strip = Свернуть в полоску
+
+# Lock Session, the note tab menu
+menu-lock = Заблокировать сеанс…
+menu-unlock = Разблокировать сеанс…
+lock-title = Блокировка «{ $name }»
+lock-unlock-title = Разблокировка «{ $name }»
+lock-body = Ничего набранное не попадёт во вкладку, пока её не разблокируют этим паролем. Пароль хранится только в памяти.
+lock-unlock-body = Введите пароль, которым вкладка заблокирована.
+lock-password = Пароль
+lock-again = Пароль ещё раз
+lock-lock = Заблокировать
+lock-unlock = Разблокировать
+lock-wrong = Неверный пароль
+lock-empty = Введите пароль
+lock-mismatch = Пароли не совпадают
+lock-locked = Заблокировано
+note-save = Сохранить
+note-save-as = Сохранить как…
+note-wrap = Перенос строк
+note-numbers = Номера строк

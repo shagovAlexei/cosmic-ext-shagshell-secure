@@ -26,6 +26,11 @@ pub enum NoteMsg {
     RenameDo,
     RenameCancel,
     Open,
+    /// The tab's menu: write now, write as another file (the path chosen, if any).
+    Save,
+    SaveAs(Option<PathBuf>),
+    Wrap,
+    LineNumbers,
 }
 
 pub struct NoteView {
@@ -37,6 +42,10 @@ pub struct NoteView {
     rename: Option<String>,
     error: Option<String>,
     rename_id: widget::Id,
+    pub wrap: bool,
+    pub numbers: bool,
+    /// Lock Session: read only (moving, selecting, copying).
+    pub locked: bool,
 }
 
 impl Drop for NoteView {
@@ -71,6 +80,9 @@ impl NoteView {
             rename: None,
             error: None,
             rename_id: widget::Id::unique(),
+            wrap: true,
+            numbers: true,
+            locked: false,
         })
     }
 
@@ -126,7 +138,25 @@ impl NoteView {
                     self.error = None;
                 }
             }
-            NoteMsg::RenameStart => self.rename = Some(self.name()),
+            NoteMsg::RenameStart if !self.locked => self.rename = Some(self.name()),
+            NoteMsg::RenameStart => {}
+            NoteMsg::Save => {
+                self.dirty.get_or_insert_with(Instant::now);
+                self.save();
+            }
+            NoteMsg::SaveAs(None) => {}
+            NoteMsg::SaveAs(Some(p)) => {
+                self.save();
+                match std::fs::write(&p, crate::editor::text(&self.editor)) {
+                    Ok(()) => self.path = p,
+                    Err(e) => self.error = Some(format!("{}: {e}", p.display())),
+                }
+            }
+            NoteMsg::Wrap => {
+                self.wrap = !self.wrap;
+                crate::editor::set_wrap(&self.editor, self.wrap);
+            }
+            NoteMsg::LineNumbers => self.numbers = !self.numbers,
             NoteMsg::RenameEdit(v) => self.rename = Some(v),
             NoteMsg::RenameCancel => self.rename = None,
             NoteMsg::RenameDo => {
@@ -174,10 +204,20 @@ impl NoteView {
                 .push(widget::button::standard(fl!("cancel")).on_press(m(NoteMsg::RenameCancel))),
             None => bar
                 .push(widget::text::heading(self.name()).width(Length::Fill))
+                .push_maybe(self.locked.then(|| {
+                    widget::row::with_children(vec![
+                        widget::icon::from_name("system-lock-screen-symbolic")
+                            .size(16)
+                            .into(),
+                        widget::text::caption(fl!("lock-locked")).into(),
+                    ])
+                    .spacing(4)
+                    .align_y(cosmic::iced::Alignment::Center)
+                }))
                 .push(tip_button(
                     "edit-symbolic",
                     fl!("note-rename"),
-                    Some(m(NoteMsg::RenameStart)),
+                    (!self.locked).then(|| m(NoteMsg::RenameStart)),
                 ))
                 .push(tip_button(
                     "document-open-symbolic",
@@ -192,7 +232,8 @@ impl NoteView {
                 .id(editor_id)
                 .on_changed(m(NoteMsg::Changed))
                 .highlight_current_line()
-                .line_numbers()
+                .line_numbers(self.numbers)
+                .read_only(self.locked)
                 .padding(8)
                 .into();
         let mut col = widget::column::with_capacity(3)
@@ -205,6 +246,20 @@ impl NoteView {
         }
         col.push(body).into()
     }
+}
+
+/// Save As…: where the note's text goes (its folder first).
+pub async fn save_as(title: String, dir: PathBuf) -> Option<PathBuf> {
+    use ashpd::desktop::file_chooser::SaveFileRequest;
+    let mut r = SaveFileRequest::default()
+        .title(Some(title.as_str()))
+        .modal(true);
+    if dir.is_dir() {
+        let d: &Path = &dir;
+        r = r.current_folder::<&Path>(Some(d)).ok()?;
+    }
+    let picked = r.send().await.ok()?.response().ok()?;
+    picked.uris().first()?.to_file_path().ok()
 }
 
 /// The file chooser of «Open note…»: text and markdown first, anything else too.

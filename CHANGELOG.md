@@ -2,6 +2,11 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.77.0 — 2026-10-25
+
+- feat: Lock Session (SecureCRT) in every tab's menu: a password typed twice locks the tab — a terminal drops everything typed, pasted or sent to it, a note becomes read only (moving, selecting, copying); «Unlock Session…» with the same password frees it. The password lives in memory only; the tab icon shows the lock
+- feat: a note tab's right-click menu has the editor's commands, as SecureCRT's scratchpad: Save, Save As…, Word Wrap, Line Numbers, Rename, Lock Session…
+
 ## 0.76.0 — 2026-10-25
 
 - feat: notes are edited in COSMIC Edit's editor (its text box, adapted): syntax highlighting by the file's extension (Markdown, code, configs…), line numbers, the current line highlighted, COSMIC Dark / Light themes; Ctrl+C / X / V / A, Ctrl+Z, Ctrl+Shift+Z (or Ctrl+Y)
