@@ -408,6 +408,10 @@ pub struct Tabs {
     highlights: Vec<shagshell_core::highlight::Rule>,
     /// Global Options → Cursor.
     cursor: alacritty_terminal::vte::ansi::CursorShape,
+    /// Tabs by when they were last in front (most recent first); `mru`: Ctrl+Tab goes back to the
+    /// previous one (Global Options), not to the next in the row.
+    recent: Vec<TabId>,
+    mru: bool,
     /// The tabs the Command Window sends to besides the active one (SecureCRT marks them `*`).
     starred: std::collections::BTreeSet<TabId>,
     /// What the last log action had to say (a log that could not start / stopped).
@@ -1445,8 +1449,13 @@ impl Tabs {
                 .any(|(_, g)| g.model.active_data::<TabId>() == Some(&id))
     }
 
-    /// The tabs in front have been seen: their «new output» goes.
+    /// The tabs in front have been seen: their «new output» goes. The active one is the most
+    /// recent.
     fn mark_read(&mut self) {
+        if let Some(a) = self.active_id().filter(|a| self.recent.first() != Some(a)) {
+            let tabs = &self.tabs;
+            rules::touch(&mut self.recent, a, |id| tabs.contains_key(&id));
+        }
         let ids: Vec<TabId> = (self.tabs.iter())
             .filter(|(_, t)| t.unread)
             .map(|(id, _)| *id)
@@ -1858,6 +1867,14 @@ impl Tabs {
             Action::NextTab | Action::PrevTab | Action::SelectTab(_) if self.front.is_some() => {
                 Task::none() // a tab's own window has no tabs to go through
             }
+            Action::NextTab | Action::PrevTab if self.mru => {
+                if let Some(&prev) =
+                    (self.recent.iter().skip(1)).find(|id| self.tabs.contains_key(id))
+                {
+                    self.show(prev);
+                }
+                self.focus_active()
+            }
             Action::NextTab | Action::PrevTab => {
                 if let Some(group) = self.focused_group_mut() {
                     let len = group.model.len();
@@ -2036,6 +2053,7 @@ impl Tabs {
     ) {
         self.scheme = config.color_scheme.clone();
         self.double_click = config.tab_double_click;
+        self.mru = config.ctrl_tab_recent;
         self.cursor = config.cursor();
         for tab in self.tabs.values() {
             if let Some(t) = tab.terminal() {
