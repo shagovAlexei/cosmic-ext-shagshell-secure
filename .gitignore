@@ -4,3 +4,4 @@ target/
 .agents/
 AGENTS.md
 __pycache__/
+.claude/local/

@@ -306,6 +306,7 @@ Documentation and CI changes that did not bump the version.
 
 - No Flatpak: decision recorded in the roadmap (2026-10-25)
 - Stripe: product icon and Radar rules set up, noted in spec 20 (2026-10-25)
+- SecureCRT 9.7 main window notes from a screenshot (kept out of git) in the reference (2026-10-25)
 - Keep only the last 5 releases ([#49](https://github.com/shagovAlexei/cosmic-ext-shagshell-secure/pull/49), 2026-10-24)
 - Roadmap backlog cleanup ([#36](https://github.com/shagovAlexei/cosmic-ext-shagshell-secure/pull/36), 2026-10-24)
 - Roadmap — update check and donate (priority) ([#33](https://github.com/shagovAlexei/cosmic-ext-shagshell-secure/pull/33), 2026-10-24)
