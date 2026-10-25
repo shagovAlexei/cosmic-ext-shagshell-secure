@@ -81,7 +81,7 @@ pub const TOOLS: [Tool; 26] = [
     ),
     (
         "CommandManager",
-        "view-list-bullet-symbolic",
+        "input-keyboard-symbolic",
         Action::ToggleCommandManager,
         || fl!("menu-command-manager"),
     ),

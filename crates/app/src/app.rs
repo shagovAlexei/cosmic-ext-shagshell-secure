@@ -782,6 +782,44 @@ impl App {
             return None;
         }
         let stacked = panes.len() > 1;
+        // Folded: a thin strip, a button for each pane; any of them unfolds the side.
+        let folded = match right {
+            true => self.config.strip_right,
+            false => self.config.strip_left,
+        };
+        let unfold = |c: &mut crate::config::Config| match right {
+            true => c.strip_right = false,
+            false => c.strip_left = false,
+        };
+        if folded {
+            let mut c = self.config.clone();
+            unfold(&mut c);
+            let buttons = panes.iter().map(|p| {
+                let (icon, tip) = match p {
+                    Panel::Sessions => ("view-list-symbolic", fl!("menu-session-manager")),
+                    Panel::Commands => ("utilities-terminal-symbolic", fl!("menu-command-manager")),
+                };
+                widget::tooltip(
+                    widget::button::icon(widget::icon::from_name(icon))
+                        .on_press(Message::SetConfig(c.clone())),
+                    widget::text::caption(tip),
+                    widget::tooltip::Position::Right,
+                )
+                .into()
+            });
+            return Some(
+                widget::container(
+                    widget::column::with_children(buttons.collect::<Vec<Element<Message>>>())
+                        .spacing(6)
+                        .padding([8, 2])
+                        .align_x(cosmic::iced::Alignment::Center),
+                )
+                .width(Length::Fixed(36.0))
+                .height(Length::Fill)
+                .class(cosmic::theme::Container::Card)
+                .into(),
+            );
+        }
         // The resize strip is the only gap between two stacked panes.
         let mut col = widget::column::with_capacity(3);
         for (at, p) in panes.iter().enumerate() {
@@ -824,6 +862,17 @@ impl App {
                 };
                 head = head.push(tip(text, icon, change(|c| c.commands_above ^= true)));
             }
+            head = head.push(tip(
+                fl!("panel-strip"),
+                match right {
+                    true => "go-next-symbolic",
+                    false => "go-previous-symbolic",
+                },
+                change(match right {
+                    true => |c| c.strip_right = true,
+                    false => |c| c.strip_left = true,
+                }),
+            ));
             head = head.push(tip(
                 if collapsed {
                     fl!("panel-expand")

@@ -2,6 +2,10 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.70.0 — 2026-10-25
+
+- feat: a side's Session / Command Manager folds into a thin strip of buttons (the « / » button in a pane's header); a click on a strip button unfolds it
+
 ## 0.69.0 — 2026-10-25
 
 - feat: tabs are as wide as their text (SecureCRT's «fit to label», at most 240 px), not stretched over the whole bar
