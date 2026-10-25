@@ -130,7 +130,12 @@ pub fn shown(config: &[String]) -> Vec<&'static str> {
 
 /// `bar`: what is typed in the Connect Bar, `list`: the sessions it matches (shown under it);
 /// `tools`: the config's toolbar list.
-pub fn view(bar: &str, list: &[String], tools: &[String]) -> Element<'static, Message> {
+pub fn view(
+    bar: &str,
+    list: &[String],
+    picked: Option<usize>,
+    tools: &[String],
+) -> Element<'static, Message> {
     let shown = shown(tools);
     let row = (TOOLS.iter()).filter(|t| shown.contains(&t.0)).map(
         |(_, icon, action, tip)| -> Element<'static, Message> {
@@ -155,9 +160,13 @@ pub fn view(bar: &str, list: &[String], tools: &[String]) -> Element<'static, Me
         .position(widget::popover::Position::Bottom)
         .on_close(Message::ConnectBarClose);
     if !list.is_empty() {
-        let rows = list.iter().map(|id| {
+        let rows = list.iter().enumerate().map(|(i, id)| {
             widget::button::custom(widget::text::body(id.clone()))
-                .class(cosmic::theme::Button::MenuItem)
+                // The row picked with the arrows: filled, as a hovered one.
+                .class(match picked == Some(i) {
+                    true => cosmic::theme::Button::Standard,
+                    false => cosmic::theme::Button::MenuItem,
+                })
                 .width(cosmic::iced::Length::Fill)
                 .on_press(Message::ConnectBarOpen(id.clone()))
                 .into()

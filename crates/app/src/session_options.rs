@@ -93,6 +93,8 @@ pub enum SoMsg {
     Password(Hidden),
     /// The colour scheme: 0 = the global one, else the n-th built-in.
     Scheme(usize),
+    /// The icon: 0 = by protocol, else the n-th of `tab_icon::PICKABLE`.
+    Icon(usize),
     /// «Забыть»: the session's saved secrets removed.
     Forget,
     Ok,
@@ -261,6 +263,11 @@ impl SessionOptions {
             SoMsg::SerialStops(i) => f.stop_bits = 1 + i as u8,
             SoMsg::SerialFlow(i) => f.flow = Flow::ALL.get(i).copied().unwrap_or_default(),
             SoMsg::Password(p) => self.password = p,
+            SoMsg::Icon(i) => {
+                f.icon = (i.checked_sub(1))
+                    .and_then(|i| shagshell_core::tab_icon::PICKABLE.get(i))
+                    .map_or(String::new(), |(n, _)| n.to_string());
+            }
             SoMsg::Scheme(i) => {
                 f.color_scheme = match i {
                     0 => String::new(),
@@ -439,9 +446,29 @@ impl SessionOptions {
                 let at = schemes.iter().position(|(k, _)| *k == f.color_scheme);
                 let mut names = vec![fl!("so-scheme-global")];
                 names.extend(schemes.iter().map(|(_, n)| (*n).to_string()));
+                // The icons as they will look in the tree (the tab adds its state's colour).
+                use shagshell_core::tab_icon::{Glyph, PICKABLE, State, svg};
+                let handle = |g| {
+                    widget::icon::from_svg_bytes(svg(g, State::Plain).into_bytes()).symbolic(true)
+                };
+                let mut icon_names = vec![fl!("so-icon-auto")];
+                icon_names.extend(PICKABLE.iter().map(|(n, _)| icon_label(n)));
+                let mut icons = vec![handle(Glyph::of(f.protocol))];
+                icons.extend(PICKABLE.iter().map(|(_, g)| handle(*g)));
+                let icon_at = PICKABLE.iter().position(|(n, _)| *n == f.icon);
                 vec![
                     field(fl!("so-label"), Field::Label, &f.label, false),
                     widget::text::caption(fl!("so-label-hint")).into(),
+                    labelled(
+                        fl!("so-icon"),
+                        widget::dropdown(
+                            icon_names,
+                            Some(icon_at.map_or(0, |i| i + 1)),
+                            move |i| m(SoMsg::Icon(i)),
+                        )
+                        .icons(std::borrow::Cow::Owned(icons))
+                        .into(),
+                    ),
                     labelled(
                         fl!("so-scheme"),
                         widget::dropdown(names, Some(at.map_or(0, |i| i + 1)), move |i| {
@@ -707,4 +734,22 @@ fn labelled<'a>(label: String, body: Element<'a, Message>) -> Element<'a, Messag
     widget::column::with_children(vec![widget::text::caption(label).into(), body])
         .spacing(2)
         .into()
+}
+
+/// A pickable icon's name, as the user reads it.
+fn icon_label(name: &str) -> String {
+    match name {
+        "ssh" => fl!("icon-ssh"),
+        "terminal" => fl!("icon-terminal"),
+        "serial" => fl!("icon-serial"),
+        "local" => fl!("icon-local"),
+        "server" => fl!("icon-server"),
+        "router" => fl!("icon-router"),
+        "switch" => fl!("icon-switch"),
+        "firewall" => fl!("icon-firewall"),
+        "database" => fl!("icon-database"),
+        "cloud" => fl!("icon-cloud"),
+        "desktop" => fl!("icon-desktop"),
+        _ => fl!("icon-container"),
+    }
 }

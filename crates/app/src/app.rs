@@ -3,6 +3,7 @@
 use crate::askpass::Hidden;
 use crate::config::{self, Config};
 use crate::credentials_window::{CredWindow, CwMsg, Edit};
+use crate::find_bar::FindMsg;
 use crate::menu::Action;
 use crate::quick_connect::{QcMsg, QuickConnect};
 use crate::session_manager::{SessionManager, SmMsg, TreeKey};
@@ -88,6 +89,10 @@ pub struct App {
     /// What is typed in the toolbar's Connect Bar, and the sessions it matches (its list).
     connect_bar: String,
     connect_list: Vec<String>,
+    /// The list's row chosen with ↑ / ↓ (Enter opens it).
+    connect_pick: Option<usize>,
+    /// Edit → Find: the text looked for in the active terminal (`None`: the bar is closed).
+    find: Option<String>,
     /// The scheduled scripts (`schedule.toml`); a broken file is never written over.
     schedule: shagshell_core::schedule::Schedule,
     schedule_broken: bool,
@@ -182,6 +187,10 @@ pub enum Message {
     /// A session picked from the Connect Bar's list; the list closed.
     ConnectBarOpen(String),
     ConnectBarClose,
+    /// Edit → Find's bar.
+    Find(crate::find_bar::FindMsg),
+    /// Esc taken by a text field of the main window.
+    FieldEscape,
     /// A field of the main window was clicked: focused by id, which takes the keys from the
     /// terminal (a click focuses the field only, and the terminal would type along).
     FocusField(widget::Id),
@@ -286,6 +295,8 @@ impl Application for App {
             full_screen: false,
             connect_bar: String::new(),
             connect_list: Vec::new(),
+            connect_pick: None,
+            find: None,
             schedule: Default::default(),
             schedule_broken: false,
             sched_state: Default::default(),
@@ -412,6 +423,15 @@ impl Application for App {
                                     modifiers,
                                 ))
                             })
+                        }
+                        // Esc a field took (Find's, the Connect Bar's): their bar / list closes.
+                        cosmic::iced::Event::Keyboard(keyboard::Event::KeyPressed {
+                            physical_key: Physical::Code(Code::Escape),
+                            modifiers,
+                            repeat: false,
+                            ..
+                        }) if modifiers.is_empty() && status == event::Status::Captured => {
+                            Some(Message::FieldEscape)
                         }
                         cosmic::iced::Event::Keyboard(keyboard::Event::KeyPressed {
                             physical_key,
@@ -607,6 +627,12 @@ impl Application for App {
                 .center(Length::Fill)
                 .into(),
             };
+        let center = match &self.find {
+            Some(text) => widget::column::with_children(vec![crate::find_bar::view(text), center])
+                .height(Length::Fill)
+                .into(),
+            None => center,
+        };
         let (left, right) = crate::config::panels(
             (
                 self.config.session_manager_side,
@@ -630,6 +656,7 @@ impl Application for App {
             .push(toolbar::view(
                 &self.connect_bar,
                 &self.connect_list,
+                self.connect_pick,
                 &self.config.toolbar,
             ))
             .push(middle.height(Length::Fill));
@@ -651,6 +678,34 @@ impl Application for App {
 }
 
 impl App {
+    /// Edit → Find: its bar opened / typed in / stepped / closed; the active terminal searches.
+    fn find(&mut self, m: FindMsg) -> Task<Message> {
+        match m {
+            FindMsg::Open => {
+                self.find.get_or_insert_with(String::new);
+                return widget::text_input::focus(crate::find_bar::field_id());
+            }
+            FindMsg::Text(t) => {
+                let found = shagshell_core::find::literal(&t);
+                if !t.is_empty() {
+                    self.tabs.find(&found, true);
+                }
+                self.find = Some(t);
+            }
+            FindMsg::Next | FindMsg::Prev => {
+                if let Some(t) = self.find.as_ref().filter(|t| !t.is_empty()) {
+                    let found = shagshell_core::find::literal(t);
+                    self.tabs.find(&found, matches!(m, FindMsg::Next));
+                }
+            }
+            FindMsg::Close => {
+                self.find = None;
+                return self.tabs.focus_active();
+            }
+        }
+        Task::none()
+    }
+
     /// The panes of one side stacked in a column (and the Session Manager's splitter beside it).
     fn side_column(
         &self,
@@ -663,7 +718,8 @@ impl App {
             return None;
         }
         let stacked = panes.len() > 1;
-        let mut col = widget::column::with_capacity(2).spacing(2);
+        // The resize strip is the only gap between two stacked panes.
+        let mut col = widget::column::with_capacity(3);
         for (at, p) in panes.iter().enumerate() {
             let (title, collapsed) = match p {
                 Panel::Sessions => (
@@ -914,11 +970,22 @@ impl App {
             Message::StatusTick => self.tabs.tick(),
             Message::Blink => self.tabs.blink(),
             Message::ConnectBar(t) => {
+                self.connect_pick = None;
                 self.connect_list =
                     shagshell_core::connect_bar::matches(&t, &self.sessions.session_ids(), 8);
                 self.connect_bar = t;
             }
-            Message::ConnectBarClose => self.connect_list.clear(),
+            Message::ConnectBarClose => {
+                self.connect_list.clear();
+                self.connect_pick = None;
+            }
+            Message::Find(m) => return self.find(m),
+            Message::FieldEscape if !self.connect_list.is_empty() => {
+                self.connect_list.clear();
+                self.connect_pick = None;
+            }
+            Message::FieldEscape if self.find.is_some() => return self.find(FindMsg::Close),
+            Message::FieldEscape => {}
             Message::ConnectBarOpen(id) => {
                 self.connect_bar.clear();
                 self.connect_list.clear();
@@ -927,6 +994,14 @@ impl App {
             Message::FocusField(id) => return widget::text_input::focus(id),
             Message::ConnectBarGo => {
                 use shagshell_core::connect_bar::{Target, parse};
+                // A row picked with the arrows: that session.
+                if let Some(id) = (self.connect_pick.take()).and_then(|i| self.connect_list.get(i))
+                {
+                    let id = id.clone();
+                    self.connect_bar.clear();
+                    self.connect_list.clear();
+                    return self.open_sessions(&[id], true);
+                }
                 self.connect_list.clear();
                 match parse(&self.connect_bar, &self.sessions.session_ids()) {
                     Some(Target::Session(id)) => {
@@ -1219,6 +1294,30 @@ impl App {
                 if let Some(p) = p {
                     return self.open_note(&p);
                 }
+            }
+            // The Connect Bar's list: ↑ / ↓ pick a row, Esc closes it (the field keeps its text).
+            Message::Key(Physical::Code(code), m)
+                if !self.connect_list.is_empty()
+                    && m.is_empty()
+                    && matches!(code, Code::ArrowDown | Code::ArrowUp | Code::Escape) =>
+            {
+                let n = self.connect_list.len();
+                self.connect_pick = match (code, self.connect_pick) {
+                    (Code::Escape, _) => {
+                        self.connect_list.clear();
+                        None
+                    }
+                    (Code::ArrowDown, None) => Some(0),
+                    (Code::ArrowDown, Some(i)) => Some((i + 1) % n),
+                    (_, None) => Some(n - 1),
+                    (_, Some(i)) => Some((i + n - 1) % n),
+                };
+            }
+            // Edit → Find: Esc closes its bar.
+            Message::Key(Physical::Code(Code::Escape), m)
+                if self.find.is_some() && m.is_empty() =>
+            {
+                return self.find(FindMsg::Close);
             }
             Message::Key(k, m) => {
                 // «Close tab?»: Enter is Close, Esc Cancel.
@@ -1523,6 +1622,7 @@ impl App {
                 );
             }
             Action::ScriptConsole => return self.open_console(true),
+            Action::Find => return self.find(FindMsg::Open),
             Action::FullScreen => {
                 self.full_screen = !self.full_screen;
                 let mode = match self.full_screen {
@@ -2156,6 +2256,7 @@ impl App {
                                 logon: logon_spec(&s, Some(id)),
                                 scheme: s.color_scheme.clone(),
                                 label: tab_label(&s, &name),
+                                icon: s.icon.clone(),
                                 title: name,
                                 ..tabs::Launch::local_shell()
                             };
@@ -3111,6 +3212,7 @@ fn ssh_launch(
         logon: logon_spec(s, session),
         scheme: s.color_scheme.clone(),
         label,
+        icon: s.icon.clone(),
         session: None,
     })
 }
@@ -3205,6 +3307,7 @@ fn program_launch(
         logon: logon_spec(s, id),
         scheme: s.color_scheme.clone(),
         label,
+        icon: s.icon.clone(),
         session: None,
     })
 }
@@ -3318,6 +3421,7 @@ fn builtin_action(key: &Physical, mods: Modifiers) -> Option<Action> {
         (Code::Minus | Code::NumpadSubtract, Modifiers::CTRL) => Action::ZoomOut,
         (Code::Digit0 | Code::Numpad0, Modifiers::CTRL) => Action::ZoomReset,
         (Code::F11, m) if m.is_empty() => Action::FullScreen,
+        (Code::KeyF, m) if m == ctrl_shift => Action::Find,
         (_, Modifiers::ALT) => Action::SelectTab(digits.iter().position(|d| *d == code)? as u8),
         _ => return None,
     })

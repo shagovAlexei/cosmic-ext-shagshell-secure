@@ -43,6 +43,7 @@ pub struct Form {
     pub logon: Vec<crate::logon::Step>,
     pub color_scheme: String,
     pub label: String,
+    pub icon: String,
     pub script: String,
     pub pre_script: String,
 }
@@ -147,6 +148,7 @@ impl Form {
             logon: s.logon.clone(),
             color_scheme: s.color_scheme.clone(),
             label: s.label.clone(),
+            icon: s.icon.clone(),
             script: s.script.clone(),
             pre_script: s.pre_script.clone(),
         }
@@ -246,6 +248,7 @@ impl Form {
                 .collect(),
             color_scheme: self.color_scheme.clone(),
             label: self.label.trim().to_string(),
+            icon: self.icon.clone(),
             script: self.script.trim().to_string(),
             pre_script: self.pre_script.trim().to_string(),
             jump,

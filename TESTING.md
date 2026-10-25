@@ -412,3 +412,7 @@
 - [ ] v0.63.0: Global Options → Ctrl+Tab goes back…: with 4 tabs, pick the 1st, Ctrl+Tab returns to the one before, again to the 1st; off: Ctrl+Tab steps to the next tab
 - [ ] v0.64.0: Global Options → Blinking cursor: the active terminal's cursor blinks (block, underline, bar); turned off, it stays shown; other tabs never keep a hidden cursor
 - [ ] v0.64.1 regression: two groups; click tab A, then drag tab B (not A) onto the other group's bar or body — B moves, A stays; drag another tab right after — it moves too (not «nothing»)
+- [ ] v0.65.0: Ctrl+Shift+F (or Edit → Find…) opens the find bar; typing finds the first match, Enter / ↓ the next, ↑ the previous, Esc closes it and gives the terminal its keys back
+- [ ] v0.65.0: Session Options → Appearance → Icon: the pick shows in the tree and on the tab (in the state's colour); «By protocol» goes back
+- [ ] v0.65.0: Connect Bar: ↓ / ↑ walk the list (the row is filled), Enter opens it, Esc closes the list
+- [ ] v0.65.0: Button Bar → Edit button → Colour list shows a dot per colour; a long label stays on one line, cut on the right
