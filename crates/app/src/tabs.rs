@@ -978,6 +978,42 @@ impl Tabs {
         self.retitle(id);
     }
 
+    /// A saved session's terminal tab and its title; `None` for the rest (SFTP, notes, plain shells).
+    pub fn saved_session(&self, id: TabId) -> Option<(String, String)> {
+        let l = &self.tabs.get(&id)?.launch;
+        let sid = l
+            .session
+            .clone()
+            .filter(|_| !l.sftp && l.note.is_none() && !l.console)?;
+        Some((sid, l.title.clone()))
+    }
+
+    /// Reconnect / Clone of such a tab go through the app first (the session's pre-script).
+    fn gate(&self, cmd: TabCmd, id: TabId) -> Option<Task<Message>> {
+        (matches!(cmd, TabCmd::Reconnect | TabCmd::Clone) && self.saved_session(id).is_some())
+            .then(|| Task::done(cosmic::Action::App(Message::PreGate(cmd, id))))
+    }
+
+    /// The gated command, once the app lets it through.
+    pub fn run_gated(&mut self, cmd: TabCmd, id: TabId, look: &Look) -> Task<Message> {
+        match cmd {
+            TabCmd::Reconnect => self.reconnect(id, look),
+            TabCmd::Clone => {
+                let pane = (self.grid.iter().flat_map(|g| g.iter()))
+                    .find(|(_, g)| entity_of(&g.model, id).is_some())
+                    .map(|(p, _)| *p);
+                if pane.is_some() {
+                    self.focus = pane; // its group
+                }
+                match self.tabs.get(&id).map(|t| t.launch.clone()) {
+                    Some(launch) => self.open(launch, look),
+                    None => Task::none(),
+                }
+            }
+            _ => Task::none(),
+        }
+    }
+
     /// Reconnect: a live tab is disconnected first.
     fn reconnect(&mut self, id: TabId, look: &Look) -> Task<Message> {
         self.disconnect(id);
@@ -1136,6 +1172,9 @@ impl Tabs {
     /// A tab command about a tab in a window of its own (no group: splitting, moving and
     /// closing mean bringing it back).
     fn cmd_in_window(&mut self, cmd: TabCmd, id: TabId, look: &Look) -> Task<Message> {
+        if let Some(task) = self.gate(cmd, id) {
+            return task;
+        }
         match cmd {
             TabCmd::Reconnect => self.reconnect(id, look),
             TabCmd::Disconnect => {
@@ -1600,6 +1639,9 @@ impl Tabs {
         t: (pane_grid::Pane, Entity, TabId),
         look: &Look,
     ) -> Task<Message> {
+        if let Some(task) = self.gate(cmd, t.2) {
+            return task;
+        }
         match cmd {
             TabCmd::Reconnect => self.reconnect(t.2, look),
             TabCmd::Disconnect => {

@@ -22,6 +22,14 @@ use shagshell_core::session::store::DEFAULT;
 pub const APP_ID: &str = "io.github.shagovalexei.ShagShellSecure";
 
 /// What the context drawer shows.
+/// What follows a pre-script that ended well.
+enum AfterPre {
+    /// A new tab for the session, and the session's own script on it.
+    Open(Box<tabs::Launch>, String),
+    /// Reconnect / Clone of this tab.
+    Cmd(tabs::TabCmd, crate::term::TabId),
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Drawer {
     About,
@@ -73,8 +81,8 @@ pub struct App {
     startup: Option<(std::path::PathBuf, Vec<String>)>,
     /// The `*.py` files of the Script menu's folder (read at start, and when asked).
     script_files: Vec<std::path::PathBuf>,
-    /// Sessions waiting for their pre-script: run id → the tab to open, and its post-script.
-    pre_runs: std::collections::HashMap<u64, (tabs::Launch, String)>,
+    /// Sessions waiting for their pre-script: run id → what to do when it ended well.
+    pre_runs: std::collections::HashMap<u64, AfterPre>,
     /// The scheduled scripts (`schedule.toml`); a broken file is never written over.
     schedule: shagshell_core::schedule::Schedule,
     schedule_broken: bool,
@@ -112,6 +120,8 @@ pub enum Message {
     ScriptsFolder(Option<std::path::PathBuf>),
     CloseDrawer,
     Tabs(TabsMsg),
+    /// Reconnect / Clone of a saved session's tab: its pre-script runs first.
+    PreGate(tabs::TabCmd, crate::term::TabId),
     TermTx(crate::term::Events),
     Term(crate::term::TabId, alacritty_terminal::event::Event),
     /// Enter while the active tab's program has ended.
@@ -772,6 +782,7 @@ impl App {
                 }
             }
             Message::CloseDrawer => self.set_drawer(None),
+            Message::PreGate(cmd, id) => return self.pre_gate(cmd, id),
             Message::Tabs(m) => {
                 self.sessions.focused = false; // a terminal is used: Enter is its again
                 let task = self.tabs.update(m, &look(&self.config));
@@ -1531,13 +1542,22 @@ impl App {
             }
         }
         if let Some((run, ok)) = out.ended
-            && let Some((launch, post)) = self.pre_runs.remove(&run)
+            && let Some(then) = self.pre_runs.remove(&run)
         {
-            match ok {
-                true => pre_task = self.open_tab(launch, &post),
-                false => {
-                    self.sessions.notice = Some(fl!("pre-script-failed", name = launch.title));
+            let name = match &then {
+                AfterPre::Open(launch, _) => launch.title.clone(),
+                AfterPre::Cmd(_, id) => self
+                    .tabs
+                    .saved_session(*id)
+                    .map(|t| t.1)
+                    .unwrap_or_default(),
+            };
+            match (ok, then) {
+                (true, AfterPre::Open(launch, post)) => pre_task = self.open_tab(*launch, &post),
+                (true, AfterPre::Cmd(cmd, id)) => {
+                    pre_task = self.tabs.run_gated(cmd, id, &look(&self.config))
                 }
+                (false, _) => self.sessions.notice = Some(fl!("pre-script-failed", name = name)),
             }
         }
         let mut tasks = vec![pre_task];
@@ -1964,22 +1984,46 @@ impl App {
         if !scripts || pre.is_empty() {
             return self.open_tab(launch, post);
         }
-        let path = shagshell_core::script::expand_home(std::path::Path::new(pre));
+        self.run_pre(
+            s,
+            &launch.title.clone(),
+            AfterPre::Open(Box::new(launch), post.to_string()),
+        )
+    }
+
+    /// Runs the session's pre-script (no tab); `then` follows when it ended well.
+    fn run_pre(
+        &mut self,
+        s: &shagshell_core::session::Session,
+        title: &str,
+        then: AfterPre,
+    ) -> Task<Message> {
+        let path = shagshell_core::script::expand_home(std::path::Path::new(s.pre_script.trim()));
         let args = vec![
-            launch.title.clone(),
+            title.to_string(),
             s.host.clone(),
             s.user.clone().unwrap_or_default(),
         ];
         // No tab: an id nothing has, so `crt.Screen` calls fail instead of hitting tab 0.
         match self.scripts.run(&path, &args, u64::MAX) {
             Ok(run) => {
-                self.pre_runs.insert(run, (launch, post.to_string()));
-                Task::none()
+                self.pre_runs.insert(run, then);
             }
-            Err(e) => {
-                self.sessions.notice = Some(e);
-                Task::none()
-            }
+            Err(e) => self.sessions.notice = Some(e),
+        }
+        Task::none()
+    }
+
+    /// Reconnect / Clone of a saved session's tab: after its pre-script when it has one.
+    fn pre_gate(&mut self, cmd: tabs::TabCmd, id: crate::term::TabId) -> Task<Message> {
+        let look = look(&self.config);
+        let session = self.tabs.saved_session(id).and_then(|(sid, title)| {
+            let s = self.sessions.store.get(&sid).ok()?;
+            (!s.pre_script.trim().is_empty()).then_some((s, title))
+        });
+        match session {
+            Some((s, title)) => self.run_pre(&s, &title, AfterPre::Cmd(cmd, id)),
+            None => self.tabs.run_gated(cmd, id, &look),
         }
     }
 
