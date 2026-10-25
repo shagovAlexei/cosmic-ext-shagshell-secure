@@ -165,12 +165,72 @@ fn key_binds() -> HashMap<KeyBind, Action> {
     ])
 }
 
+/// The icon of a menu item (symbolic, from the icon theme), SecureCRT style: most items have one.
+fn icon_of(a: Action) -> Option<cosmic::widget::icon::Handle> {
+    let name = match a {
+        Action::Connect => "network-server-symbolic",
+        Action::QuickConnect => "media-playback-start-symbolic",
+        Action::NewLocalShell => "utilities-terminal-symbolic",
+        Action::OpenNote | Action::Notes => "accessories-text-editor-symbolic",
+        Action::Reconnect => "view-refresh-symbolic",
+        Action::Disconnect => "process-stop-symbolic",
+        Action::CloseTab => "window-close-symbolic",
+        Action::ImportSshConfig | Action::ImportSecureCrt => "document-open-symbolic",
+        Action::Exit => "application-exit-symbolic",
+        Action::Copy => "edit-copy-symbolic",
+        Action::Paste => "edit-paste-symbolic",
+        Action::SelectAll => "edit-select-all-symbolic",
+        Action::SessionOptions => "document-properties-symbolic",
+        Action::EditDefault => "document-edit-symbolic",
+        Action::GlobalOptions => "emblem-system-symbolic",
+        Action::ConnectSftp => "folder-remote-symbolic",
+        Action::Transfer(_, true) => "network-transmit-symbolic",
+        Action::Transfer(_, false) => "network-receive-symbolic",
+        Action::CancelTransfer | Action::CancelScript => "media-playback-stop-symbolic",
+        Action::RunScript => "system-run-symbolic",
+        Action::ScriptConsole => "utilities-terminal-symbolic",
+        Action::Scheduler => "alarm-symbolic",
+        Action::ScriptsFolder => "folder-open-symbolic",
+        Action::ScriptsRefresh => "view-refresh-symbolic",
+        Action::Credentials => "system-users-symbolic",
+        Action::CreateKey | Action::UploadKey => "dialog-password-symbolic",
+        Action::KeyMap => "input-keyboard-symbolic",
+        Action::SplitRight => "view-dual-symbolic",
+        Action::SplitDown => "view-paged-symbolic",
+        Action::NextTab => "go-next-symbolic",
+        Action::PrevTab => "go-previous-symbolic",
+        Action::DetachTab => "window-new-symbolic",
+        Action::ReattachAll => "view-restore-symbolic",
+        Action::CheckUpdates => "software-update-available-symbolic",
+        Action::Donate => "emblem-favorite-symbolic",
+        Action::About => "help-about-symbolic",
+        Action::Pending => "edit-find-symbolic",
+        _ => return None,
+    };
+    Some(cosmic::widget::icon::from_name(name).handle())
+}
+
+/// Every plain item gets its icon (a check box keeps its check mark: same indent).
+fn with_icons(items: Vec<menu::Item<Action, String>>) -> Vec<menu::Item<Action, String>> {
+    use menu::Item::{Button, ButtonDisabled, Folder};
+    items
+        .into_iter()
+        .map(|i| match i {
+            Button(l, None, a) => Button(l, icon_of(a), a),
+            ButtonDisabled(l, None, a) => ButtonDisabled(l, icon_of(a), a),
+            Folder(l, children) => Folder(l, with_icons(children)),
+            other => other,
+        })
+        .collect()
+}
+
 /// `(tabs, live, splittable)`: any tab open; the active one connected; its group has
-/// more than one tab (`Tabs::menu_state`).
+/// more than one tab (`Tabs::menu_state`). `scripting`: a script runs.
 pub fn bar(
     (session_manager, command_window, button_bar, command_manager): (bool, bool, bool, bool),
     (tabs, live, split, logging, recording): (bool, bool, bool, bool, bool),
     (folder, recent): (&[String], &[String]),
+    scripting: bool,
 ) -> Element<'static, Message> {
     use menu::Item::{Button, ButtonDisabled, CheckBox, Divider};
     let off = |label: String| ButtonDisabled(label, None, Action::Pending);
@@ -265,8 +325,6 @@ pub fn bar(
                     Action::ToggleButtonBar,
                 ),
                 Button(fl!("menu-notes"), None, Action::Notes),
-                off(fl!("menu-toolbar")),
-                off(fl!("menu-status-bar")),
             ],
         ),
         (
@@ -309,7 +367,7 @@ pub fn bar(
             fl!("menu-script"),
             vec![
                 Button(fl!("menu-script-run"), None, Action::RunScript),
-                Button(fl!("menu-script-cancel"), None, Action::CancelScript),
+                on(scripting, fl!("menu-script-cancel"), Action::CancelScript),
                 Button(fl!("menu-script-console"), None, Action::ScriptConsole),
                 Button(fl!("menu-script-scheduler"), None, Action::Scheduler),
                 Divider,
@@ -371,6 +429,7 @@ pub fn bar(
     let roots = roots
         .into_iter()
         .map(|(title, items)| {
+            let items = with_icons(items);
             menu::Tree::with_children(Element::from(menu::root(title)), menu::items(&binds, items))
         })
         .collect();

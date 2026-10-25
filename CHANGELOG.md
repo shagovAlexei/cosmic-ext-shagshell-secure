@@ -2,6 +2,10 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.50.0 — 2026-10-25
+
+- feat: menu items have icons; Script → Cancel is enabled only while a script runs; the View → Toolbar / Status Bar placeholders are gone
+
 ## 0.49.0 — 2026-10-25
 
 - feat: Session Manager shows each session with its protocol's icon (ssh, telnet, serial, local shell), the same glyphs as the tabs

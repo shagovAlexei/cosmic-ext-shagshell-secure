@@ -11,7 +11,7 @@ Legend: ✅ have · 🟡 partly · ❌ missing · — not planned.
 | View → Themes (System, Native, Carbon, VS Blue/Dark/White, Office White, legacy) | 🟡 Global Options: System / Dark / Light | COSMIC draws the chrome; a theme = light/dark + accent. Enough for us. |
 | Terminal colours = session colour scheme, «System Color Scheme» follows light/dark | 🟡 colour schemes global + per session | no scheme that follows light/dark |
 | Flat monochrome toolbar glyphs 16/24/32 | ✅ symbolic icons | |
-| Icons in menus | ❌ | |
+| Icons in menus | ✅ 0.50.0 | submenus (Scripts, Recent) have none: libcosmic folders take no icon |
 | Window transparency (active / inactive) | ❌ | |
 | Zoom Ctrl +/−/0 | ❌ | |
 | Cursor style (block / underline / bar), colour, blink | ❌ | |

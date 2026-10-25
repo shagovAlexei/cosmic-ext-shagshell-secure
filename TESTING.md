@@ -393,3 +393,4 @@
 - [ ] v0.48.0: output in a tab that is not in front turns its icon blue; bringing it to front turns it green again
 - [ ] v0.48.0: ssh session tabs are titled by the session name (not user@host:~); a local shell shows its program's title while it runs
 - [ ] v0.49.0: Session Manager icons by protocol: ssh screen with padlock, telnet screen, serial connector, local house; readable in light and dark themes
+- [ ] v0.50.0: every menu shows icons beside its items (checkboxes keep the check mark), text lines up; Script → Cancel is grey with no script running
