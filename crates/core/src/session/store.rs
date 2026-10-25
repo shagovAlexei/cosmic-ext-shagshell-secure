@@ -121,7 +121,12 @@ impl Store {
         let (folder, name) = (parent(id), id.rsplit('/').next().unwrap_or(id));
         // «web (2)» copied again: «web (3)», not «web (2) (2)».
         let base = match name.rsplit_once(" (") {
-            Some((b, n)) if n.strip_suffix(')').is_some_and(|n| n.parse::<u32>().is_ok()) => b,
+            Some((b, n))
+                if n.strip_suffix(')')
+                    .is_some_and(|n| n.parse::<u32>().is_ok()) =>
+            {
+                b
+            }
             _ => name,
         };
         for n in 2..1000 {
