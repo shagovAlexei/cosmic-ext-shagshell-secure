@@ -664,7 +664,7 @@ impl SessionManager {
     /// The strip between two stacked panes: drags them taller / shorter.
     pub fn splitter_v(&self) -> Element<'_, Message> {
         widget::mouse_area(widget::container(
-            widget::Space::new().width(Length::Fill).height(6.0),
+            widget::Space::new().width(Length::Fill).height(4.0),
         ))
         .interaction(mouse::Interaction::ResizingVertically)
         .on_press(Message::Sessions(SmMsg::SplitStartV))
@@ -772,7 +772,7 @@ impl SessionManager {
         let icon = match (r.protocol, r.expanded) {
             (Some(p), _) => {
                 use shagshell_core::tab_icon::{Glyph, State, svg};
-                let svg = svg(Glyph::of(p), State::Plain).into_bytes();
+                let svg = svg(Glyph::for_session(&r.icon, p), State::Plain).into_bytes();
                 widget::icon::from_svg_bytes(svg).symbolic(true)
             }
             (None, true) => widget::icon::from_name("folder-open-symbolic").handle(),

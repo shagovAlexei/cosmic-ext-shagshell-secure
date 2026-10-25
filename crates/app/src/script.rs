@@ -1288,7 +1288,8 @@ pub fn with_browse<'a>(input: Element<'a, Message>, slot: Slot) -> Element<'a, M
             .into(),
     ])
     .spacing(8)
-    .align_y(cosmic::iced::Alignment::Center)
+    // At the field's line, not the middle of its caption + field.
+    .align_y(cosmic::iced::Alignment::End)
     .into()
 }
 

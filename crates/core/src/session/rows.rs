@@ -13,6 +13,8 @@ pub struct Row {
     pub expanded: bool,
     /// A session's protocol (its icon); `None`: a folder.
     pub protocol: Option<super::Protocol>,
+    /// The icon the session picked ("": by protocol).
+    pub icon: String,
 }
 
 /// Rows for `tree`: folders in `expanded` show their children. A filter (substring of a
@@ -52,6 +54,7 @@ fn walk(
                         folder: false,
                         expanded: false,
                         protocol: Some(session.protocol),
+                        icon: session.icon.clone(),
                     });
                     any = true;
                 }
@@ -66,6 +69,7 @@ fn walk(
                     folder: true,
                     expanded: open,
                     protocol: None,
+                    icon: String::new(),
                 });
                 let inner = match open {
                     true => walk(children, &id, depth + 1, expanded, filter, out),

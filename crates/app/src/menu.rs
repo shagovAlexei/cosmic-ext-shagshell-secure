@@ -91,6 +91,8 @@ pub enum Action {
     ZoomReset,
     /// View → Full Screen (F11).
     FullScreen,
+    /// Edit → Find… (Ctrl+Shift+F).
+    Find,
     // Shown, not working yet (later phases).
     Disconnect,
     ConnectSftp,
@@ -176,6 +178,7 @@ fn key_binds() -> HashMap<KeyBind, Action> {
         bind(vec![Ctrl, Shift], c("v"), Action::Paste),
         bind(vec![Ctrl], Key::Named(Named::Tab), Action::NextTab),
         bind(vec![Ctrl, Shift], Key::Named(Named::Tab), Action::PrevTab),
+        bind(vec![Ctrl, Shift], c("f"), Action::Find),
         bind(vec![Ctrl], c("="), Action::ZoomIn),
         bind(vec![Ctrl], c("-"), Action::ZoomOut),
         bind(vec![Ctrl], c("0"), Action::ZoomReset),
@@ -222,7 +225,7 @@ fn icon_of(a: Action) -> Option<cosmic::widget::icon::Handle> {
         Action::CheckUpdates => "software-update-available-symbolic",
         Action::Donate => "emblem-favorite-symbolic",
         Action::About => "help-about-symbolic",
-        Action::Pending => "edit-find-symbolic",
+        Action::Pending | Action::Find => "edit-find-symbolic",
         Action::ZoomIn => "zoom-in-symbolic",
         Action::ZoomOut => "zoom-out-symbolic",
         Action::ZoomReset => "zoom-original-symbolic",
@@ -256,7 +259,6 @@ pub fn bar(
     full_screen: bool,
 ) -> Element<'static, Message> {
     use menu::Item::{Button, ButtonDisabled, CheckBox, Divider};
-    let off = |label: String| ButtonDisabled(label, None, Action::Pending);
     let on = |yes: bool, label: String, a| match yes {
         true => Button(label, None, a),
         false => ButtonDisabled(label, None, a),
@@ -317,7 +319,7 @@ pub fn bar(
                 tab(fl!("menu-copy"), Action::Copy),
                 tab(fl!("menu-paste"), Action::Paste),
                 tab(fl!("menu-select-all"), Action::SelectAll),
-                off(fl!("menu-find")),
+                tab(fl!("menu-find"), Action::Find),
             ],
         ),
         (

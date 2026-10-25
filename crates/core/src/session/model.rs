@@ -153,6 +153,9 @@ pub struct Session {
     /// The tab's text instead of the program's long title; empty: the program's, else the session name.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub label: String,
+    /// Its icon in the tree and on its tab (a `tab_icon::Glyph::named` name); empty: by protocol.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub icon: String,
     /// Terminal colour scheme (a key of the built-in ones); empty: the global one.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub color_scheme: String,

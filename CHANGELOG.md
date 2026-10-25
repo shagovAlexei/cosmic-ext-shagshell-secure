@@ -2,6 +2,14 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.65.0 — 2026-10-25
+
+- feat: Edit → Find (Ctrl+Shift+F) in the active terminal: Enter / ↓ next, ↑ previous, Esc closes
+- feat: a session can pick its icon (server, router, switch, firewall, database, cloud, desktop, container…), shown in the tree and on its tab
+- feat: the Connect Bar's list is walked with ↑ / ↓, Enter opens the row, Esc closes it
+- feat: the Button Bar colour list shows each colour's dot
+- fix: a long Button Bar label stays on one line, cut on the right; «Browse…» lines up with its field; clearer auto-reconnect labels; a thinner gap between the stacked side panes
+
 ## 0.64.1 — 2026-10-25
 
 - fix: dragging a tab to another group moves the dragged tab (it moved the tab clicked last, or nothing on a second drag): the dragged one is now taken from libcosmic's drop hints

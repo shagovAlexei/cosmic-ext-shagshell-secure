@@ -131,6 +131,8 @@ pub struct Launch {
     pub scheme: String,
     /// The session's tab label: shown instead of the program's title.
     pub label: String,
+    /// The session's own icon (`Session::icon`); "": by protocol.
+    pub icon: String,
     /// The saved session (its id) this tab was opened from: it is opened again at the next start.
     pub session: Option<String>,
 }
@@ -152,6 +154,7 @@ impl Launch {
             logon: None,
             scheme: String::new(),
             label: String::new(),
+            icon: String::new(),
             session: None,
         }
     }
@@ -246,6 +249,9 @@ impl Tab {
             (Body::Note(_), _) => Glyph::Note,
             (Body::Console, _) => Glyph::Console,
             (Body::Sftp(_), _) => Glyph::Sftp,
+            (_, _) if !self.launch.icon.is_empty() => {
+                shagshell_core::tab_icon::Glyph::for_session(&self.launch.icon, Default::default())
+            }
             (_, Protocol::Ssh { .. }) => Glyph::Ssh,
             (_, Protocol::Telnet { .. }) => Glyph::Telnet,
             (_, Protocol::Serial { .. }) => Glyph::Serial,
@@ -677,6 +683,15 @@ impl Tabs {
             for id in changed {
                 self.retitle(id);
             }
+        }
+    }
+
+    /// Edit → Find: the active terminal's next (or previous) match of the regex `re`, selected.
+    pub fn find(&mut self, re: &str, forwards: bool) {
+        if let Some(t) = self.active_terminal().and_then(|id| self.terminal(id)) {
+            let mut t = t.lock().unwrap_or_else(|e| e.into_inner());
+            t.search(re, forwards);
+            t.needs_update = true;
         }
     }
 

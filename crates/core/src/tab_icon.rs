@@ -11,9 +11,41 @@ pub enum Glyph {
     Sftp,
     Note,
     Console,
+    // Picked for a session (Session Options → Appearance):
+    Server,
+    Router,
+    Switch,
+    Firewall,
+    Database,
+    Cloud,
+    Desktop,
+    Container,
 }
 
+/// The icons a session can pick, by the name kept in its file.
+pub const PICKABLE: [(&str, Glyph); 12] = [
+    ("ssh", Glyph::Ssh),
+    ("terminal", Glyph::Telnet),
+    ("serial", Glyph::Serial),
+    ("local", Glyph::Local),
+    ("server", Glyph::Server),
+    ("router", Glyph::Router),
+    ("switch", Glyph::Switch),
+    ("firewall", Glyph::Firewall),
+    ("database", Glyph::Database),
+    ("cloud", Glyph::Cloud),
+    ("desktop", Glyph::Desktop),
+    ("container", Glyph::Container),
+];
+
 impl Glyph {
+    /// The session's own icon (`Session::icon`), else the one of its protocol.
+    pub fn for_session(icon: &str, p: crate::session::Protocol) -> Self {
+        (PICKABLE.iter())
+            .find(|(n, _)| *n == icon)
+            .map_or_else(|| Self::of(p), |(_, g)| *g)
+    }
+
     /// A saved session's (the Session Manager's icon).
     pub fn of(p: crate::session::Protocol) -> Self {
         use crate::session::Protocol as P;
@@ -95,6 +127,30 @@ pub fn svg(g: Glyph, s: State) -> String {
         Glyph::Sftp => format!(
             r#"<path d="M1.5 4.5a1 1 0 0 1 1-1h3.5l1.5 1.5h6a1 1 0 0 1 1 1V13a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z" fill="none" stroke="{c}" stroke-width="1.5" stroke-linejoin="round"/><path d="M8 7v5M6 10l2 2 2-2" fill="none" stroke="{c}" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>"#
         ),
+        Glyph::Server => format!(
+            r#"<rect x="2" y="1.5" width="12" height="5.5" rx="1" fill="none" stroke="{c}" stroke-width="1.4"/><rect x="2" y="9" width="12" height="5.5" rx="1" fill="none" stroke="{c}" stroke-width="1.4"/><circle cx="5" cy="4.25" r="1" fill="{c}"/><circle cx="5" cy="11.75" r="1" fill="{c}"/>"#
+        ),
+        Glyph::Router => format!(
+            r#"<rect x="1.5" y="8.5" width="13" height="5" rx="1.2" fill="none" stroke="{c}" stroke-width="1.4"/><path d="M8 8.5V5M5 4.5a4.2 4.2 0 0 1 6 0M3.3 2.8a6.6 6.6 0 0 1 9.4 0" fill="none" stroke="{c}" stroke-width="1.3" stroke-linecap="round"/><circle cx="4.5" cy="11" r=".9" fill="{c}"/>"#
+        ),
+        Glyph::Switch => format!(
+            r#"<rect x="1.5" y="4" width="13" height="8" rx="1.2" fill="none" stroke="{c}" stroke-width="1.4"/><path d="M4 7h1.6M7.2 7h1.6M10.4 7H12M4 9.5h1.6M7.2 9.5h1.6M10.4 9.5H12" stroke="{c}" stroke-width="1.3" stroke-linecap="round"/>"#
+        ),
+        Glyph::Firewall => format!(
+            r#"<path d="M8 1.5l5.5 2v4.3c0 3.2-2.3 5.6-5.5 6.7-3.2-1.1-5.5-3.5-5.5-6.7V3.5z" fill="none" stroke="{c}" stroke-width="1.4" stroke-linejoin="round"/><path d="M5 6.5h6M5 9.5h6M8 6.5v3" stroke="{c}" stroke-width="1.2"/>"#
+        ),
+        Glyph::Database => format!(
+            r#"<ellipse cx="8" cy="3.5" rx="5.5" ry="2" fill="none" stroke="{c}" stroke-width="1.4"/><path d="M2.5 3.5v9c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2v-9M2.5 8c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2" fill="none" stroke="{c}" stroke-width="1.4"/>"#
+        ),
+        Glyph::Cloud => format!(
+            r#"<path d="M4.5 13h7.5a3 3 0 0 0 .3-6 4.2 4.2 0 0 0-8.1-.8A3.4 3.4 0 0 0 4.5 13z" fill="none" stroke="{c}" stroke-width="1.4" stroke-linejoin="round"/>"#
+        ),
+        Glyph::Desktop => format!(
+            r#"<rect x="1.5" y="2" width="13" height="9" rx="1.2" fill="none" stroke="{c}" stroke-width="1.4"/><path d="M6 14h4M8 11v3" stroke="{c}" stroke-width="1.4" stroke-linecap="round"/>"#
+        ),
+        Glyph::Container => format!(
+            r#"<path d="M8 1.5l6 3v7l-6 3-6-3v-7z" fill="none" stroke="{c}" stroke-width="1.4" stroke-linejoin="round"/><path d="M2 4.5l6 3 6-3M8 7.5v7" fill="none" stroke="{c}" stroke-width="1.2" stroke-linejoin="round"/>"#
+        ),
         Glyph::Note => format!(
             r#"<path d="M3 1.5h7l3 3V14.5H3z" fill="none" stroke="{c}" stroke-width="1.5" stroke-linejoin="round"/><path d="M5.5 7h5M5.5 9.5h5M5.5 12h3" stroke="{c}" stroke-width="1.2" stroke-linecap="round"/>"#
         ),
@@ -121,6 +177,17 @@ mod tests {
         assert_eq!(state(true, true, false, true, false), State::Connected); // read: not quiet
         assert_eq!(state(true, true, true, false, true), State::Locked);
         assert_eq!(state(false, true, true, true, true), State::Disconnected);
+    }
+
+    #[test]
+    fn a_session_may_pick_its_icon() {
+        use crate::session::Protocol as P;
+        assert_eq!(Glyph::for_session("router", P::Ssh2), Glyph::Router);
+        assert_eq!(Glyph::for_session("", P::Serial), Glyph::Serial);
+        assert_eq!(Glyph::for_session("gone", P::Ssh2), Glyph::Ssh); // unknown: by protocol
+        for (_, g) in PICKABLE {
+            assert!(svg(g, State::Connected).contains(colour(State::Connected)));
+        }
     }
 
     #[test]

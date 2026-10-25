@@ -68,8 +68,9 @@ pub struct ButtonBar {
     dialog: Option<Dialog>,
     input_id: widget::Id,
     kinds: Vec<String>,
-    /// «none», then `buttonbar::COLORS` by name.
+    /// «none», then `buttonbar::COLORS` by name, and each one's dot.
     colors: Vec<String>,
+    color_dots: Vec<widget::icon::Handle>,
     targets: Vec<String>,
     functions: Vec<String>,
 }
@@ -91,6 +92,16 @@ impl ButtonBar {
             input_id: widget::Id::unique(),
             kinds: Vec::new(),
             colors: Vec::new(),
+            color_dots: (std::iter::once(
+                r##"<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="none" stroke="#808080" stroke-width="1"/></svg>"##
+                    .to_string(),
+            ))
+            .chain(
+                (shagshell_core::buttonbar::COLORS.iter())
+                    .filter_map(|(n, _)| shagshell_core::buttonbar::dot_svg(n)),
+            )
+            .map(|svg| widget::icon::from_svg_bytes(svg.into_bytes()))
+            .collect(),
             targets: Vec::new(),
             functions: Vec::new(),
         };
@@ -504,6 +515,7 @@ impl ButtonBar {
                     widget::column::with_children(vec![
                         widget::text::caption(fl!("bb-color")).into(),
                         widget::dropdown(&self.colors, Some(color), move |i| m(BbMsg::ColorSel(i)))
+                            .icons(std::borrow::Cow::Borrowed(&self.color_dots))
                             .into(),
                     ])
                     .spacing(2),
@@ -584,11 +596,25 @@ impl ButtonBar {
             let last = bar.buttons.len().saturating_sub(1);
             for (i, b) in bar.buttons.iter().enumerate() {
                 // A coloured button: its dot before the label (SecureCRT).
-                let mut button = widget::button::standard(b.label.clone());
+                // One line: a label too long for its room is cut on the right, not wrapped.
+                let label = widget::text::body(b.label.clone())
+                    .wrapping(cosmic::iced::widget::text::Wrapping::None)
+                    .ellipsize(cosmic::iced::advanced::text::Ellipsize::End(
+                        cosmic::iced::advanced::text::EllipsizeHeightLimit::Lines(1),
+                    ));
+                let mut inner = widget::row::with_capacity(2)
+                    .spacing(6)
+                    .align_y(Alignment::Center);
                 if let Some(svg) = shagshell_core::buttonbar::dot_svg(&b.color) {
-                    button = button.leading_icon(widget::icon::from_svg_bytes(svg.into_bytes()));
+                    inner = inner.push(
+                        widget::icon(widget::icon::from_svg_bytes(svg.into_bytes())).size(12),
+                    );
                 }
-                let mut button = button.on_press(m(BbMsg::Press(i)));
+                let mut button = widget::button::custom(inner.push(label))
+                    .class(cosmic::theme::Button::Standard)
+                    .padding([0, 16])
+                    .height(Length::Fixed(32.0))
+                    .on_press(m(BbMsg::Press(i)));
                 if let Some(h) = height {
                     button = button.height(Length::Fixed(f32::from(h)));
                 }
