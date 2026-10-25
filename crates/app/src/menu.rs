@@ -104,7 +104,7 @@ pub enum Action {
 
 /// The functions a Button Bar button can call: the name in `buttonbars.toml` and its label.
 pub type NamedFn = (&'static str, fn() -> String);
-pub const NAMED: [NamedFn; 20] = [
+pub const NAMED: [NamedFn; 26] = [
     ("Connect", || fl!("menu-connect")),
     ("QuickConnect", || fl!("menu-quick-connect")),
     ("NewLocalShell", || fl!("menu-new-local-shell")),
@@ -125,6 +125,12 @@ pub const NAMED: [NamedFn; 20] = [
     ("ZoomOut", || fl!("menu-zoom-out")),
     ("ZoomReset", || fl!("menu-zoom-reset")),
     ("FullScreen", || fl!("menu-full-screen")),
+    ("Copy", || fl!("menu-copy")),
+    ("Paste", || fl!("menu-paste")),
+    ("NextTab", || fl!("menu-next-tab")),
+    ("PrevTab", || fl!("menu-prev-tab")),
+    ("Find", || fl!("menu-find")),
+    ("ConnectBar", || fl!("menu-connect-bar")),
 ];
 
 impl Action {
@@ -153,6 +159,12 @@ impl Action {
             "ZoomOut" => Action::ZoomOut,
             "ZoomReset" => Action::ZoomReset,
             "FullScreen" => Action::FullScreen,
+            "Copy" => Action::Copy,
+            "Paste" => Action::Paste,
+            "NextTab" => Action::NextTab,
+            "PrevTab" => Action::PrevTab,
+            "Find" => Action::Find,
+            "ConnectBar" => Action::ConnectBar,
             _ => return None,
         })
     }
@@ -165,29 +177,56 @@ impl menu::Action for Action {
     }
 }
 
-/// The keys the menu shows; `app::route_key` is what acts on them.
+/// The keys the menu shows (the chords in force, `keymap_editor::builtin_keys`);
+/// `app::route_key` is what acts on them.
 fn key_binds() -> HashMap<KeyBind, Action> {
     use Modifier::{Alt, Ctrl, Shift};
-    let bind = |modifiers: Vec<Modifier>, key: Key, a| (KeyBind { modifiers, key }, a);
-    let c = |s: &str| Key::Character(s.into());
-    HashMap::from([
-        bind(vec![Alt], c("m"), Action::ToggleSessionManager),
-        bind(vec![Alt], c("q"), Action::QuickConnect),
-        bind(vec![Alt], c("c"), Action::Connect),
-        bind(vec![Alt], c("p"), Action::ConnectSftp),
-        bind(vec![Ctrl, Shift], c("t"), Action::NewLocalShell),
-        bind(vec![Ctrl, Shift], c("w"), Action::CloseTab),
-        bind(vec![Ctrl, Shift], c("c"), Action::Copy),
-        bind(vec![Ctrl, Shift], c("v"), Action::Paste),
-        bind(vec![Ctrl], Key::Named(Named::Tab), Action::NextTab),
-        bind(vec![Ctrl, Shift], Key::Named(Named::Tab), Action::PrevTab),
-        bind(vec![Ctrl, Shift], c("f"), Action::Find),
-        bind(vec![Ctrl, Shift], c("r"), Action::ConnectBar),
-        bind(vec![Ctrl], c("="), Action::ZoomIn),
-        bind(vec![Ctrl], c("-"), Action::ZoomOut),
-        bind(vec![Ctrl], c("0"), Action::ZoomReset),
-        bind(vec![], Key::Named(Named::F11), Action::FullScreen),
-    ])
+    crate::keymap_editor::builtin_keys()
+        .into_iter()
+        .filter_map(|(chord, id)| {
+            let key = menu_key(&chord.code)?;
+            let modifiers = [(chord.ctrl, Ctrl), (chord.alt, Alt), (chord.shift, Shift)]
+                .into_iter()
+                .filter_map(|(on, m)| on.then_some(m))
+                .collect();
+            Some((KeyBind { modifiers, key }, Action::named(id)?))
+        })
+        .collect()
+}
+
+/// A physical key's name as the menu draws it.
+fn menu_key(code: &str) -> Option<Key> {
+    let named = match code {
+        "Tab" => Named::Tab,
+        "Enter" => Named::Enter,
+        "ArrowUp" => Named::ArrowUp,
+        "ArrowDown" => Named::ArrowDown,
+        "ArrowLeft" => Named::ArrowLeft,
+        "ArrowRight" => Named::ArrowRight,
+        "Home" => Named::Home,
+        "End" => Named::End,
+        "PageUp" => Named::PageUp,
+        "PageDown" => Named::PageDown,
+        "F1" => Named::F1,
+        "F2" => Named::F2,
+        "F3" => Named::F3,
+        "F4" => Named::F4,
+        "F5" => Named::F5,
+        "F6" => Named::F6,
+        "F7" => Named::F7,
+        "F8" => Named::F8,
+        "F9" => Named::F9,
+        "F10" => Named::F10,
+        "F11" => Named::F11,
+        "F12" => Named::F12,
+        "Equal" => return Some(Key::Character("=".into())),
+        "Minus" => return Some(Key::Character("-".into())),
+        c => {
+            let one = c.strip_prefix("Key").or_else(|| c.strip_prefix("Digit"))?;
+            return (one.len() == 1).then(|| Key::Character(one.to_lowercase().into()));
+        }
+    };
+    Some(Key::Named(named))
 }
 
 /// The icon of a menu item (symbolic, from the icon theme), SecureCRT style: most items have one.

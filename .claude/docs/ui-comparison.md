@@ -48,7 +48,7 @@ Legend: ✅ have · 🟡 partly · ❌ missing · — not planned.
 | SecureCRT | ShagShell | Note |
 |---|---|---|
 | Toolbar: Session Manager, Quick Connect, Local Shell, Reconnect, Disconnect, Connect Bar, Copy, Paste, Find, Session Options, Keymap, Public-Key, SecureFX | ✅ editor (0.66.0): any order, gaps, functions or programs, any icon | no drag on the bar itself |
-| Connect Bar (Alt+R: `ssh2://user@host`, filtered session list) | ✅ toolbar field (0.58.0) with its list (0.62.0), Ctrl+Shift+R, movable item (0.73.0) | Alt+R is often a user key, so Ctrl+Shift+R |
+| Connect Bar (Alt+R: `ssh2://user@host`, filtered session list) | ✅ toolbar field (0.58.0) with its list (0.62.0), Ctrl+Shift+R, movable item (0.73.0) | any key via the Keymap Editor (0.75.0), Ctrl+Shift+R by default |
 | Status bar: message + up to 5 columns (protocol+cipher, cursor, rows×cols, emulation, elapsed time, local time), log file, CAPS/NUM | 🟡 state · protocol · cols×rows · cursor · time up · log file (0.52.0) | no cipher, no local time, not configurable |
 | Command Window: active / all / groups / visible, history, multi-line | ✅ | |
 | Button Bar: several bars, coloured dot icons on buttons | ✅ colours (0.54.0) | |

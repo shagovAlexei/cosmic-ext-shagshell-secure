@@ -1,13 +1,15 @@
 //! Key Map: the user's own keys (`keymap.toml`), each running what a Button Bar button runs.
 //! A key is a chord of modifiers and a physical key by its W3C code name (`KeyA`, `F5`,
-//! `ArrowUp`…); written as `Ctrl+Alt+F5`.
+//! `ArrowUp`…); written as `Ctrl+Alt+F5`. The program's own keys (`BUILTIN`) have their default
+//! chord and may be given another one (`[builtin]` in the same file).
 
 use crate::buttonbar::Button;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::io::{self, ErrorKind};
 use std::path::{Path, PathBuf};
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Chord {
     pub ctrl: bool,
     pub alt: bool,
@@ -147,9 +149,61 @@ pub struct Binding {
     pub button: Button,
 }
 
+/// The program's own keys: (function, default chord). The function names are those of the
+/// Button Bar's menu functions (`menu::NAMED`). Alt+1…9 (tab N) are not in the list: fixed.
+pub const BUILTIN: [(&str, &str); 16] = [
+    ("ToggleSessionManager", "Alt+M"),
+    ("QuickConnect", "Alt+Q"),
+    ("Connect", "Alt+C"),
+    ("ConnectSftp", "Alt+P"),
+    ("NewLocalShell", "Ctrl+Shift+T"),
+    ("CloseTab", "Ctrl+Shift+W"),
+    ("Copy", "Ctrl+Shift+C"),
+    ("Paste", "Ctrl+Shift+V"),
+    ("NextTab", "Ctrl+Tab"),
+    ("PrevTab", "Ctrl+Shift+Tab"),
+    ("ZoomIn", "Ctrl+Equal"),
+    ("ZoomOut", "Ctrl+Minus"),
+    ("ZoomReset", "Ctrl+0"),
+    ("FullScreen", "F11"),
+    ("Find", "Ctrl+Shift+F"),
+    ("ConnectBar", "Ctrl+Shift+R"),
+];
+
+/// The default chord of a built-in function.
+pub fn builtin_default(id: &str) -> Option<Chord> {
+    BUILTIN
+        .iter()
+        .find(|(n, _)| *n == id)
+        .and_then(|(_, c)| c.parse().ok())
+}
+
+/// The numpad's twins of the zoom keys act as the main block's.
+pub fn normalize(code: &str) -> &str {
+    match code {
+        "NumpadAdd" => "Equal",
+        "NumpadSubtract" => "Minus",
+        "Numpad0" => "Digit0",
+        c => c,
+    }
+}
+
+/// Alt+1…9 select tab N: no remapping, no binding.
+fn is_tab_key(c: &Chord) -> bool {
+    c.alt
+        && !c.ctrl
+        && !c.shift
+        && c.code
+            .strip_prefix("Digit")
+            .is_some_and(|d| d.len() == 1 && d != "0")
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Keymap {
+    /// Built-in functions given another chord (function name → chord).
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub builtin: BTreeMap<String, Chord>,
     #[serde(rename = "key")]
     pub keys: Vec<Binding>,
 }
@@ -162,11 +216,62 @@ pub enum Refused {
     Taken,
     /// Nothing to do: no text / function / program / script.
     Empty,
+    /// A built-in key has it (or Alt+1…9).
+    Builtin,
 }
 
 impl Keymap {
     pub fn default_path() -> PathBuf {
         crate::buttonbar::default_path().with_file_name("keymap.toml")
+    }
+
+    /// The chord a built-in function answers to now.
+    pub fn chord_of(&self, id: &str) -> Option<Chord> {
+        self.builtin
+            .get(id)
+            .cloned()
+            .or_else(|| builtin_default(id))
+    }
+
+    /// Every built-in function with its chord now.
+    pub fn builtin_chords(&self) -> Vec<(&'static str, Chord)> {
+        BUILTIN
+            .iter()
+            .filter_map(|(id, _)| self.chord_of(id).map(|c| (*id, c)))
+            .collect()
+    }
+
+    /// Does a built-in key (but `except`) or Alt+1…9 have this chord?
+    pub fn builtin_has(&self, c: &Chord, except: Option<&str>) -> bool {
+        is_tab_key(c)
+            || self
+                .builtin_chords()
+                .iter()
+                .any(|(id, b)| Some(*id) != except && b == c)
+    }
+
+    /// Gives a built-in function another chord. Like a user's key it may not take the terminal's
+    /// (but Ctrl+Shift+letter is the terminal emulators' own convention, and the function's
+    /// default is always fine), nor a key anything else has.
+    pub fn set_builtin(&mut self, id: &str, c: Chord) -> Result<(), Refused> {
+        let default = builtin_default(id).ok_or(Refused::Empty)?;
+        match c.check() {
+            Err(Reason::Terminal) if (c.ctrl && c.shift) || c == default => {}
+            Err(why) => return Err(Refused::Chord(why)),
+            Ok(()) => {}
+        }
+        if self.builtin_has(&c, Some(id)) || self.find(&c).is_some() {
+            return Err(Refused::Taken);
+        }
+        match c == default {
+            true => self.builtin.remove(id),
+            false => self.builtin.insert(id.to_string(), c),
+        };
+        Ok(())
+    }
+
+    pub fn reset_builtin(&mut self, id: &str) {
+        self.builtin.remove(id);
     }
 
     pub fn find(&self, c: &Chord) -> Option<usize> {
@@ -176,6 +281,9 @@ impl Keymap {
     /// `b` in place of binding `at`, or added (`None`).
     pub fn put(&mut self, at: Option<usize>, b: Binding) -> Result<usize, Refused> {
         b.keys.check().map_err(Refused::Chord)?;
+        if self.builtin_has(&b.keys, None) {
+            return Err(Refused::Builtin);
+        }
         // A lone space is a fine string to send (paging through «--More--»), nothing else.
         let lone_space = b.button.kind == crate::buttonbar::Kind::Send && b.button.arg == " ";
         if b.button.arg.trim().is_empty() && !lone_space {
@@ -303,16 +411,16 @@ mod tests {
     #[test]
     fn put_checks_and_replaces() {
         let mut m = Keymap::default();
-        assert_eq!(m.put(None, bind("Alt+1", "a")), Ok(0));
-        assert_eq!(m.put(None, bind("Alt+1", "b")), Err(Refused::Taken));
-        assert_eq!(m.put(None, bind("Alt+2", "")), Err(Refused::Empty));
+        assert_eq!(m.put(None, bind("Alt+F1", "a")), Ok(0));
+        assert_eq!(m.put(None, bind("Alt+F1", "b")), Err(Refused::Taken));
+        assert_eq!(m.put(None, bind("Alt+F2", "")), Err(Refused::Empty));
         assert_eq!(
             m.put(None, bind("Ctrl+C", "x")),
             Err(Refused::Chord(Reason::Terminal))
         );
-        assert_eq!(m.put(Some(0), bind("Alt+1", "c")), Ok(0)); // itself is not a clash
-        assert_eq!(m.put(None, bind("Alt+3", " ")), Ok(1)); // a lone space is a string
-        let mut script = bind("Alt+4", " ");
+        assert_eq!(m.put(Some(0), bind("Alt+F1", "c")), Ok(0)); // itself is not a clash
+        assert_eq!(m.put(None, bind("Alt+F3", " ")), Ok(1)); // a lone space is a string
+        let mut script = bind("Alt+F4", " ");
         script.button.kind = Kind::Script;
         assert_eq!(m.put(None, script), Err(Refused::Empty));
         assert_eq!(m.keys[0].button.arg, "c");
@@ -352,5 +460,87 @@ mod tests {
         );
         std::fs::write(&p, "[[key]]\nkeys = \"Hyper+Q\"\n").unwrap();
         assert!(Keymap::load(&p).is_err());
+    }
+
+    #[test]
+    fn builtin_defaults_are_sane() {
+        let mut seen = std::collections::HashSet::new();
+        for (id, c) in BUILTIN {
+            let chord = chord(c);
+            assert!(seen.insert(chord.clone()), "{id} repeats {c}");
+            assert!(!chord.code.is_empty() && !is_tab_key(&chord), "{id}");
+            assert_eq!(builtin_default(id), Some(chord));
+        }
+        assert_eq!(
+            Keymap::default().chord_of("Find"),
+            Some(chord("Ctrl+Shift+F"))
+        );
+        assert_eq!(normalize("NumpadAdd"), "Equal");
+    }
+
+    #[test]
+    fn a_builtin_key_can_be_moved_and_reset() {
+        let mut m = Keymap::default();
+        assert_eq!(m.set_builtin("ConnectBar", chord("Alt+R")), Ok(()));
+        assert_eq!(m.chord_of("ConnectBar"), Some(chord("Alt+R")));
+        // the old chord is free now, the new one taken
+        assert!(!m.builtin_has(&chord("Ctrl+Shift+R"), None));
+        assert!(m.builtin_has(&chord("Alt+R"), None));
+        assert_eq!(m.put(None, bind("Alt+R", "x")), Err(Refused::Builtin));
+        assert_eq!(
+            m.put(None, bind("Ctrl+Shift+R", "x")),
+            Err(Refused::Chord(Reason::Terminal))
+        );
+        // its default back = no override stored
+        assert_eq!(m.set_builtin("ConnectBar", chord("Ctrl+Shift+R")), Ok(()));
+        assert!(m.builtin.is_empty());
+        m.set_builtin("Find", chord("F9")).unwrap();
+        m.reset_builtin("Find");
+        assert_eq!(m.chord_of("Find"), Some(chord("Ctrl+Shift+F")));
+    }
+
+    #[test]
+    fn a_builtin_key_refuses_what_a_user_key_refuses() {
+        let mut m = Keymap::default();
+        for (c, why) in [
+            ("Ctrl+C", Refused::Chord(Reason::Terminal)),
+            ("Q", Refused::Chord(Reason::Terminal)),
+            ("F5", Refused::Chord(Reason::Ui)),
+            ("Ctrl+Insert", Refused::Chord(Reason::Reserved)),
+            ("Alt+Q", Refused::Taken),
+            ("Alt+3", Refused::Taken),
+        ] {
+            assert_eq!(m.set_builtin("Find", chord(c)), Err(why), "{c}");
+        }
+        m.put(None, bind("F9", "x")).unwrap();
+        assert_eq!(m.set_builtin("Find", chord("F9")), Err(Refused::Taken));
+        assert_eq!(m.set_builtin("Nope", chord("F10")), Err(Refused::Empty));
+        // Ctrl+Shift+letter is allowed for a built-in
+        assert_eq!(m.set_builtin("Find", chord("Ctrl+Shift+G")), Ok(()));
+    }
+
+    #[test]
+    fn regression_a_user_key_cannot_take_a_builtin_chord() {
+        let mut m = Keymap::default();
+        assert_eq!(m.put(None, bind("Alt+Q", "x")), Err(Refused::Builtin));
+        assert_eq!(m.put(None, bind("Alt+1", "x")), Err(Refused::Builtin));
+        assert_eq!(m.put(None, bind("F11", "x")), Err(Refused::Builtin));
+    }
+
+    #[test]
+    fn builtin_overrides_are_stored_and_old_files_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("keymap.toml");
+        let mut m = Keymap::default();
+        m.set_builtin("ConnectBar", chord("Alt+R")).unwrap();
+        m.save(&p).unwrap();
+        let text = std::fs::read_to_string(&p).unwrap();
+        assert!(
+            text.contains("[builtin]") && text.contains("ConnectBar = \"Alt+R\""),
+            "{text}"
+        );
+        assert_eq!(Keymap::load(&p).unwrap(), m);
+        std::fs::write(&p, "[[key]]\nkeys = \"F9\"\nkind = \"send\"\narg = \"x\"\n").unwrap();
+        assert!(Keymap::load(&p).unwrap().builtin.is_empty());
     }
 }
