@@ -375,61 +375,61 @@
 - [ ] Закрыть остальные при нескольких группах: остаётся только выбранная вкладка, пустые группы исчезают
 - [ ] Options → Global Options: «При запуске открывать сессии, бывшие в прошлый раз» (включено по умолчанию): перезапуск открывает сохранённые сессии, бывшие во вкладках (Quick Connect и SFTP-вкладки — нет); выключено — пустое окно
 - [ ] Закрыть все → выход → запуск: сессий нет (запоминается последнее состояние)
-- [ ] v0.45.1: opening a note puts it in the right-hand group (a new group at the right if there is only one); notes restored at start go there too
-- [ ] v0.46.0: Update (a newer release, e.g. via SHAGSHELL_UPDATE_URL=file://… and a real tag) downloads the .deb, says the checksum matches, asks for the password and installs
-- [ ] v0.46.0: a tampered package (hash differs) is refused with the mismatch shown and nothing is installed
-- [ ] v0.46.1: a script that does `crt.Screen.WaitForString("$")` on a tab with no such prompt returns False after about 60 s (it no longer hangs); with a timeout of -1 it waits until Cancel
-- [ ] v0.47.0: a session with a pre-script: Reconnect and Clone (tab menu, key, Enter on a dead tab) run the script first; when it fails nothing reconnects or opens; Open SFTP and auto-reconnect do not run it
-- [ ] v0.48.0: tabs show icons — ssh: screen with padlock, local: house, SFTP: folder; amber while ssh connects, green when connected, red after exit
-- [ ] v0.48.0: output in a tab that is not in front turns its icon blue; bringing it to front turns it green again
-- [ ] v0.48.0: ssh session tabs are titled by the session name (not user@host:~); a local shell shows its program's title while it runs
-- [ ] v0.49.0: Session Manager icons by protocol: ssh screen with padlock, telnet screen, serial connector, local house; readable in light and dark themes
-- [ ] v0.50.0: every menu shows icons beside its items (checkboxes keep the check mark), text lines up; Script → Cancel is grey with no script running
-- [ ] v0.51.0: SFTP rows show folder / file icons (`..` an up arrow); in a narrow group the rights, then the date go, names stay readable; the F-key buttons wrap onto a second row
-- [ ] v0.52.0: status bar: «Ln N, Col M» follows the cursor, ⏱ counts up each second while connected and stops when it ends, «● REC file.log» while logging
-- [ ] v0.53.0: Ctrl+= / Ctrl+− change the active terminal's font, Ctrl+0 brings it back; F11 and View → Full Screen toggle full screen; Global Options → Cursor block / underline / bar applies to open tabs at once
-- [ ] v0.54.0: Button Bar → Edit button → Colour: the dot shows before the label, «(none)» removes it, it survives a restart
-- [ ] v0.55.0: Double-click on a tab = Clone opens a copy, = Close closes it (asks if live), = Nothing does nothing
-- [ ] v0.56.0: run `sleep 2; echo done` in a tab and switch away: its icon turns blue, then teal 5 s after the output stopped; bringing it to front makes it green
-- [ ] v0.57.0: Session Options → Appearance → Tab label `%S → %H:%P` shows e.g. «server1 → 10.0.0.5:22» on the tab; a label without % stays as typed
-- [ ] v0.58.0: Connect Bar: `rout` + Enter opens the only session containing it; `admin@10.0.0.1:2222` connects without saving; nonsense says why under the tree
-- [ ] v0.58.0 regression: with a terminal focused, click the Session Manager filter (or Command Manager filter, or the Connect Bar) and type — the letters appear only in the field, not in the terminal
-- [ ] v0.59.0: right-click a session → Duplicate: «name (2)» appears selected next to it with the same settings, asks for its own password; a folder's Duplicate is grey
-- [ ] v0.60.0: the window title reads «<tab> — ShagShell Secure» and follows the tab in front
-- [ ] v0.60.0: Command Window → All tabs: every terminal tab reads «* name»; Visible: only the front ones; back to Current: the marks go
-- [ ] v0.60.0: Global Options → Hide the tab bar while there is one tab: one tab, no bar; a second tab brings it back
-- [ ] v0.62.0: typing in the Connect Bar shows up to 8 matching sessions under it (those starting with the text first); a click opens it; a click elsewhere closes the list
-- [ ] v0.63.0: Global Options → Ctrl+Tab goes back…: with 4 tabs, pick the 1st, Ctrl+Tab returns to the one before, again to the 1st; off: Ctrl+Tab steps to the next tab
-- [ ] v0.64.0: Global Options → Blinking cursor: the active terminal's cursor blinks (block, underline, bar); turned off, it stays shown; other tabs never keep a hidden cursor
-- [ ] v0.64.1 regression: two groups; click tab A, then drag tab B (not A) onto the other group's bar or body — B moves, A stays; drag another tab right after — it moves too (not «nothing»)
-- [ ] v0.65.0: Ctrl+Shift+F (or Edit → Find…) opens the find bar; typing finds the first match, Enter / ↓ the next, ↑ the previous, Esc closes it and gives the terminal its keys back
-- [ ] v0.65.0: Session Options → Appearance → Icon: the pick shows in the tree and on the tab (in the state's colour); «By protocol» goes back
-- [ ] v0.65.0: Connect Bar: ↓ / ↑ walk the list (the row is filled), Enter opens it, Esc closes the list
-- [ ] v0.65.0: Button Bar → Edit button → Colour list shows a dot per colour; a long label stays on one line, cut on the right
-- [ ] v0.66.0: right click on the toolbar opens its editor; Add / gap / Delete / ↑ ↓ change the bar after OK (Cancel: nothing); Pick… shows the theme's icons, the filter narrows them; a program button (e.g. `xterm` with `-e ssh %H`) starts it for the active session; Default brings the usual bar back
-- [ ] v0.67.0: the window opens maximized; Global Options → Open the window maximized off: the usual size
-- [ ] v0.67.0 regression: open two sessions, a local shell and a note, quit, start again: all four come back in the same order (option on); off: nothing comes back
-- [ ] v0.67.0: the Session / Command Manager reach down to the Button Bar; the status bar and Command Window are under the tabs; About shows two buttons (latest release, report a problem)
-- [ ] v0.68.0: Button Bar → Edit button → Hint: after OK the text shows when the pointer rests on the button (headless cannot show tooltips); empty: no hint
-- [ ] v0.68.0: Session Options → Appearance → Icon lists 36 icons; each draws in the tree and on the tab
-- [ ] v0.69.0: tabs fit their names (a long one is cut at 240 px); many tabs: the bar scrolls with arrows
-- [ ] v0.70.0: the «<» in a manager's header folds its side into a strip (a button per pane, a tooltip with its name); a click unfolds it; it stays so after a restart
-- [ ] v0.70.1 regression: Help → About opens a small dialog in the middle (also in a narrow window), Close closes it; donate / update / release / issues buttons work
-- [ ] v0.70.2: Help → About → Check for Updates: «you have the latest version» (or the error) appears in the dialog under the button; a newer release closes About and opens the update window
-- [ ] v0.70.3 regression: Scheduler: select a disabled job — its name in the list is readable
-- [ ] v0.70.4 regression: Button Bar: the text (and the colour dot) of every button sits in the vertical middle
-- [ ] v0.70.5: Options → Key Map → add a key with action «Run script»: Browse… opens the file chooser and fills the field
-- [ ] v0.71.0: Keymap Editor: every key in the list starts with its action's icon (envelope = send string, menu = function, program, gear = script); the «Action» dropdown of a key and of a Button Bar button shows the same icons
-- [ ] v0.72.0: Global Options → «Вкладки»: Вверху / Внизу moves the tabs; a fresh config has them at the top
-- [x] v0.72.0: F11: full screen without the menu bar; F11 again: window and menu back
-- [ ] v0.73.0: toolbar editor: «Connect Bar» is in the list; Up / Down moves the field on the bar, Delete removes it
-- [x] v0.73.0: Ctrl+Shift+R (or File → Connect Bar) in a terminal: the cursor is in the Connect Bar, letters go there
-- [ ] v0.74.0: View → Connect Bar: unticked hides the field (kept after a restart), ticked shows it; Ctrl+Shift+R with it hidden shows it with the cursor in it
-- [ ] v0.75.0: Keymap Editor → «Built-in keys»: select one, Edit…, press a key: it works at once, the menu shows it, a «✎» marks it, «Default key» restores; a taken key (Alt+Q…) is refused with a message
-- [ ] v0.75.0: after a restart the changed built-in keys are still in force
-- [ ] v0.76.0: View → Notes: the note opens in COSMIC Edit's editor (line numbers, Markdown colours); typing is saved a second later; Ctrl+C / X / V / A / Z / Shift+Z work; switching the system light / dark changes the colours
-- [ ] v0.76.0: a .py / .sh / .conf note gets its own highlighting
-- [ ] v0.77.0: right click on a note tab: Save, Save As…, Word Wrap, Line Numbers (ticks follow), Rename, Lock Session…
-- [x] v0.77.0: Lock Session… on a terminal tab (ssh too): typing, paste, Command Window and Button Bar sends do nothing, the icon shows the lock; Unlock with a wrong password says so, with the right one frees it
-- [ ] v0.78.0: a note's «⋯» lists the buttons; ticking one shows it on the bar at once (every note), kept after a restart; Cut / Copy / Paste go through the system clipboard; in a locked note the editing ones are greyed
-- [x] v0.79.0: Lock Session… with empty fields locks; Unlock Session frees it without a dialog
+- [ ] v0.45.1: заметка открывается в правой группе (если группа одна — справа создаётся новая); заметки, восстановленные при запуске, тоже попадают туда
+- [ ] v0.46.0: «Обновить» (есть новый выпуск, например через SHAGSHELL_UPDATE_URL=file://… и настоящий тег) скачивает .deb, сообщает, что контрольная сумма совпала, спрашивает пароль и устанавливает
+- [ ] v0.46.0: подменённый пакет (хеш не совпадает) отвергается, несовпадение показано, ничего не установлено
+- [ ] v0.46.1: скрипт с `crt.Screen.WaitForString("$")` на вкладке без такого приглашения возвращает False примерно через 60 с (больше не виснет); с таймаутом -1 ждёт до «Отмены»
+- [ ] v0.47.0: сессия с pre-скриптом: Reconnect и Clone (меню вкладки, клавиша, Enter на завершённой вкладке) сначала запускают скрипт; если он упал — ничего не переподключается и не открывается; Open SFTP и автопереподключение его не запускают
+- [ ] v0.48.0: у вкладок значки — ssh: экран с замком, локальная: домик, SFTP: папка; жёлтый, пока ssh подключается, зелёный при подключении, красный после выхода
+- [ ] v0.48.0: вывод во вкладке на заднем плане делает её значок синим; если вывести её вперёд — снова зелёный
+- [ ] v0.48.0: вкладки ssh-сессий подписаны именем сессии (не user@host:~); локальная оболочка показывает заголовок запущенной программы
+- [ ] v0.49.0: значки в Session Manager по протоколу: ssh — экран с замком, telnet — экран, serial — разъём, локальная — домик; видны в светлой и тёмной темах
+- [ ] v0.50.0: в каждом меню рядом с пунктами значки (у флажков остаётся галочка), текст выровнен; Script → Cancel серый, когда скрипт не идёт
+- [ ] v0.51.0: в строках SFTP значки папок / файлов (`..` — стрелка вверх); в узкой группе пропадают сначала права, потом дата, имена читаются; кнопки F-клавиш переносятся на второй ряд
+- [ ] v0.52.0: строка состояния: «Стр N, Кол M» следует за курсором, ⏱ отсчитывает секунды, пока есть соединение, и останавливается при выходе, «● REC файл.log» во время записи лога
+- [ ] v0.53.0: Ctrl+= / Ctrl+− меняют шрифт активного терминала, Ctrl+0 возвращает; F11 и Вид → Во весь экран переключают полноэкранный режим; Global Options → курсор блок / подчёркивание / черта сразу применяется к открытым вкладкам
+- [ ] v0.54.0: Button Bar → Изменить кнопку → Цвет: точка перед подписью, «(нет)» убирает её, сохраняется после перезапуска
+- [ ] v0.55.0: двойной клик по вкладке = Клонировать открывает копию, = Закрыть закрывает (спрашивает, если соединение живо), = Ничего ничего не делает
+- [ ] v0.56.0: запустить во вкладке `sleep 2; echo done` и переключиться: значок синеет, а через 5 с после конца вывода становится бирюзовым; вывести вкладку вперёд — зелёный
+- [ ] v0.57.0: Параметры сессии → Внешний вид → Метка вкладки `%S → %H:%P` показывает на вкладке, например, «server1 → 10.0.0.5:22»; метка без % остаётся как написана
+- [ ] v0.58.0: Connect Bar: `rout` + Enter открывает единственную сессию, где это есть; `admin@10.0.0.1:2222` подключается без сохранения; на чепуху под деревом пишется причина
+- [ ] v0.58.0 регрессия: при фокусе в терминале щёлкнуть фильтр Session Manager (или Command Manager, или Connect Bar) и печатать — буквы появляются только в поле, не в терминале
+- [ ] v0.59.0: правый клик по сессии → Дублировать: рядом появляется выделенная «имя (2)» с теми же настройками, пароль спрашивает свой; у папки «Дублировать» серый
+- [ ] v0.60.0: заголовок окна — «<вкладка> — ShagShell Secure», меняется вместе с передней вкладкой
+- [ ] v0.60.0: Command Window → Все вкладки: у каждой терминальной вкладки «* имя»; Видимые: только у передних; обратно на Текущую — пометки исчезают
+- [ ] v0.60.0: Global Options → «Скрывать панель вкладок, когда вкладка одна»: одна вкладка — панели нет; вторая вкладка возвращает её
+- [ ] v0.62.0: при вводе в Connect Bar под ним до 8 подходящих сессий (сначала начинающиеся с текста); клик открывает; клик в другом месте закрывает список
+- [ ] v0.63.0: Global Options → «Ctrl+Tab возвращает…»: при 4 вкладках выбрать 1-ю, Ctrl+Tab возвращает на предыдущую, ещё раз — на 1-ю; выключено: Ctrl+Tab идёт на следующую
+- [ ] v0.64.0: Global Options → «Мигающий курсор»: курсор активного терминала мигает (блок, подчёркивание, черта); выключено — горит постоянно; на других вкладках курсор не остаётся скрытым
+- [ ] v0.64.1 регрессия: две группы; щёлкнуть вкладку A, потом перетащить вкладку B (не A) на панель или тело другой группы — переходит B, A остаётся; сразу перетащить ещё одну — она тоже переходит (а не «ничего»)
+- [ ] v0.65.0: Ctrl+Shift+F (или Правка → Найти…) открывает строку поиска; ввод находит первое совпадение, Enter / ↓ — следующее, ↑ — предыдущее, Esc закрывает и возвращает клавиши терминалу
+- [ ] v0.65.0: Параметры сессии → Внешний вид → Значок: выбранный виден в дереве и на вкладке (в цвете состояния); «По протоколу» возвращает обычный
+- [ ] v0.65.0: Connect Bar: ↓ / ↑ ходят по списку (строка подсвечена), Enter открывает, Esc закрывает список
+- [ ] v0.65.0: Button Bar → Изменить кнопку → в списке цветов у каждого точка; длинная подпись остаётся в одну строку, обрезается справа
+- [ ] v0.66.0: правый клик по тулбару открывает его редактор; Добавить / промежуток / Удалить / ↑ ↓ меняют тулбар после OK (Отмена — ничего); «Выбрать…» показывает значки темы, фильтр сужает список; кнопка-программа (например, `xterm` с `-e ssh %H`) запускается для активной сессии; «По умолчанию» возвращает обычный тулбар
+- [ ] v0.67.0: окно открывается развёрнутым; Global Options → «Открывать окно развёрнутым» выключено — обычный размер
+- [ ] v0.67.0 регрессия: открыть две сессии, локальную оболочку и заметку, выйти, запустить снова — все четыре вернулись в том же порядке (настройка включена); выключена — ничего не возвращается
+- [ ] v0.67.0: Session / Command Manager доходят вниз до Button Bar; строка состояния и Command Window под вкладками; в «О программе» две кнопки (последний выпуск, сообщить о проблеме)
+- [ ] v0.68.0: Button Bar → Изменить кнопку → Подсказка: после OK текст виден, когда указатель на кнопке (headless подсказки не показывает); пусто — подсказки нет
+- [ ] v0.68.0: Параметры сессии → Внешний вид → Значок: в списке 36 значков, каждый рисуется в дереве и на вкладке
+- [ ] v0.69.0: ширина вкладок по имени (длинное обрезается на 240 px); много вкладок — панель прокручивается стрелками
+- [ ] v0.70.0: «<» в заголовке менеджера сворачивает его сторону в полоску (по кнопке на панель, подсказка с именем); клик разворачивает; остаётся так после перезапуска
+- [ ] v0.70.1 регрессия: Справка → О программе открывает небольшой диалог посередине (и в узком окне), «Закрыть» закрывает; кнопки поддержки / обновления / выпуска / сообщения о проблеме работают
+- [ ] v0.70.2: Справка → О программе → «Проверить обновления»: «у вас последняя версия» (или ошибка) появляется в диалоге под кнопкой; при новом выпуске «О программе» закрывается и открывается окно обновления
+- [ ] v0.70.3 регрессия: Планировщик: выбрать выключенное задание — его имя в списке читается
+- [ ] v0.70.4 регрессия: Button Bar: текст (и цветная точка) каждой кнопки стоит по вертикали посередине
+- [ ] v0.70.5: Options → Key Map → добавить клавишу с действием «Запустить скрипт»: «Обзор…» открывает выбор файла и заполняет поле
+- [ ] v0.71.0: Редактор клавиш: каждая клавиша в списке начинается со значка действия (конверт — отправить строку, меню — функция, программа, шестерёнка — скрипт); в списке «Действие» у клавиши и у кнопки Button Bar те же значки
+- [ ] v0.72.0: Global Options → «Вкладки»: Вверху / Внизу переносит вкладки; в новом конфиге они вверху
+- [x] v0.72.0: F11: полный экран без главного меню; F11 ещё раз — окно и меню вернулись
+- [ ] v0.73.0: редактор тулбара: в списке есть «Connect Bar»; Вверх / Вниз двигают поле на тулбаре, Удалить убирает
+- [x] v0.73.0: Ctrl+Shift+R (или Файл → Connect Bar) в терминале: курсор в Connect Bar, буквы идут туда
+- [ ] v0.74.0: Вид → Connect Bar: галочка снята — поле скрыто (и после перезапуска), стоит — видно; Ctrl+Shift+R при скрытом поле показывает его с курсором внутри
+- [ ] v0.75.0: Редактор клавиш → «Встроенные клавиши»: выбрать, «Изменить…», нажать клавишу — работает сразу, меню её показывает, отмечена «✎», «Клавиша по умолчанию» возвращает; занятая клавиша (Alt+Q…) отвергается с сообщением
+- [ ] v0.75.0: после перезапуска изменённые встроенные клавиши действуют
+- [ ] v0.76.0: Вид → Заметки: заметка открывается в редакторе COSMIC Edit (номера строк, цвета Markdown); набранное сохраняется через секунду; Ctrl+C / X / V / A / Z / Shift+Z работают; смена светлой / тёмной темы системы меняет цвета
+- [ ] v0.76.0: заметка .py / .sh / .conf получает свою подсветку
+- [ ] v0.77.0: правый клик по вкладке заметки: Сохранить, Сохранить как…, Перенос строк, Номера строк (галочки следуют), Переименовать, Заблокировать сессию…
+- [x] v0.77.0: «Заблокировать сессию…» на терминальной вкладке (и ssh): ввод, вставка, Command Window и кнопки Button Bar ничего не отправляют, на значке замок; разблокировка с неверным паролем — сообщение, с верным — освобождает
+- [ ] v0.78.0: «⋯» заметки показывает список кнопок; отмеченная сразу появляется на панели (у всех заметок), сохраняется после перезапуска; Вырезать / Копировать / Вставить работают через системный буфер; в заблокированной заметке кнопки правки серые
+- [x] v0.79.0: «Заблокировать сессию…» с пустыми полями блокирует; «Разблокировать» освобождает без диалога
