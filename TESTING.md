@@ -291,17 +291,15 @@
 ## Стороны боковых панелей
 - [ ] Options → Global Options → Interface: «Сторона Session Manager» и «Сторона Command Manager» (слева / справа) применяются сразу
 - [ ] Поменять местами; обе с одной стороны — друг под другом, кнопка «Выше / Ниже» в заголовке меняет их порядок
-- [ ] Шеврон в заголовке сворачивает панель до строки заголовка; соседняя забирает высоту; состояние помнится после перезапуска
 - [ ] Разделитель Session Manager справа тянется влево (панель шире), слева — вправо
 - [ ] Настройка сохраняется между запусками; View скрывает / показывает панель на любой стороне
 
 ## Button Bar: управление панелями правым кликом
 - [ ] В строке Button Bar только список панелей, кнопки и «+»; кнопок «New / Rename / Delete bar» нет
 - [ ] Правый клик по пустому месту: Новая / Переименовать / Удалить панель, Добавить кнопку; без панели «Переименовать» и «Удалить» недоступны
-- [ ] Правый клик по кнопке: Изменить / Удалить / Влево / Вправо, как раньше
 
 ## Консоль скрипта
-- [ ] Script → Console открывает окно; print() и ошибки скрипта видны, ошибка красным и без служебных кадров runpy / crt
+- [ ] Script → Console: print() и ошибки скрипта видны, ошибка красным и без служебных кадров runpy / crt
 - [ ] Консоль открывается сама при первом выводе запуска (Global Options → «Открывать консоль…» выключает); закрытая вручную не всплывает до следующего запуска
 - [ ] Стоп останавливает запуск (в том числе на диалоге), Очистить и Копировать работают
 - [ ] Переключатель отладки: строки `→ Screen.Send(...)  ← ...`; пароль из Prompt(bPassword) показан как `***`; помнится после перезапуска
@@ -334,17 +332,15 @@
 - [ ] Две задачи с одним именем в `schedule.toml` получают «(2)»; правка аргументов не сдвигает отсчёт интервала. Известно: диалог в запланированном скрипте ждёт ответа (задача стоит), «Script → Cancel» останавливает и их; смена часового пояса / перевод часов сбивает отсчёт на час
 
 ## Заметки (вкладка)
-- [ ] View → Заметки: вкладка ✎ с шпаргалкой (`~/.config/shagshell/notes/Notes.md`, в русском интерфейсе `Заметки.md`); `.md` открывается в просмотре, кнопка «Правка / Просмотр» переключает
+- [ ] View → Заметки: вкладка ✎ с шпаргалкой (`~/.config/shagshell/notes/Notes.md`, в русском интерфейсе `Заметки.md`); открывается в редакторе
 - [ ] Правка текста сохраняется в файл через ~1 с и при закрытии вкладки / выходе; Переименовать меняет файл (расширение остаётся), занятое / плохое имя — сообщение
 - [ ] File → Открыть заметку… / «Открыть…» в вкладке: диалог файла (папка текущей заметки), второй файл — новая вкладка, тот же файл — показывается уже открытая; бинарный / не UTF-8 / >5 МБ — сообщение
 - [ ] Заметку можно перенести в окно вкладки и в другую группу; Reconnect / Clone для неё ничего не делают; закрытие ничего не спрашивает
 - [ ] Global Options → «Открывать заметки при запуске»: включено — открытые в прошлый раз заметки появляются при старте; выключено — нет
-- [ ] Ссылка в предпросмотре открывается в браузере (xdg-open)
 
 ## UI polish (после ручной проверки)
 
 - [ ] Вкладка SFTP: внизу ряд кнопок Tab / F4 / F5 / F6 / ⇧F6 / F7 / F8 / Alt+↵ / ^D / ^Y / ^H / ^R; клик по F5 копирует отмеченное, как клавиша
-- [ ] Строка состояния стоит выше Button Bar (командное окно над ней)
 - [ ] Global Options → Terminal: «Высота кнопок Button Bar» и «Высота заголовков вкладок» — списки (по умолчанию / 24…56 px), выбор применяется сразу
 - [ ] Script → Console: консоль — вкладка (▤) в правой группе; при одной группе открывается новая группа справа; выбранный терминал остаётся в фокусе; скрипт с `print` без открытой консоли открывает её сам; закрытая вкладка не открывается повторно в том же запуске
 - [ ] Button Bar: правый клик по кнопке открывает её меню (Изменить… / Удалить / Влево / Вправо), по пустому месту — меню панелей; «Изменить…» меняет подпись
@@ -356,7 +352,6 @@
 - [ ] Global Options: строки с полями ввода (папки, высоты) переносят поле под подпись, ничего не обрезано; переключатели Zmodem и др. не вылезают за край
 - [ ] Диалоги скриптов: у `Dialog.Prompt`, `Dialog.List` и `MessageBox` без значка есть значок
 
-- [ ] Заметка `.md` в просмотре: текст выделяется мышью (протяжка, двойной клик — слово), Ctrl+C копирует; кнопка «Копировать всё» кладёт весь текст; заголовки / код / ссылки цветные, ссылка показывает адрес в скобках
 - [ ] Планировщик: выключенное задание в списке бледнее включённого, выбранное — подсвечено
 
 ## crt.FileTransfer и Session.Lock (фаза 29b)
@@ -369,12 +364,9 @@
 - [ ] Консоль скрипта: Стоп / Очистить / Копировать — значки с подсказкой при наведении, переключатель отладки с подсказкой; в узкой вкладке ничего не вылезает
 - [ ] Менеджер сессий и Менеджер команд друг под другом на одной стороне: полоса между ними тянется вверх / вниз, доля запоминается (15–85 %)
 
-- [ ] Справка → О программе: внизу текст про поддержку и кнопки «Проверить обновления…» и «Поддержать проект» (вторая открывает Stripe в браузере)
 
 ### Кнопки-иконки с подсказками (v0.44.1)
 
-- [ ] Заметка: Переименовать / Открыть / Копировать / Правка (Просмотр) — иконки, при наведении подсказка
-- [ ] Заметка в просмотре: выделенный код и заголовки остаются читаемыми (выделение полупрозрачное)
 - [ ] Очередь SFTP: Отмена / Повторить / Очистить завершённые — иконки с подсказками
 - [ ] Планировщик: «Запустить сейчас» и «Новое» — иконки с подсказками
 ### Закрыть остальные / все, сессии с прошлого раза (v0.45.0)
@@ -383,7 +375,6 @@
 - [ ] Закрыть остальные при нескольких группах: остаётся только выбранная вкладка, пустые группы исчезают
 - [ ] Options → Global Options: «При запуске открывать сессии, бывшие в прошлый раз» (включено по умолчанию): перезапуск открывает сохранённые сессии, бывшие во вкладках (Quick Connect и SFTP-вкладки — нет); выключено — пустое окно
 - [ ] Закрыть все → выход → запуск: сессий нет (запоминается последнее состояние)
-- [ ] v0.45.1: a note shows one frame only (the tab's), in edit and view mode
 - [ ] v0.45.1: opening a note puts it in the right-hand group (a new group at the right if there is only one); notes restored at start go there too
 - [ ] v0.46.0: Update (a newer release, e.g. via SHAGSHELL_UPDATE_URL=file://… and a real tag) downloads the .deb, says the checksum matches, asks for the password and installs
 - [ ] v0.46.0: a tampered package (hash differs) is refused with the mismatch shown and nothing is installed
@@ -398,7 +389,7 @@
 - [ ] v0.52.0: status bar: «Ln N, Col M» follows the cursor, ⏱ counts up each second while connected and stops when it ends, «● REC file.log» while logging
 - [ ] v0.53.0: Ctrl+= / Ctrl+− change the active terminal's font, Ctrl+0 brings it back; F11 and View → Full Screen toggle full screen; Global Options → Cursor block / underline / bar applies to open tabs at once
 - [ ] v0.54.0: Button Bar → Edit button → Colour: the dot shows before the label, «(none)» removes it, it survives a restart
-- [ ] v0.55.0: Global Options → Tabs at the bottom moves every group's tab bar under its terminal; Double-click on a tab = Clone opens a copy, = Close closes it (asks if live), = Nothing does nothing
+- [ ] v0.55.0: Double-click on a tab = Clone opens a copy, = Close closes it (asks if live), = Nothing does nothing
 - [ ] v0.56.0: run `sleep 2; echo done` in a tab and switch away: its icon turns blue, then teal 5 s after the output stopped; bringing it to front makes it green
 - [ ] v0.57.0: Session Options → Appearance → Tab label `%S → %H:%P` shows e.g. «server1 → 10.0.0.5:22» on the tab; a label without % stays as typed
 - [ ] v0.58.0: Connect Bar: `rout` + Enter opens the only session containing it; `admin@10.0.0.1:2222` connects without saving; nonsense says why under the tree
@@ -407,7 +398,6 @@
 - [ ] v0.60.0: the window title reads «<tab> — ShagShell Secure» and follows the tab in front
 - [ ] v0.60.0: Command Window → All tabs: every terminal tab reads «* name»; Visible: only the front ones; back to Current: the marks go
 - [ ] v0.60.0: Global Options → Hide the tab bar while there is one tab: one tab, no bar; a second tab brings it back
-- [ ] v0.61.0: Global Options → Toolbar: turning a button on / off shows / hides it at once and after a restart; all off leaves only the Connect Bar
 - [ ] v0.62.0: typing in the Connect Bar shows up to 8 matching sessions under it (those starting with the text first); a click opens it; a click elsewhere closes the list
 - [ ] v0.63.0: Global Options → Ctrl+Tab goes back…: with 4 tabs, pick the 1st, Ctrl+Tab returns to the one before, again to the 1st; off: Ctrl+Tab steps to the next tab
 - [ ] v0.64.0: Global Options → Blinking cursor: the active terminal's cursor blinks (block, underline, bar); turned off, it stays shown; other tabs never keep a hidden cursor
@@ -431,16 +421,15 @@
 - [ ] v0.70.5: Options → Key Map → add a key with action «Run script»: Browse… opens the file chooser and fills the field
 - [ ] v0.71.0: Keymap Editor: every key in the list starts with its action's icon (envelope = send string, menu = function, program, gear = script); the «Action» dropdown of a key and of a Button Bar button shows the same icons
 - [ ] v0.72.0: Global Options → «Вкладки»: Вверху / Внизу moves the tabs; a fresh config has them at the top
-- [ ] v0.72.0: F11: full screen without the menu bar; F11 again: window and menu back
+- [x] v0.72.0: F11: full screen without the menu bar; F11 again: window and menu back
 - [ ] v0.73.0: toolbar editor: «Connect Bar» is in the list; Up / Down moves the field on the bar, Delete removes it
-- [ ] v0.73.0: Ctrl+Shift+R (or File → Connect Bar) in a terminal: the cursor is in the Connect Bar, letters go there
+- [x] v0.73.0: Ctrl+Shift+R (or File → Connect Bar) in a terminal: the cursor is in the Connect Bar, letters go there
 - [ ] v0.74.0: View → Connect Bar: unticked hides the field (kept after a restart), ticked shows it; Ctrl+Shift+R with it hidden shows it with the cursor in it
-- [ ] v0.74.1 regression: a .md note: the View / Edit button (right of Save) shows an icon in both modes
 - [ ] v0.75.0: Keymap Editor → «Built-in keys»: select one, Edit…, press a key: it works at once, the menu shows it, a «✎» marks it, «Default key» restores; a taken key (Alt+Q…) is refused with a message
 - [ ] v0.75.0: after a restart the changed built-in keys are still in force
 - [ ] v0.76.0: View → Notes: the note opens in COSMIC Edit's editor (line numbers, Markdown colours); typing is saved a second later; Ctrl+C / X / V / A / Z / Shift+Z work; switching the system light / dark changes the colours
 - [ ] v0.76.0: a .py / .sh / .conf note gets its own highlighting
 - [ ] v0.77.0: right click on a note tab: Save, Save As…, Word Wrap, Line Numbers (ticks follow), Rename, Lock Session…
-- [ ] v0.77.0: Lock Session… on a terminal tab (ssh too): typing, paste, Command Window and Button Bar sends do nothing, the icon shows the lock; Unlock with a wrong password says so, with the right one frees it
+- [x] v0.77.0: Lock Session… on a terminal tab (ssh too): typing, paste, Command Window and Button Bar sends do nothing, the icon shows the lock; Unlock with a wrong password says so, with the right one frees it
 - [ ] v0.78.0: a note's «⋯» lists the buttons; ticking one shows it on the bar at once (every note), kept after a restart; Cut / Copy / Paste go through the system clipboard; in a locked note the editing ones are greyed
-- [ ] v0.79.0: Lock Session… with empty fields locks; Unlock Session frees it without a dialog
+- [x] v0.79.0: Lock Session… with empty fields locks; Unlock Session frees it without a dialog
