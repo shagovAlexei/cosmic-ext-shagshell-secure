@@ -428,3 +428,4 @@
 - [ ] v0.70.2: Help → About → Check for Updates: «you have the latest version» (or the error) appears in the dialog under the button; a newer release closes About and opens the update window
 - [ ] v0.70.3 regression: Scheduler: select a disabled job — its name in the list is readable
 - [ ] v0.70.4 regression: Button Bar: the text (and the colour dot) of every button sits in the vertical middle
+- [ ] v0.70.5: Options → Key Map → add a key with action «Run script»: Browse… opens the file chooser and fills the field
