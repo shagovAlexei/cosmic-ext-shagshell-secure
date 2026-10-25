@@ -194,6 +194,8 @@ pub struct Config {
     pub zmodem_auto: bool,
     /// Terminal font family ("" = the system's monospace).
     pub font_family: String,
+    /// The toolbar's buttons (`toolbar::TOOLS` names); empty: `toolbar::DEFAULT`.
+    pub toolbar: Vec<String>,
     /// The tab bar under the tabs' content (SecureCRT's «tabs at the bottom»).
     pub tabs_bottom: bool,
     /// No tab bar while there is one tab (in one group).
@@ -322,6 +324,7 @@ impl Default for Config {
             font_family: String::new(),
             cursor_shape: 0,
             tabs_bottom: false,
+            toolbar: Vec::new(),
             tabs_hide_single: false,
             tab_double_click: 0,
             font_size: 14,

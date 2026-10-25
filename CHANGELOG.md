@@ -2,6 +2,10 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.61.0 — 2026-10-25
+
+- feat: Global Options → Toolbar: pick the toolbar's buttons (Session Manager, Local Shell, Copy, Paste, Command Window, Run Script, Keymap, Create Key, Notes, Global Options besides the usual ones)
+
 ## 0.60.0 — 2026-10-25
 
 - feat: the window title names the tab in front; tabs the Command Window sends to (All / Visible) are marked `*`; Global Options → hide the tab bar while there is one tab

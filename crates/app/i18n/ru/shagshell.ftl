@@ -631,3 +631,4 @@ connect-bar-hint = Сессия или user@host:port
 connect-bar-none = Нет такой сессии, и это не адрес: введите имя сессии или user@host:port
 sm-duplicate = Дублировать
 options-tabs-hide-single = Скрывать вкладки, когда открыта одна
+options-toolbar = Панель инструментов
