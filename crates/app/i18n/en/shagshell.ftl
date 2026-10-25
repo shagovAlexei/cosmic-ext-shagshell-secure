@@ -425,9 +425,11 @@ ku-tab = Upload key — { $name }
 ku-bad-host = The session's host name starts with “-”: not uploaded
 
 ## Keymap
+km-builtin-title = Built-in keys (✎ = changed)
+km-reset = Default key
 km-title = Keymap Editor
 km-edit-title = Key
-km-hint = Your own keys: each runs what a Button Bar button runs. Built-in keys and the terminal's (Ctrl+C…) cannot be taken.
+km-hint = Your own keys: each runs what a Button Bar button runs. Built-in keys (below) can be given another key; the terminal's (Ctrl+C…) cannot be taken.
 km-empty = No keys yet
 km-add = Add…
 km-edit = Edit…
@@ -439,7 +441,7 @@ km-no-key = Record a key first
 km-modifier = A modifier alone is not a key
 km-reserved = Ctrl+Insert and Shift+Insert belong to the system
 km-terminal = Keys the terminal needs (letters and digits alone or with Ctrl / Shift, Ctrl+C…) cannot be taken: use Alt, Ctrl+Alt, an F key
-km-builtin = The program uses this key itself
+km-builtin = The program uses this key itself (see Built-in keys)
 km-taken-own = Another binding has this key
 km-broken = keymap.toml could not be read: the keys are not saved so that it is not overwritten
 km-ui = F2–F8 on their own are used by the file manager and the session tree: add Shift / Ctrl / Alt, or take another key
@@ -627,7 +629,7 @@ options-tabs-top = Top
 options-tabs-bottom = Bottom
 options-tab-double = Double-click on a tab
 options-tab-double-none = Nothing
-connect-bar-hint = Session or user@host:port  (Ctrl+Shift+R)
+connect-bar-hint = Session or user@host:port
 menu-connect-bar = Connect Bar
 connect-bar-none = No such session, and not a host: type a session's name or user@host:port
 sm-duplicate = Duplicate

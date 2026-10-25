@@ -2175,15 +2175,10 @@ impl App {
 
     /// Tools → Keymap Editor…: the editor's messages; a change is saved and put in force.
     fn keymap_dialog(&mut self, m: crate::keymap_editor::KmMsg) -> Task<Message> {
-        use crate::keymap_editor::KmMsg;
         let Some(ed) = self.keymap.as_mut() else {
             return Task::none();
         };
-        let builtin = match &m {
-            KmMsg::Captured(k, mods) => builtin_action(k, *mods).is_some(),
-            _ => false,
-        };
-        let out = ed.update(m, builtin);
+        let out = ed.update(m);
         if out.save {
             if self.user_keys_broken {
                 self.sessions.notice = Some(fl!("km-broken"));
@@ -3552,43 +3547,18 @@ pub fn key_action(key: &Physical, mods: Modifiers) -> Option<Action> {
     })
 }
 
-/// The program's own keys (the user's cannot take these).
+/// The program's own keys: those of `core::keymap::BUILTIN` (the chords in force, which the user
+/// may have changed) and Alt+1…9 (tab N).
 fn builtin_action(key: &Physical, mods: Modifiers) -> Option<Action> {
     let Physical::Code(code) = *key else {
         return None;
     };
-    let ctrl_shift = Modifiers::CTRL | Modifiers::SHIFT;
-    let digits = [
-        Code::Digit1,
-        Code::Digit2,
-        Code::Digit3,
-        Code::Digit4,
-        Code::Digit5,
-        Code::Digit6,
-        Code::Digit7,
-        Code::Digit8,
-        Code::Digit9,
-    ];
-    Some(match (code, mods) {
-        (Code::KeyM, Modifiers::ALT) => Action::ToggleSessionManager,
-        (Code::KeyQ, Modifiers::ALT) => Action::QuickConnect,
-        (Code::KeyC, Modifiers::ALT) => Action::Connect,
-        (Code::KeyP, Modifiers::ALT) => Action::ConnectSftp,
-        (Code::KeyT, m) if m == ctrl_shift => Action::NewLocalShell,
-        (Code::KeyW, m) if m == ctrl_shift => Action::CloseTab,
-        (Code::KeyC, m) if m == ctrl_shift => Action::Copy,
-        (Code::KeyV, m) if m == ctrl_shift => Action::Paste,
-        (Code::Tab, Modifiers::CTRL) => Action::NextTab,
-        (Code::Tab, m) if m == ctrl_shift => Action::PrevTab,
-        (Code::Equal | Code::NumpadAdd, Modifiers::CTRL) => Action::ZoomIn,
-        (Code::Minus | Code::NumpadSubtract, Modifiers::CTRL) => Action::ZoomOut,
-        (Code::Digit0 | Code::Numpad0, Modifiers::CTRL) => Action::ZoomReset,
-        (Code::F11, m) if m.is_empty() => Action::FullScreen,
-        (Code::KeyF, m) if m == ctrl_shift => Action::Find,
-        (Code::KeyR, m) if m == ctrl_shift => Action::ConnectBar,
-        (_, Modifiers::ALT) => Action::SelectTab(digits.iter().position(|d| *d == code)? as u8),
-        _ => return None,
-    })
+    let name = format!("{code:?}");
+    if let Some(id) = crate::keymap_editor::builtin_lookup(mods, &name) {
+        return Action::named(id);
+    }
+    let n = name.strip_prefix("Digit")?.parse::<u8>().ok()?;
+    (mods == Modifiers::ALT && (1..=9).contains(&n)).then(|| Action::SelectTab(n - 1))
 }
 
 #[cfg(test)]

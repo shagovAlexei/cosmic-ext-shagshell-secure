@@ -9,18 +9,22 @@ use cosmic::Element;
 use cosmic::iced::Length;
 use cosmic::widget;
 use shagshell_core::buttonbar::{Button, Kind, Target};
-use shagshell_core::keymap::{Binding, Chord, Keymap, Reason, Refused};
+use shagshell_core::keymap::{BUILTIN, Binding, Chord, Keymap, Reason, Refused, normalize};
 use std::sync::RwLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// The chords in force, read by `app::key_action` on every key.
 static BINDINGS: RwLock<Vec<Binding>> = RwLock::new(Vec::new());
+/// The built-in keys in force: (chord, function name). Starts with the defaults.
+static IN_FORCE: std::sync::LazyLock<RwLock<Vec<(Chord, &'static str)>>> =
+    std::sync::LazyLock::new(|| RwLock::new(chords_of(&Keymap::default())));
 /// The next key is a chord to record, not an action.
 static CAPTURING: AtomicBool = AtomicBool::new(false);
 
 /// Puts the keys in force. A hand-edited file may hold what the editor would refuse (Ctrl+C) or
 /// a key twice: those are left out here (the file is not changed).
 pub fn set_bindings(k: &Keymap) {
+    *IN_FORCE.write().unwrap_or_else(|e| e.into_inner()) = chords_of(k);
     let mut ok: Vec<Binding> = Vec::new();
     for b in &k.keys {
         if b.keys.check().is_ok() && !ok.iter().any(|o| o.keys == b.keys) {
@@ -28,6 +32,28 @@ pub fn set_bindings(k: &Keymap) {
         }
     }
     *BINDINGS.write().unwrap_or_else(|e| e.into_inner()) = ok;
+}
+
+fn chords_of(k: &Keymap) -> Vec<(Chord, &'static str)> {
+    k.builtin_chords()
+        .into_iter()
+        .map(|(id, c)| (c, id))
+        .collect()
+}
+
+/// The built-in keys in force (what the menu shows).
+pub fn builtin_keys() -> Vec<(Chord, &'static str)> {
+    IN_FORCE.read().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+/// The built-in function a pressed key is.
+pub fn builtin_lookup(mods: cosmic::iced::keyboard::Modifiers, code: &str) -> Option<&'static str> {
+    if mods.logo() {
+        return None;
+    }
+    let want = Chord::new(mods.control(), mods.alt(), mods.shift(), normalize(code));
+    let g = IN_FORCE.read().unwrap_or_else(|e| e.into_inner());
+    g.iter().find(|(c, _)| *c == want).map(|(_, id)| *id)
 }
 
 /// A modifier key on its own (the first event of Alt+Q): not a chord yet.
@@ -70,6 +96,19 @@ pub fn kind_icon(k: Kind) -> &'static str {
     }
 }
 
+/// Why a key was refused, as text.
+fn refused_text(why: &Refused) -> String {
+    match why {
+        Refused::Taken => fl!("km-taken-own"),
+        Refused::Empty => fl!("bb-arg-empty"),
+        Refused::Builtin => fl!("km-builtin"),
+        Refused::Chord(Reason::Modifier) => fl!("km-modifier"),
+        Refused::Chord(Reason::Reserved) => fl!("km-reserved"),
+        Refused::Chord(Reason::Ui) => fl!("km-ui"),
+        Refused::Chord(Reason::Terminal) => fl!("km-terminal"),
+    }
+}
+
 pub fn capturing() -> bool {
     CAPTURING.load(Ordering::SeqCst)
 }
@@ -77,6 +116,10 @@ pub fn capturing() -> bool {
 #[derive(Clone, Debug)]
 pub enum KmMsg {
     Select(usize),
+    /// A built-in key (index into `BUILTIN`).
+    SelectBuiltin(usize),
+    /// A built-in key back to its default chord.
+    Reset,
     Add,
     Edit,
     Delete,
@@ -99,6 +142,8 @@ pub enum KmMsg {
 
 struct Edit {
     at: Option<usize>,
+    /// Editing a built-in key: only its chord changes.
+    builtin: Option<&'static str>,
     chord: Option<Chord>,
     button: Button,
     error: Option<String>,
@@ -107,6 +152,7 @@ struct Edit {
 pub struct Editor {
     pub keymap: Keymap,
     selected: Option<usize>,
+    selected_builtin: Option<usize>,
     edit: Option<Edit>,
     kinds: Vec<String>,
     kind_icons: Vec<widget::icon::Handle>,
@@ -129,6 +175,7 @@ impl Editor {
         Self {
             keymap,
             selected: None,
+            selected_builtin: None,
             edit: None,
             kinds: vec![
                 fl!("bb-send"),
@@ -150,7 +197,7 @@ impl Editor {
         self.edit.is_some()
     }
 
-    pub fn update(&mut self, msg: KmMsg, builtin: bool) -> Outcome {
+    pub fn update(&mut self, msg: KmMsg) -> Outcome {
         let mut out = Outcome::default();
         // Recording ends with a key (or any other click): it never stays on by accident.
         if !matches!(msg, KmMsg::Capture | KmMsg::Captured(..)) {
@@ -160,20 +207,43 @@ impl Editor {
             e.error = None;
         }
         match msg {
-            KmMsg::Select(i) => self.selected = Some(i),
+            KmMsg::Select(i) => {
+                self.selected = Some(i);
+                self.selected_builtin = None;
+            }
+            KmMsg::SelectBuiltin(i) => {
+                self.selected_builtin = Some(i);
+                self.selected = None;
+            }
+            KmMsg::Reset => {
+                if let Some((id, _)) = self.selected_builtin.and_then(|i| BUILTIN.get(i)) {
+                    self.keymap.reset_builtin(id);
+                    out.save = true;
+                }
+            }
             KmMsg::Add => {
                 self.edit = Some(Edit {
                     at: None,
+                    builtin: None,
                     chord: None,
                     button: Button::default(),
                     error: None,
                 });
             }
             KmMsg::Edit => {
-                if let Some(i) = self.selected.filter(|&i| i < self.keymap.keys.len()) {
+                if let Some((id, _)) = self.selected_builtin.and_then(|i| BUILTIN.get(i)) {
+                    self.edit = Some(Edit {
+                        at: None,
+                        builtin: Some(id),
+                        chord: self.keymap.chord_of(id),
+                        button: Button::default(),
+                        error: None,
+                    });
+                } else if let Some(i) = self.selected.filter(|&i| i < self.keymap.keys.len()) {
                     let b = &self.keymap.keys[i];
                     self.edit = Some(Edit {
                         at: Some(i),
+                        builtin: None,
                         chord: Some(b.keys.clone()),
                         button: b.button.clone(),
                         error: None,
@@ -202,12 +272,16 @@ impl Editor {
                     if code == "Escape" && !(chord.ctrl || chord.alt || chord.shift) {
                         return out;
                     }
+                    // A built-in key may also be a Ctrl+Shift letter: `Ok` below judges it.
                     e.error = match chord.check() {
                         Err(Reason::Modifier) => Some(fl!("km-modifier")),
                         Err(Reason::Reserved) => Some(fl!("km-reserved")),
+                        Err(Reason::Terminal) if e.builtin.is_some() => None,
                         Err(Reason::Terminal) => Some(fl!("km-terminal")),
                         Err(Reason::Ui) => Some(fl!("km-ui")),
-                        Ok(()) if builtin => Some(fl!("km-builtin")),
+                        Ok(()) if self.keymap.builtin_has(&chord, e.builtin) => {
+                            Some(fl!("km-builtin"))
+                        }
                         Ok(()) => None,
                     };
                     if e.error.is_none() {
@@ -241,6 +315,16 @@ impl Editor {
                         e.error = Some(fl!("km-no-key"));
                         return out;
                     };
+                    if let Some(id) = e.builtin {
+                        match self.keymap.set_builtin(id, chord) {
+                            Ok(()) => {
+                                self.edit = None;
+                                out.save = true;
+                            }
+                            Err(why) => e.error = Some(refused_text(&why)),
+                        }
+                        return out;
+                    }
                     let b = Binding {
                         keys: chord,
                         button: e.button.clone(),
@@ -251,9 +335,7 @@ impl Editor {
                             self.edit = None;
                             out.save = true;
                         }
-                        Err(Refused::Taken) => e.error = Some(fl!("km-taken-own")),
-                        Err(Refused::Empty) => e.error = Some(fl!("bb-arg-empty")),
-                        Err(Refused::Chord(_)) => e.error = Some(fl!("km-terminal")),
+                        Err(why) => e.error = Some(refused_text(&why)),
                     }
                 }
             }
@@ -313,7 +395,32 @@ impl Editor {
                     });
                     list = list.push(btn);
                 }
-                let sel = self.selected.is_some();
+                list = list.push(widget::text::caption(fl!("km-builtin-title")));
+                for (i, (id, _)) in BUILTIN.iter().enumerate() {
+                    let Some(chord) = self.keymap.chord_of(id) else {
+                        continue;
+                    };
+                    let what = crate::button_bar::ButtonBar::function_label_of(id);
+                    let moved = self.keymap.builtin.contains_key(*id);
+                    let text = format!("{chord}   →   {what}{}", if moved { "   ✎" } else { "" });
+                    let btn = widget::button::custom(widget::text::body(text))
+                        .width(Length::Fill)
+                        .on_press(m(KmMsg::SelectBuiltin(i)))
+                        .class(match self.selected_builtin == Some(i) {
+                            true => cosmic::theme::Button::Suggested,
+                            false => cosmic::theme::Button::Text,
+                        });
+                    list = list.push(btn);
+                }
+                let sel = self.selected.is_some() || self.selected_builtin.is_some();
+                let moved = (self.selected_builtin.and_then(|i| BUILTIN.get(i)))
+                    .is_some_and(|(id, _)| self.keymap.builtin.contains_key(*id));
+                let last = match self.selected_builtin {
+                    Some(_) => widget::button::standard(fl!("km-reset"))
+                        .on_press_maybe(moved.then(|| m(KmMsg::Reset))),
+                    None => widget::button::destructive(fl!("km-delete"))
+                        .on_press_maybe(self.selected.is_some().then(|| m(KmMsg::Delete))),
+                };
                 let row = widget::row::with_children(vec![
                     widget::button::standard(fl!("km-add"))
                         .on_press(m(KmMsg::Add))
@@ -321,14 +428,12 @@ impl Editor {
                     widget::button::standard(fl!("km-edit"))
                         .on_press_maybe(sel.then(|| m(KmMsg::Edit)))
                         .into(),
-                    widget::button::destructive(fl!("km-delete"))
-                        .on_press_maybe(sel.then(|| m(KmMsg::Delete)))
-                        .into(),
+                    last.into(),
                 ])
                 .spacing(8);
                 let body = widget::column::with_children(vec![
                     widget::text::caption(fl!("km-hint")).into(),
-                    widget::scrollable(list).height(Length::Fixed(240.0)).into(),
+                    widget::scrollable(list).height(Length::Fixed(320.0)).into(),
                     row.into(),
                 ])
                 .spacing(10);
@@ -364,6 +469,30 @@ impl Editor {
         let b = &e.button;
         let kind = Kind::ALL.iter().position(|k| *k == b.kind);
         let mut col = widget::column::with_capacity(8).spacing(10);
+        if let Some(id) = e.builtin {
+            col = col
+                .push(widget::text::title4(
+                    crate::button_bar::ButtonBar::function_label_of(id),
+                ))
+                .push(field(
+                    fl!("km-key"),
+                    widget::button::standard(shown)
+                        .on_press(m(KmMsg::Capture))
+                        .into(),
+                ));
+            if let Some(err) = &e.error {
+                col = col.push(widget::text::body(err.clone()).class(cosmic::theme::Text::Accent));
+            }
+            return widget::dialog()
+                .icon(crate::dialog_icons::Kind::Keyboard.icon(48))
+                .title(fl!("km-edit-title"))
+                .control(col)
+                .primary_action(widget::button::suggested(fl!("ok")).on_press(m(KmMsg::Ok)))
+                .secondary_action(
+                    widget::button::standard(fl!("cancel")).on_press(m(KmMsg::Cancel)),
+                )
+                .into();
+        }
         col = col
             .push(field(
                 fl!("km-key"),

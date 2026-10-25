@@ -257,7 +257,15 @@ pub fn view(
 }
 
 fn connect_bar(bar: &str, list: &[String], picked: Option<usize>) -> Element<'static, Message> {
-    let input = widget::search_input(fl!("connect-bar-hint"), bar.to_string())
+    // The hint names the key (the one in force: the user may have changed it).
+    let hint = match crate::keymap_editor::builtin_keys()
+        .into_iter()
+        .find(|(_, id)| *id == "ConnectBar")
+    {
+        Some((chord, _)) => format!("{}  ({chord})", fl!("connect-bar-hint")),
+        None => fl!("connect-bar-hint"),
+    };
+    let input = widget::search_input(hint, bar.to_string())
         .id(bar_id())
         .on_focus(Message::FocusField(bar_id()))
         .on_input(Message::ConnectBar)

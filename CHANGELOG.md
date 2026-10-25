@@ -2,6 +2,12 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.75.0 — 2026-10-25
+
+- feat: the program's own keys (Alt+M / Q / C / P, Ctrl+Shift+T / W / C / V / F / R, Ctrl+Tab, Ctrl+Shift+Tab, Ctrl+= / − / 0, F11) can be given another key: Tools → Keymap Editor lists them under «Built-in keys»; Edit… records a new chord, «Default key» puts the old one back. Stored in `keymap.toml` (`[builtin]`); the menus and the Connect Bar's hint show the key in force
+- feat: Find, Connect Bar, Copy, Paste, Next / Previous Tab are menu functions for Button Bar buttons and own keys
+- Alt+1…9 (tab N) stay fixed; a user key may not take a built-in key's chord
+
 ## 0.74.1 — 2026-10-25
 
 - fix: Notes: the View / Edit button had no icon in the Cosmic icon theme (it lacks the Adwaita names); now uses icons the theme has
