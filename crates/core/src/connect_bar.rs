@@ -49,6 +49,19 @@ pub fn parse(text: &str, ids: &[String]) -> Option<Target> {
     host(url.unwrap_or(t))
 }
 
+/// The saved sessions whose name contains `text` (any case), those starting with it first, at
+/// most `limit`: the Connect Bar's list while typing.
+pub fn matches(text: &str, ids: &[String], limit: usize) -> Vec<String> {
+    let t = text.trim().to_lowercase();
+    if t.is_empty() || t.contains(['@', ':']) {
+        return Vec::new();
+    }
+    let name = |id: &str| id.rsplit('/').next().unwrap_or(id).to_lowercase();
+    let mut hits: Vec<&String> = ids.iter().filter(|id| name(id).contains(&t)).collect();
+    hits.sort_by_key(|id| !name(id).starts_with(&t)); // stable: tree order within each
+    hits.into_iter().take(limit).cloned().collect()
+}
+
 fn host(t: &str) -> Option<Target> {
     let (user, rest) = match t.rsplit_once('@') {
         Some((u, r)) => (Some(u.to_string()).filter(|u| !u.is_empty()), r),
@@ -84,6 +97,19 @@ mod tests {
         assert_eq!(parse("Lab/server1", &ids()), s("Lab/server1"));
         assert_eq!(parse("/S nope", &ids()), None);
         assert_eq!(parse("  ", &ids()), None);
+    }
+
+    #[test]
+    fn the_list_while_typing() {
+        assert_eq!(matches("ser", &ids(), 8), ["Lab/server1", "Lab/server2"]);
+        assert_eq!(
+            matches("e", &ids(), 8),
+            ["Lab/router", "Lab/server1", "Lab/server2", "web"]
+        );
+        assert_eq!(matches("e", &ids(), 2).len(), 2);
+        assert_eq!(matches("r", &ids(), 8)[0], "Lab/router"); // starts with it: first
+        assert!(matches("a@b", &ids(), 8).is_empty()); // a host is being typed
+        assert!(matches("", &ids(), 8).is_empty());
     }
 
     #[test]
