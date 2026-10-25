@@ -94,6 +94,8 @@ pub struct App {
     tool_edit: Option<(shagshell_core::toolbar::ToolEdit, Vec<String>)>,
     /// Help → About is shown (a dialog: the context drawer is at least 344 px wide).
     about: bool,
+    /// The result of a check made from the About dialog, shown in it.
+    about_note: Option<String>,
     /// The tabs of the last time, opened when the terminals can start (`TermTx`).
     restore: Vec<String>,
     /// Edit → Find: the text looked for in the active terminal (`None`: the bar is closed).
@@ -309,6 +311,7 @@ impl Application for App {
             tool_edit: None,
             restore: Vec::new(),
             about: false,
+            about_note: None,
             schedule: Default::default(),
             schedule_broken: false,
             sched_state: Default::default(),
@@ -596,7 +599,7 @@ impl Application for App {
                     .as_ref()
                     .map(crate::securecrt_import::ScImport::view)
             })
-            .or_else(|| self.about.then(about::view))
+            .or_else(|| self.about.then(|| about::view(self.about_note.as_deref())))
             .or_else(|| self.buttons.dialog())
             .or_else(|| (self.tool_edit.as_ref()).map(|(t, l)| toolbar::editor(t, l)))
             .or_else(|| self.tabs.dialog())
@@ -1007,7 +1010,10 @@ impl App {
                     Err(e) => log::warn!("xdg-open: {e}"),
                 }
             }
-            Message::CloseAbout => self.about = false,
+            Message::CloseAbout => {
+                self.about = false;
+                self.about_note = None;
+            }
             Message::CloseDrawer => self.set_drawer(None),
             Message::PreGate(cmd, id) => return self.pre_gate(cmd, id),
             Message::Tabs(m) => {
@@ -1781,7 +1787,10 @@ impl App {
                     },
                 );
             }
-            Action::About => self.about = !self.about,
+            Action::About => {
+                self.about = !self.about;
+                self.about_note = None;
+            }
             Action::CheckUpdates => return check_updates(true),
             Action::ToggleRecording => {
                 if let Some((title, rec)) = self.tabs.toggle_recording() {
@@ -2072,6 +2081,14 @@ impl App {
         )
     }
 
+    /// Where a manual check's answer goes: the About dialog when it is open, else the notice.
+    fn check_note(&mut self, text: String) {
+        match self.about {
+            true => self.about_note = Some(text),
+            false => self.sessions.notice = Some(text),
+        }
+    }
+
     /// The update window and the answers of the release check.
     fn updates(&mut self, m: crate::updates::UpMsg) -> Task<Message> {
         use crate::updates::UpMsg;
@@ -2079,12 +2096,13 @@ impl App {
         match m {
             UpMsg::Checked(Status::Available(tag), manual) => {
                 if manual || self.config.skipped_version != tag {
+                    self.about = false;
                     self.update = Some(tag);
                 }
             }
-            UpMsg::Checked(Status::Latest, true) => self.sessions.notice = Some(fl!("up-latest")),
+            UpMsg::Checked(Status::Latest, true) => self.check_note(fl!("up-latest")),
             UpMsg::Checked(Status::Failed(error), true) => {
-                self.sessions.notice = Some(fl!("up-failed", error = error));
+                self.check_note(fl!("up-failed", error = error));
             }
             UpMsg::Checked(..) => {}
             UpMsg::Update => {
