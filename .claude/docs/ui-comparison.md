@@ -21,7 +21,7 @@ Legend: ✅ have · 🟡 partly · ❌ missing · — not planned.
 
 | SecureCRT | ShagShell | Note |
 |---|---|---|
-| Status icons: Connected, Disconnected, **New Input**, **Inactivity** (N s), Locked overlay, script running | 🟡 text marks `✓ ✗ 🔒 ✎ »` | no connecting / new input / inactivity, no colour |
+| Status icons: Connected, Disconnected, **New Input**, **Inactivity** (N s), Locked overlay, script running | ✅ coloured icons (0.48.0), no inactivity | |
 | Status as icon / background colour / colour rectangle | ❌ | |
 | Tab text = session name, label template `%H %S %U %I %P` | 🟡 label field (plain text); else the program's title wins → all ssh tabs read `user@host:~` | |
 | «(n)» on a second tab of the same session | ❌ | |
@@ -41,7 +41,7 @@ Legend: ✅ have · 🟡 partly · ❌ missing · — not planned.
 | Dockable pane, pin / auto-hide | 🟡 left / right side, collapsible | |
 | Toolbar: Connect, Quick Connect, New, Cut/Copy/Paste, Delete, Properties, Find, New Folder | 🟡 New, New Folder, Properties, Delete, Connect | no copy / paste of sessions |
 | Filter box | ✅ | |
-| Icon by protocol (SSH: terminal+lock, Telnet: terminal, Serial: phone, Local: house), folder variants | ❌ one icon for every session | |
+| Icon by protocol (SSH: terminal+lock, Telnet: terminal, Serial: phone, Local: house), folder variants | ✅ by protocol (0.49.0), folders: system icons | |
 
 ## Toolbar, status bar, other
 
