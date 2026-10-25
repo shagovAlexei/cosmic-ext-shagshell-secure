@@ -351,6 +351,11 @@ impl Scripts {
     }
 
     /// Script → Cancel: every run stops (the one on the active tab is the usual).
+    /// A script runs (Script → Cancel has something to stop).
+    pub fn running(&self) -> bool {
+        !self.runs.is_empty()
+    }
+
     pub fn cancel(&mut self) {
         for r in self.runs.values() {
             r.cancel.store(true, Ordering::SeqCst);

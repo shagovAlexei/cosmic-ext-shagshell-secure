@@ -536,6 +536,7 @@ impl Application for App {
                 &self.script_labels(&self.script_files),
                 &self.script_labels(&self.recent_files()),
             ),
+            self.scripts.running(),
         )]
     }
 
