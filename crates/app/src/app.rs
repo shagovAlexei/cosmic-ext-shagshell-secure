@@ -33,7 +33,6 @@ enum AfterPre {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Drawer {
-    About,
     Options,
 }
 
@@ -93,6 +92,8 @@ pub struct App {
     connect_pick: Option<usize>,
     /// The toolbar's editor (and its function names for the dropdown), while open.
     tool_edit: Option<(shagshell_core::toolbar::ToolEdit, Vec<String>)>,
+    /// Help → About is shown (a dialog: the context drawer is at least 344 px wide).
+    about: bool,
     /// The tabs of the last time, opened when the terminals can start (`TermTx`).
     restore: Vec<String>,
     /// Edit → Find: the text looked for in the active terminal (`None`: the bar is closed).
@@ -191,6 +192,8 @@ pub enum Message {
     /// A session picked from the Connect Bar's list; the list closed.
     ConnectBarOpen(String),
     ConnectBarClose,
+    /// The About dialog's Close.
+    CloseAbout,
     /// Edit → Find's bar.
     Find(crate::find_bar::FindMsg),
     /// A toolbar button, the toolbar's editor.
@@ -305,6 +308,7 @@ impl Application for App {
             find: None,
             tool_edit: None,
             restore: Vec::new(),
+            about: false,
             schedule: Default::default(),
             schedule_broken: false,
             sched_state: Default::default(),
@@ -547,7 +551,6 @@ impl Application for App {
 
     fn context_drawer(&self) -> Option<cosmic::app::context_drawer::ContextDrawer<'_, Message>> {
         match self.drawer? {
-            Drawer::About => Some(about::view()),
             Drawer::Options => Some(options::view(&self.config, self.separate, &self.hl)),
         }
     }
@@ -593,6 +596,7 @@ impl Application for App {
                     .as_ref()
                     .map(crate::securecrt_import::ScImport::view)
             })
+            .or_else(|| self.about.then(about::view))
             .or_else(|| self.buttons.dialog())
             .or_else(|| (self.tool_edit.as_ref()).map(|(t, l)| toolbar::editor(t, l)))
             .or_else(|| self.tabs.dialog())
@@ -1003,6 +1007,7 @@ impl App {
                     Err(e) => log::warn!("xdg-open: {e}"),
                 }
             }
+            Message::CloseAbout => self.about = false,
             Message::CloseDrawer => self.set_drawer(None),
             Message::PreGate(cmd, id) => return self.pre_gate(cmd, id),
             Message::Tabs(m) => {
@@ -1776,7 +1781,7 @@ impl App {
                     },
                 );
             }
-            Action::About => self.toggle_drawer(Drawer::About),
+            Action::About => self.about = !self.about,
             Action::CheckUpdates => return check_updates(true),
             Action::ToggleRecording => {
                 if let Some((title, rec)) = self.tabs.toggle_recording() {

@@ -2,6 +2,10 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.70.1 — 2026-10-25
+
+- fix: Help → About is a dialog, not a side drawer (a drawer is at least 344 px wide and covered a narrow window)
+
 ## 0.70.0 — 2026-10-25
 
 - feat: a side's Session / Command Manager folds into a thin strip of buttons (the « / » button in a pane's header); a click on a strip button unfolds it

@@ -424,3 +424,4 @@
 - [ ] v0.68.0: Session Options → Appearance → Icon lists 36 icons; each draws in the tree and on the tab
 - [ ] v0.69.0: tabs fit their names (a long one is cut at 240 px); many tabs: the bar scrolls with arrows
 - [ ] v0.70.0: the «<» in a manager's header folds its side into a strip (a button per pane, a tooltip with its name); a click unfolds it; it stays so after a restart
+- [ ] v0.70.1 regression: Help → About opens a small dialog in the middle (also in a narrow window), Close closes it; donate / update / release / issues buttons work
