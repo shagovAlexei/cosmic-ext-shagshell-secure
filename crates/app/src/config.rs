@@ -194,8 +194,8 @@ pub struct Config {
     pub zmodem_auto: bool,
     /// Terminal font family ("" = the system's monospace).
     pub font_family: String,
-    /// The toolbar's buttons (`toolbar::TOOLS` names); empty: `toolbar::DEFAULT`.
-    pub toolbar: Vec<String>,
+    /// The toolbar's buttons and gaps; empty: `toolbar::default_bar`.
+    pub toolbar_buttons: Vec<shagshell_core::toolbar::ToolButton>,
     /// The tab bar under the tabs' content (SecureCRT's «tabs at the bottom»).
     pub tabs_bottom: bool,
     /// Ctrl+Tab goes back to the tab used before (SecureCRT's option), not the next one.
@@ -329,7 +329,7 @@ impl Default for Config {
             cursor_shape: 0,
             cursor_blink: false,
             tabs_bottom: false,
-            toolbar: Vec::new(),
+            toolbar_buttons: Vec::new(),
             tabs_hide_single: false,
             ctrl_tab_recent: false,
             tab_double_click: 0,

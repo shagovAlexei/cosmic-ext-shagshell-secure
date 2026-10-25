@@ -2,6 +2,10 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.66.0 — 2026-10-25
+
+- feat: the toolbar is edited like shagoff-commander's button bar: buttons and gaps in any order, an app function or a program with `%H %S %U %P`, any icon of the theme (picker), its own hint; right click on the toolbar or Global Options → Toolbar
+
 ## 0.65.0 — 2026-10-25
 
 - feat: Edit → Find (Ctrl+Shift+F) in the active terminal: Enter / ↓ next, ↑ previous, Esc closes
