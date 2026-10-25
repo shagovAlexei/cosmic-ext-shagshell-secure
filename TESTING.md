@@ -240,7 +240,7 @@
 
 ### Обновления и поддержка
 
-- [ ] Запуск с `SHAGSHELL_UPDATE_URL=file:///tmp/rel.json` (`{"tag_name": "v9.9.9"}`): окно «Доступна версия» с сердцем, «Обновить» открывает страницу релиза, «Пропустить» запоминает версию (следующий запуск без окна), Esc / «Поддержать проект» не закрывает навсегда; проверено headless: окно и «Пропустить»
+- [x] Запуск с `SHAGSHELL_UPDATE_URL=file:///tmp/rel.json` (`{"tag_name": "v9.9.9"}`): окно «Доступна версия» с сердцем, «Обновить» открывает страницу релиза, «Пропустить» запоминает версию (следующий запуск без окна), Esc / «Поддержать проект» не закрывает навсегда; проверено headless: окно и «Пропустить»
 - [x] Help → Проверить обновления…: для пропущенной версии окно снова; при последней версии — «У вас последняя версия»; без сети — сообщение об ошибке
 - [x] Options → Global Options → «Проверять обновления при запуске» выключен: при запуске сети нет
 - [x] Кнопка «Поддержать проект» в окне обновления и Help → «Поддержать проект» открывают Stripe-ссылку (аккаунт «Shagov Alexei Donate», сумма по выбору донора); текст про обед в Маке виден в окне
@@ -426,3 +426,4 @@
 - [ ] v0.70.0: the «<» in a manager's header folds its side into a strip (a button per pane, a tooltip with its name); a click unfolds it; it stays so after a restart
 - [ ] v0.70.1 regression: Help → About opens a small dialog in the middle (also in a narrow window), Close closes it; donate / update / release / issues buttons work
 - [ ] v0.70.2: Help → About → Check for Updates: «you have the latest version» (or the error) appears in the dialog under the button; a newer release closes About and opens the update window
+- [ ] v0.70.3 regression: Scheduler: select a disabled job — its name in the list is readable
