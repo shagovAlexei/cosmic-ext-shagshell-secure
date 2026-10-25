@@ -215,6 +215,10 @@ pub struct Tab {
     seen: bool,
     /// It printed something while not in front.
     unread: bool,
+    /// When it last printed something.
+    last_output: std::time::Instant,
+    /// Its unread output stopped `QUIET_SECS` ago (the icon says so).
+    quiet: bool,
     widget_id: widget::Id,
 }
 
@@ -252,8 +256,14 @@ impl Tab {
             .is_some_and(|t| t.lock().unwrap_or_else(|e| e.into_inner()).locked());
         let st = match &self.body {
             Body::Note(_) | Body::Console => State::Plain,
-            Body::Sftp(v) => state(v.connected || v.connecting(), v.connected, false, false),
-            Body::Terminal(_) => state(self.live(), self.seen, self.unread, locked),
+            Body::Sftp(v) => state(
+                v.connected || v.connecting(),
+                v.connected,
+                false,
+                false,
+                false,
+            ),
+            Body::Terminal(_) => state(self.live(), self.seen, self.unread, self.quiet, locked),
         };
         widget::icon(widget::icon::from_svg_bytes(svg(glyph, st).into_bytes())).size(16)
     }
@@ -622,6 +632,21 @@ impl Tabs {
         Some(s)
     }
 
+    /// The 1 s clock: unread output that stopped `QUIET_SECS` ago turns its tab «quiet».
+    pub fn tick(&mut self) {
+        let quiet = std::time::Duration::from_secs(shagshell_core::tab_icon::QUIET_SECS);
+        let ids: Vec<TabId> = (self.tabs.iter())
+            .filter(|(_, t)| t.unread && !t.quiet && t.alive && t.last_output.elapsed() >= quiet)
+            .map(|(id, _)| *id)
+            .collect();
+        for id in ids {
+            if let Some(t) = self.tabs.get_mut(&id) {
+                t.quiet = true;
+            }
+            self.retitle(id);
+        }
+    }
+
     /// Some tab is connected: the status bar's clock runs.
     pub fn any_live(&self) -> bool {
         self.tabs.values().any(Tab::live)
@@ -757,6 +782,8 @@ impl Tabs {
             alive: true,
             seen: false,
             unread: false,
+            last_output: std::time::Instant::now(),
+            quiet: false,
             widget_id: widget_id.clone(),
         };
         let title = tab.title();
@@ -1105,7 +1132,7 @@ impl Tabs {
         self.forget_tap(id);
         (tab.body, tab.alive) = (terminal, true);
         (tab.started, tab.stopped) = (std::time::Instant::now(), false);
-        (tab.seen, tab.unread) = (false, false);
+        (tab.seen, tab.unread, tab.quiet) = (false, false, false);
         tab.program_title.clear();
         let widget_id = tab.widget_id.clone();
         self.tabs.insert(new_id, tab);
@@ -1404,7 +1431,7 @@ impl Tabs {
             .collect();
         for id in ids {
             if let Some(t) = self.tabs.get_mut(&id) {
-                t.unread = false;
+                (t.unread, t.quiet) = (false, false);
             }
             self.retitle(id);
         }
@@ -1887,8 +1914,10 @@ impl Tabs {
             Outcome::Output => {
                 let unread = !self.in_front(id);
                 let tab = self.tabs.get_mut(&id).expect("looked up above");
-                if !tab.seen || (unread && !tab.unread) {
+                tab.last_output = std::time::Instant::now();
+                if !tab.seen || (unread && !tab.unread) || tab.quiet {
                     (tab.seen, tab.unread) = (true, tab.unread || unread);
+                    tab.quiet = false;
                     self.retitle(id);
                 }
             }

@@ -2,6 +2,10 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.56.0 — 2026-10-25
+
+- feat: a background tab whose new output stopped 5 s ago turns teal (SecureCRT's Inactivity: the command is likely done)
+
 ## 0.55.0 — 2026-10-25
 
 - feat: Global Options → tabs at the bottom, and what a double-click on a tab does (nothing / close / clone / reconnect / its own window)

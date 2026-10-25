@@ -21,7 +21,7 @@ Legend: ✅ have · 🟡 partly · ❌ missing · — not planned.
 
 | SecureCRT | ShagShell | Note |
 |---|---|---|
-| Status icons: Connected, Disconnected, **New Input**, **Inactivity** (N s), Locked overlay, script running | ✅ coloured icons (0.48.0), no inactivity | |
+| Status icons: Connected, Disconnected, **New Input**, **Inactivity** (N s), Locked overlay, script running | ✅ coloured icons (0.48.0), inactivity (0.56.0, fixed 5 s) | |
 | Status as icon / background colour / colour rectangle | ❌ | |
 | Tab text = session name, label template `%H %S %U %I %P` | 🟡 label field (plain text); else the program's title wins → all ssh tabs read `user@host:~` | |
 | «(n)» on a second tab of the same session | ❌ | |

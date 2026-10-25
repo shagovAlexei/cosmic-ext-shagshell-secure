@@ -33,6 +33,8 @@ pub enum State {
     Connected,
     /// New output while the tab was not in front.
     Output,
+    /// That output stopped a while ago (SecureCRT's Inactivity): the command is likely done.
+    Quiet,
     Disconnected,
     /// `crt.Session.Lock`: the keyboard is the script's.
     Locked,
@@ -40,12 +42,17 @@ pub enum State {
     Plain,
 }
 
+/// How long unread output must have stopped for a tab to show `Quiet`.
+pub const QUIET_SECS: u64 = 5;
+
 /// The state of a tab whose program `alive` is (or SFTP is connected), that has `seen` output,
-/// has output the user has not looked at (`unread`), and is `locked` by a script.
-pub fn state(alive: bool, seen: bool, unread: bool, locked: bool) -> State {
+/// has output the user has not looked at (`unread`), whose output stopped `QUIET_SECS` ago
+/// (`quiet`), and is `locked` by a script.
+pub fn state(alive: bool, seen: bool, unread: bool, quiet: bool, locked: bool) -> State {
     match (alive, locked, unread, seen) {
         (false, ..) => State::Disconnected,
         (true, true, ..) => State::Locked,
+        (true, _, true, _) if quiet => State::Quiet,
         (true, _, true, _) => State::Output,
         (true, _, _, true) => State::Connected,
         _ => State::Connecting,
@@ -58,6 +65,7 @@ pub fn colour(s: State) -> &'static str {
         State::Locked => "#a371f7",
         State::Connected => "#2ea043",
         State::Output => "#388bfd",
+        State::Quiet => "#2bb5a5",
         State::Disconnected => "#da3633",
         State::Plain => "#8b949e",
     }
@@ -106,11 +114,13 @@ mod tests {
 
     #[test]
     fn a_tab_state_follows_its_connection_and_output() {
-        assert_eq!(state(true, false, false, false), State::Connecting);
-        assert_eq!(state(true, true, false, false), State::Connected);
-        assert_eq!(state(true, true, true, false), State::Output);
-        assert_eq!(state(true, true, true, true), State::Locked);
-        assert_eq!(state(false, true, true, true), State::Disconnected);
+        assert_eq!(state(true, false, false, false, false), State::Connecting);
+        assert_eq!(state(true, true, false, false, false), State::Connected);
+        assert_eq!(state(true, true, true, false, false), State::Output);
+        assert_eq!(state(true, true, true, true, false), State::Quiet);
+        assert_eq!(state(true, true, false, true, false), State::Connected); // read: not quiet
+        assert_eq!(state(true, true, true, false, true), State::Locked);
+        assert_eq!(state(false, true, true, true, true), State::Disconnected);
     }
 
     #[test]

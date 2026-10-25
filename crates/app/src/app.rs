@@ -870,7 +870,7 @@ impl App {
                 ));
             }
             Message::EditTick => self.tabs.edit_tick(),
-            Message::StatusTick => {}
+            Message::StatusTick => self.tabs.tick(),
             Message::CommandWindow(m) => {
                 // A click takes the keys from the terminal (it takes them from every widget).
                 if matches!(
