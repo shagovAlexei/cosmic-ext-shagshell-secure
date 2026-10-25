@@ -2,6 +2,10 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.59.0 — 2026-10-25
+
+- feat: Session Manager → Duplicate: a copy of the session beside it, «name (2)» (its saved password is not copied)
+
 ## 0.58.0 — 2026-10-25
 
 - feat: Connect Bar in the toolbar: a session's name (or part of it, `/S name`) or `[ssh2://][user@]host[:port]`, Enter connects
