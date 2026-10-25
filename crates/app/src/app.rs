@@ -91,6 +91,8 @@ pub struct App {
     connect_list: Vec<String>,
     /// The list's row chosen with ↑ / ↓ (Enter opens it).
     connect_pick: Option<usize>,
+    /// The toolbar's editor (and its function names for the dropdown), while open.
+    tool_edit: Option<(shagshell_core::toolbar::ToolEdit, Vec<String>)>,
     /// Edit → Find: the text looked for in the active terminal (`None`: the bar is closed).
     find: Option<String>,
     /// The scheduled scripts (`schedule.toml`); a broken file is never written over.
@@ -189,6 +191,8 @@ pub enum Message {
     ConnectBarClose,
     /// Edit → Find's bar.
     Find(crate::find_bar::FindMsg),
+    /// A toolbar button, the toolbar's editor.
+    Toolbar(crate::toolbar::TbMsg),
     /// Esc taken by a text field of the main window.
     FieldEscape,
     /// A field of the main window was clicked: focused by id, which takes the keys from the
@@ -297,6 +301,7 @@ impl Application for App {
             connect_list: Vec::new(),
             connect_pick: None,
             find: None,
+            tool_edit: None,
             schedule: Default::default(),
             schedule_broken: false,
             sched_state: Default::default(),
@@ -583,6 +588,7 @@ impl Application for App {
                     .map(crate::securecrt_import::ScImport::view)
             })
             .or_else(|| self.buttons.dialog())
+            .or_else(|| (self.tool_edit.as_ref()).map(|(t, l)| toolbar::editor(t, l)))
             .or_else(|| self.tabs.dialog())
             .or_else(|| self.quick.as_ref().map(QuickConnect::view))
             .or_else(|| self.sessions.dialog())
@@ -657,7 +663,7 @@ impl Application for App {
                 &self.connect_bar,
                 &self.connect_list,
                 self.connect_pick,
-                &self.config.toolbar,
+                &toolbar::buttons(&self.config.toolbar_buttons),
             ))
             .push(middle.height(Length::Fill));
         if self.config.command_window_visible {
@@ -678,6 +684,55 @@ impl Application for App {
 }
 
 impl App {
+    /// A toolbar button pressed (a function, or a program with the active session's `%H %S %U
+    /// %P`), or its editor's messages.
+    fn toolbar(&mut self, m: crate::toolbar::TbMsg) -> Task<Message> {
+        use crate::toolbar::TbMsg;
+        use shagshell_core::toolbar::{ToolEdit, ToolMsg};
+        match m {
+            TbMsg::Run(i) => {
+                let Some(b) = toolbar::buttons(&self.config.toolbar_buttons)
+                    .get(i)
+                    .cloned()
+                else {
+                    return Task::none();
+                };
+                match toolbar::function(&b.cmd) {
+                    Some(t) => return self.update(Message::Action(t.2)),
+                    None => self.launch_app(&format!("{} {}", b.cmd, b.params)),
+                }
+            }
+            TbMsg::Open => {
+                let list = toolbar::buttons(&self.config.toolbar_buttons);
+                let labels = toolbar::TOOLS.iter().map(|t| (t.3)()).collect();
+                self.tool_edit = Some((ToolEdit::new(list, toolbar::default_bar()), labels));
+            }
+            TbMsg::Edit(m) => {
+                let pick = matches!(m, ToolMsg::PickOpen);
+                if let Some((t, _)) = &mut self.tool_edit {
+                    t.update(m);
+                }
+                if pick {
+                    return off_ui(toolbar::icon_names, |n| {
+                        Message::Toolbar(TbMsg::Edit(ToolMsg::PickLoaded(n)))
+                    });
+                }
+            }
+            TbMsg::Ok => {
+                if let Some((t, _)) = self.tool_edit.take() {
+                    // The default bar is kept as «none chosen»: a later default reaches it.
+                    self.config.toolbar_buttons = match t.list == toolbar::default_bar() {
+                        true => Vec::new(),
+                        false => t.list,
+                    };
+                    self.save_config();
+                }
+            }
+            TbMsg::Cancel => self.tool_edit = None,
+        }
+        Task::none()
+    }
+
     /// Edit → Find: its bar opened / typed in / stepped / closed; the active terminal searches.
     fn find(&mut self, m: FindMsg) -> Task<Message> {
         match m {
@@ -980,6 +1035,7 @@ impl App {
                 self.connect_pick = None;
             }
             Message::Find(m) => return self.find(m),
+            Message::Toolbar(m) => return self.toolbar(m),
             Message::FieldEscape if !self.connect_list.is_empty() => {
                 self.connect_list.clear();
                 self.connect_pick = None;

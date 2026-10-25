@@ -416,3 +416,4 @@
 - [ ] v0.65.0: Session Options → Appearance → Icon: the pick shows in the tree and on the tab (in the state's colour); «By protocol» goes back
 - [ ] v0.65.0: Connect Bar: ↓ / ↑ walk the list (the row is filled), Enter opens it, Esc closes the list
 - [ ] v0.65.0: Button Bar → Edit button → Colour list shows a dot per colour; a long label stays on one line, cut on the right
+- [ ] v0.66.0: right click on the toolbar opens its editor; Add / gap / Delete / ↑ ↓ change the bar after OK (Cancel: nothing); Pick… shows the theme's icons, the filter narrows them; a program button (e.g. `xterm` with `-e ssh %H`) starts it for the active session; Default brings the usual bar back
