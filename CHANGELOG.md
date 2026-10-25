@@ -2,6 +2,10 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.64.1 — 2026-10-25
+
+- fix: dragging a tab to another group moves the dragged tab (it moved the tab clicked last, or nothing on a second drag): the dragged one is now taken from libcosmic's drop hints
+
 ## 0.64.0 — 2026-10-25
 
 - feat: Global Options → Blinking cursor (off by default: it redraws the terminal twice a second)
