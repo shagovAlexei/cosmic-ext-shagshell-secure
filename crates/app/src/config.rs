@@ -196,6 +196,8 @@ pub struct Config {
     pub font_family: String,
     /// The tab bar under the tabs' content (SecureCRT's «tabs at the bottom»).
     pub tabs_bottom: bool,
+    /// No tab bar while there is one tab (in one group).
+    pub tabs_hide_single: bool,
     /// Double-click on a tab: 0 nothing, 1 close, 2 clone, 3 reconnect, 4 a window of its own.
     pub tab_double_click: u8,
     /// Terminal cursor: 0 block, 1 underline, 2 bar; read through `cursor`.
@@ -320,6 +322,7 @@ impl Default for Config {
             font_family: String::new(),
             cursor_shape: 0,
             tabs_bottom: false,
+            tabs_hide_single: false,
             tab_double_click: 0,
             font_size: 14,
             tab_height: 0,

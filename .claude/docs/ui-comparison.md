@@ -12,7 +12,7 @@ Legend: ✅ have · 🟡 partly · ❌ missing · — not planned.
 | Terminal colours = session colour scheme, «System Color Scheme» follows light/dark | ✅ colour schemes global + per session; the default one follows light / dark | |
 | Flat monochrome toolbar glyphs 16/24/32 | ✅ symbolic icons | |
 | Icons in menus | ✅ 0.50.0 | submenus (Scripts, Recent) have none: libcosmic folders take no icon |
-| Window transparency (active / inactive) | ❌ | |
+| Window transparency (active / inactive) | — | iced on Wayland sets no window opacity |
 | Zoom Ctrl +/−/0 | ✅ 0.53.0 (per tab) | |
 | Cursor style (block / underline / bar), colour, blink | 🟡 shape (0.53.0) | no blink (the terminal would redraw twice a second), colour = the scheme's |
 | Full screen Alt+Enter, Always on Top, hide menu bar | 🟡 full screen F11 (0.53.0) | |
@@ -26,13 +26,13 @@ Legend: ✅ have · 🟡 partly · ❌ missing · — not planned.
 | Tab text = session name, label template `%H %S %U %I %P` | ✅ session name (0.48.0), label template `%S %H %U %P` (0.57.0) | |
 | «(n)» on a second tab of the same session | ❌ | |
 | Tab width: fit / fixed / divide evenly, min width, tooltip | 🟡 divide evenly only | |
-| Tabs at top or bottom; hide when only one | 🟡 bottom (0.55.0) | not hidden when only one |
+| Tabs at top or bottom; hide when only one | ✅ bottom (0.55.0), hidden when one (0.60.0) | |
 | Close button on tabs | ✅ | |
 | Double-click action (close / clone / reconnect / new window) | ✅ 0.55.0 | |
 | Alt+1…0 to tab N; Ctrl+Tab most recent | 🟡 Alt+1…9, Ctrl+Tab next / previous | not most-recent order |
 | Tab groups (drag to an edge), Tile / Cascade | ✅ groups (menu), drag between groups needs a live check | |
 | Send to new window | ✅ Open in a New Window | |
-| `*` before the name of a tab that gets Command Window input | ❌ | |
+| `*` before the name of a tab that gets Command Window input | ✅ 0.60.0 | |
 
 ## Session Manager
 
@@ -53,7 +53,7 @@ Legend: ✅ have · 🟡 partly · ❌ missing · — not planned.
 | Command Window: active / all / groups / visible, history, multi-line | ✅ | |
 | Button Bar: several bars, coloured dot icons on buttons | ✅ colours (0.54.0) | |
 | Command Manager | ✅ | |
-| Title bar template | ❌ | |
+| Title bar template | 🟡 «tab — ShagShell Secure» (0.60.0) | not configurable |
 | Activator (tray) | — | |
 
 ## Found on our screenshots

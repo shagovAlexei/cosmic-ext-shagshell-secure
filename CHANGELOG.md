@@ -2,6 +2,10 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.60.0 — 2026-10-25
+
+- feat: the window title names the tab in front; tabs the Command Window sends to (All / Visible) are marked `*`; Global Options → hide the tab bar while there is one tab
+
 ## 0.59.0 — 2026-10-25
 
 - feat: Session Manager → Duplicate: a copy of the session beside it, «name (2)» (its saved password is not copied)

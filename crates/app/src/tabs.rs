@@ -408,6 +408,8 @@ pub struct Tabs {
     highlights: Vec<shagshell_core::highlight::Rule>,
     /// Global Options → Cursor.
     cursor: alacritty_terminal::vte::ansi::CursorShape,
+    /// The tabs the Command Window sends to besides the active one (SecureCRT marks them `*`).
+    starred: std::collections::BTreeSet<TabId>,
     /// What the last log action had to say (a log that could not start / stopped).
     notice: Mutex<Option<String>>,
     /// A live tab asked to close: waits for the dialog.
@@ -644,6 +646,27 @@ impl Tabs {
                 t.quiet = true;
             }
             self.retitle(id);
+        }
+    }
+
+    /// The Command Window's target (`None`: hidden): the terminals it sends to get a `*`.
+    pub fn set_broadcast(&mut self, to: Option<crate::command_window::SendTo>) {
+        use crate::command_window::SendTo;
+        let terminals = (self.tabs.iter()).filter(|(_, t)| matches!(t.body, Body::Terminal(_)));
+        let now: std::collections::BTreeSet<TabId> = match to {
+            Some(SendTo::All) => terminals.map(|(id, _)| *id).collect(),
+            Some(SendTo::Visible) => terminals
+                .map(|(id, _)| *id)
+                .filter(|id| self.in_front(*id))
+                .collect(),
+            _ => Default::default(),
+        };
+        if now != self.starred {
+            let changed: Vec<TabId> = now.symmetric_difference(&self.starred).copied().collect();
+            self.starred = now;
+            for id in changed {
+                self.retitle(id);
+            }
         }
     }
 
@@ -1526,6 +1549,10 @@ impl Tabs {
         let Some((title, icon)) = self.tabs.get(&id).map(|t| (t.title(), t.icon())) else {
             return;
         };
+        let title = match self.starred.contains(&id) {
+            true => format!("* {title}"),
+            false => title,
+        };
         for (_, group) in self.grid.iter_mut().flat_map(|g| g.iter_mut()) {
             if let Some(e) = entity_of(&group.model, id) {
                 group.model.text_set(e, title.clone());
@@ -2217,9 +2244,12 @@ impl Tabs {
                 )
                 .into();
             let active = many && focus == Some(pane);
-            let parts = match config.tabs_bottom {
-                true => vec![body, bar],
-                false => vec![bar, body],
+            // One tab, one group: no tab bar if so asked (SecureCRT's «only when more than one»).
+            let bar_shown = !(config.tabs_hide_single && !many && group.model.len() == 1);
+            let parts = match (bar_shown, config.tabs_bottom) {
+                (false, _) => vec![body],
+                (true, true) => vec![body, bar],
+                (true, false) => vec![bar, body],
             };
             let content = widget::container(widget::column::with_children(parts))
                 .padding(1)
