@@ -60,6 +60,16 @@ pub fn binding(i: usize) -> Option<Button> {
     g.get(i).map(|b| b.button.clone())
 }
 
+/// A key's action as an icon: send a string, a menu function, a program, a script.
+pub fn kind_icon(k: Kind) -> &'static str {
+    match k {
+        Kind::Send => "mail-send-symbolic",
+        Kind::Menu => "open-menu-symbolic",
+        Kind::Launch => "application-x-executable-symbolic",
+        Kind::Script => "system-run-symbolic",
+    }
+}
+
 pub fn capturing() -> bool {
     CAPTURING.load(Ordering::SeqCst)
 }
@@ -99,6 +109,7 @@ pub struct Editor {
     selected: Option<usize>,
     edit: Option<Edit>,
     kinds: Vec<String>,
+    kind_icons: Vec<widget::icon::Handle>,
     targets: Vec<String>,
     functions: Vec<String>,
 }
@@ -125,6 +136,10 @@ impl Editor {
                 fl!("bb-launch"),
                 fl!("bb-script"),
             ],
+            kind_icons: Kind::ALL
+                .iter()
+                .map(|k| widget::icon::from_name(kind_icon(*k)).handle())
+                .collect(),
             targets: vec![fl!("cw-current"), fl!("cw-all")],
             functions: FUNCTIONS.iter().map(|(_, l)| l()).collect(),
         }
@@ -280,7 +295,16 @@ impl Editor {
                         (l, _) => l.to_string(),
                     };
                     let text = format!("{}   →   {what}", b.keys);
-                    let mut btn = widget::button::custom(widget::text::body(text))
+                    // What the key does, at a glance: its action's icon first.
+                    let row = widget::row::with_children(vec![
+                        widget::icon::from_name(kind_icon(b.button.kind))
+                            .size(16)
+                            .into(),
+                        widget::text::body(text).into(),
+                    ])
+                    .spacing(8)
+                    .align_y(cosmic::iced::Alignment::Center);
+                    let mut btn = widget::button::custom(row)
                         .width(Length::Fill)
                         .on_press(m(KmMsg::Select(i)));
                     btn = btn.class(match self.selected == Some(i) {
@@ -350,7 +374,9 @@ impl Editor {
             .push(field(fl!("bb-label"), text(&b.label, KmMsg::Label)))
             .push(field(
                 fl!("bb-action"),
-                widget::dropdown(&self.kinds, kind, move |i| m(KmMsg::KindSel(i))).into(),
+                widget::dropdown(&self.kinds, kind, move |i| m(KmMsg::KindSel(i)))
+                    .icons(std::borrow::Cow::Borrowed(&self.kind_icons))
+                    .into(),
             ));
         col = match b.kind {
             Kind::Menu => {

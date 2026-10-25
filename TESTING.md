@@ -429,3 +429,4 @@
 - [ ] v0.70.3 regression: Scheduler: select a disabled job — its name in the list is readable
 - [ ] v0.70.4 regression: Button Bar: the text (and the colour dot) of every button sits in the vertical middle
 - [ ] v0.70.5: Options → Key Map → add a key with action «Run script»: Browse… opens the file chooser and fills the field
+- [ ] v0.71.0: Keymap Editor: every key in the list starts with its action's icon (envelope = send string, menu = function, program, gear = script); the «Action» dropdown of a key and of a Button Bar button shows the same icons
