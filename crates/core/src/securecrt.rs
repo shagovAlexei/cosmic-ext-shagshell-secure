@@ -342,6 +342,7 @@ pub fn read_button_bars(text: &str, prefix: Option<&Path>) -> BarsFound {
                         arg: get(1).to_string(),
                         args: String::new(),
                         target: Target::Current,
+                        color: String::new(),
                     });
                 }
                 "RUN" if is_python(get(1)) => {
@@ -363,6 +364,7 @@ pub fn read_button_bars(text: &str, prefix: Option<&Path>) -> BarsFound {
                         arg: windows_path(get(1), prefix),
                         args: get(2).trim().to_string(),
                         target: Target::Current,
+                        color: String::new(),
                     });
                 }
                 other => {

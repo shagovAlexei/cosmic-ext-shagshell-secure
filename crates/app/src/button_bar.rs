@@ -30,6 +30,7 @@ pub enum BbMsg {
     Args(String),
     FunctionSel(usize),
     TargetSel(usize),
+    ColorSel(usize),
     /// A bar's name typed.
     Name(String),
     Ok,
@@ -67,6 +68,8 @@ pub struct ButtonBar {
     dialog: Option<Dialog>,
     input_id: widget::Id,
     kinds: Vec<String>,
+    /// «none», then `buttonbar::COLORS` by name.
+    colors: Vec<String>,
     targets: Vec<String>,
     functions: Vec<String>,
 }
@@ -87,6 +90,7 @@ impl ButtonBar {
             dialog: None,
             input_id: widget::Id::unique(),
             kinds: Vec::new(),
+            colors: Vec::new(),
             targets: Vec::new(),
             functions: Vec::new(),
         };
@@ -111,6 +115,25 @@ impl ButtonBar {
             fl!("bb-script"),
         ];
         self.targets = vec![fl!("cw-current"), fl!("cw-all")];
+        self.colors = std::iter::once(fl!("bb-color-none"))
+            .chain(
+                shagshell_core::buttonbar::COLORS
+                    .iter()
+                    .map(|(n, _)| match *n {
+                        "black" => fl!("color-black"),
+                        "blue" => fl!("hl-blue"),
+                        "cyan" => fl!("hl-cyan"),
+                        "green" => fl!("hl-green"),
+                        "grey" => fl!("color-grey"),
+                        "magenta" => fl!("hl-magenta"),
+                        "orange" => fl!("hl-orange"),
+                        "purple" => fl!("color-purple"),
+                        "red" => fl!("hl-red"),
+                        "white" => fl!("hl-white"),
+                        _ => fl!("hl-yellow"),
+                    }),
+            )
+            .collect();
         self.functions = FUNCTIONS.iter().map(|(_, label)| label()).collect();
     }
 
@@ -255,6 +278,11 @@ impl ButtonBar {
                 if let Some((name, _)) = FUNCTIONS.get(i) {
                     b.arg = (*name).to_string();
                 }
+            }),
+            BbMsg::ColorSel(i) => self.map(|b| {
+                b.color = (i.checked_sub(1))
+                    .and_then(|i| shagshell_core::buttonbar::COLORS.get(i))
+                    .map_or(String::new(), |(n, _)| n.to_string());
             }),
             BbMsg::TargetSel(i) => self.map(|b| {
                 b.target = [Target::Current, Target::All]
@@ -469,6 +497,17 @@ impl ButtonBar {
                         ))
                         .push(widget::text::caption(fl!("bb-script-hint"))),
                 };
+                let color = (shagshell_core::buttonbar::COLORS.iter())
+                    .position(|(n, _)| *n == button.color)
+                    .map_or(0, |i| i + 1);
+                col = col.push(
+                    widget::column::with_children(vec![
+                        widget::text::caption(fl!("bb-color")).into(),
+                        widget::dropdown(&self.colors, Some(color), move |i| m(BbMsg::ColorSel(i)))
+                            .into(),
+                    ])
+                    .spacing(2),
+                );
                 col = col.push(error(e));
                 let title = match at {
                     Some(_) => fl!("bb-edit-title"),
@@ -544,8 +583,12 @@ impl ButtonBar {
         if let Some(bar) = shown.and_then(|s| self.bars.bars.get(s)) {
             let last = bar.buttons.len().saturating_sub(1);
             for (i, b) in bar.buttons.iter().enumerate() {
-                let mut button =
-                    widget::button::standard(b.label.clone()).on_press(m(BbMsg::Press(i)));
+                // A coloured button: its dot before the label (SecureCRT).
+                let mut button = widget::button::standard(b.label.clone());
+                if let Some(svg) = shagshell_core::buttonbar::dot_svg(&b.color) {
+                    button = button.leading_icon(widget::icon::from_svg_bytes(svg.into_bytes()));
+                }
+                let mut button = button.on_press(m(BbMsg::Press(i)));
                 if let Some(h) = height {
                     button = button.height(Length::Fixed(f32::from(h)));
                 }
