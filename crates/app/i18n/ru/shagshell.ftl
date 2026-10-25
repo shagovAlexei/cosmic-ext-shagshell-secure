@@ -718,3 +718,7 @@ note-save = Сохранить
 note-save-as = Сохранить как…
 note-wrap = Перенос строк
 note-numbers = Номера строк
+note-undo = Отменить
+note-redo = Вернуть
+note-cut = Вырезать
+note-buttons = Кнопки панели

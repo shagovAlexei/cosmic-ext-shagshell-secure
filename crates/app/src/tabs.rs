@@ -456,6 +456,8 @@ pub struct Tabs {
     /// Tabs locked by the user (Lock Session), with their passwords (memory only).
     user_locks: HashMap<TabId, shagshell_core::tablock::Lock>,
     lock_ask: Option<LockAsk>,
+    /// Config: the buttons a note's bar shows.
+    pub note_buttons: Vec<String>,
     /// `crt.Session.Lock`: tab → the script run that locked it.
     locks: HashMap<TabId, u64>,
     /// The tab pressed last: a drag that starts is about it (the drag carries no tab).
@@ -520,7 +522,41 @@ impl Tabs {
         let Body::Note(v) = &mut tab.body else {
             return (false, Task::none());
         };
-        let rename = matches!(msg, crate::notes::NoteMsg::RenameStart);
+        use crate::notes::NoteMsg;
+        let clip = |t: Option<String>| match t {
+            Some(t) => iced::clipboard::write(t),
+            None => Task::none(),
+        };
+        match msg {
+            NoteMsg::Copy => return (false, clip(v.copy())),
+            NoteMsg::Cut => return (false, clip(v.cut())),
+            NoteMsg::Paste => {
+                return (
+                    false,
+                    iced::clipboard::read().map(move |t| {
+                        cosmic::Action::App(Message::Note(
+                            id,
+                            NoteMsg::PasteText(t.unwrap_or_default()),
+                        ))
+                    }),
+                );
+            }
+            NoteMsg::Lock => {
+                return (
+                    false,
+                    self.own_cmd(TabCmd::Lock, id).unwrap_or_else(Task::none),
+                );
+            }
+            NoteMsg::SaveAsAsk => {
+                return (
+                    false,
+                    self.own_cmd(TabCmd::NoteSaveAs, id)
+                        .unwrap_or_else(Task::none),
+                );
+            }
+            _ => {}
+        }
+        let rename = matches!(msg, NoteMsg::RenameStart);
         let field = v.rename_field();
         let before = v.path.clone();
         let open = v.update(msg);
@@ -1528,7 +1564,11 @@ impl Tabs {
                     body: Body::Note(v),
                     ..
                 },
-            ) => v.view(id.unwrap_or_default(), tab.widget_id.clone()),
+            ) => v.view(
+                id.unwrap_or_default(),
+                tab.widget_id.clone(),
+                &self.note_buttons,
+            ),
             Some(
                 tab @ Tab {
                     body: Body::Terminal(terminal),

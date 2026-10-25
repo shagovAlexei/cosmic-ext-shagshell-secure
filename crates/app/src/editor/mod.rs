@@ -111,3 +111,50 @@ pub fn set_wrap(editor: &Mutex<ViEditor<'static, 'static>>, on: bool) {
     e.borrow_with(fs.raw())
         .with_buffer_mut(|b| b.set_wrap(wrap));
 }
+
+type Ed = Mutex<ViEditor<'static, 'static>>;
+
+fn with<T>(editor: &Ed, f: impl FnOnce(&mut ViEditor<'static, 'static>) -> T) -> T {
+    f(&mut editor.lock().unwrap_or_else(|e| e.into_inner()))
+}
+
+pub fn undo(editor: &Ed) {
+    with(editor, |e| e.undo());
+}
+
+pub fn redo(editor: &Ed) {
+    with(editor, |e| e.redo());
+}
+
+pub fn copy(editor: &Ed) -> Option<String> {
+    with(editor, |e| e.copy_selection())
+}
+
+pub fn cut(editor: &Ed) -> Option<String> {
+    with(editor, |e| {
+        let t = e.copy_selection()?;
+        e.start_change();
+        e.delete_selection();
+        e.finish_change();
+        Some(t)
+    })
+}
+
+pub fn paste(editor: &Ed, text: &str) {
+    with(editor, |e| {
+        e.start_change();
+        e.insert_string(text, None);
+        e.finish_change();
+    });
+}
+
+pub fn select_all(editor: &Ed) {
+    with(editor, |e| {
+        e.set_cursor(cosmic_text::Cursor::new(0, 0));
+        let end = e.with_buffer(|b| {
+            let last = b.lines.len().saturating_sub(1);
+            cosmic_text::Cursor::new(last, b.lines[last].text().len())
+        });
+        e.set_selection(cosmic_text::Selection::Normal(end));
+    });
+}

@@ -717,3 +717,7 @@ note-save = Save
 note-save-as = Save As…
 note-wrap = Word Wrap
 note-numbers = Line Numbers
+note-undo = Undo
+note-redo = Redo
+note-cut = Cut
+note-buttons = Bar Buttons
