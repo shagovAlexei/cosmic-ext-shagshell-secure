@@ -167,6 +167,8 @@ pub enum Message {
     ScriptFileDone(crate::script::Slot, Option<std::path::PathBuf>),
     /// The scheduler's clock.
     SchedTick,
+    /// The status bar's clock: nothing to do but draw again.
+    StatusTick,
     /// Global Options: the master-password keyring wanted on / off.
     SetSeparate(bool),
     /// …and how it is now (or why it could not be changed).
@@ -436,6 +438,11 @@ impl Application for App {
             match self.tabs.has_unsaved_notes() {
                 true => cosmic::iced::time::every(std::time::Duration::from_millis(500))
                     .map(|_| Message::NoteTick),
+                false => Subscription::none(),
+            },
+            match self.tabs.any_live() {
+                true => cosmic::iced::time::every(std::time::Duration::from_secs(1))
+                    .map(|_| Message::StatusTick),
                 false => Subscription::none(),
             },
             match self.schedule.jobs.iter().any(|j| j.enabled) {
@@ -859,6 +866,7 @@ impl App {
                 ));
             }
             Message::EditTick => self.tabs.edit_tick(),
+            Message::StatusTick => {}
             Message::CommandWindow(m) => {
                 // A click takes the keys from the terminal (it takes them from every widget).
                 if matches!(

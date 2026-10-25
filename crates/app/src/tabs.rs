@@ -584,25 +584,41 @@ impl Tabs {
         self.sftp_tx = Some(tx);
     }
 
-    /// Active tab: (connected, protocol label, cols × rows of a terminal).
+    /// What the status bar says about the active tab.
     pub fn status(&self) -> Option<crate::status_bar::Status> {
         let tab = self.tabs.get(&self.active_id()?)?;
         if matches!(tab.body, Body::Note(_) | Body::Console) {
             return None;
         }
-        let label = tab.launch.label();
-        let size = tab.terminal().map(|t| {
+        let mut s = crate::status_bar::Status {
+            alive: tab.live(),
+            protocol: tab.launch.label(),
+            size: None,
+            cursor: None,
+            up: tab.live().then(|| tab.started.elapsed().as_secs()),
+            log: None,
+            recording: false,
+        };
+        if let Some(t) = tab.terminal() {
             let t = t.lock().unwrap_or_else(|e| e.into_inner());
-            let term = t.term.lock();
-            (term.columns(), term.screen_lines())
-        });
-        let logging = tab
-            .terminal()
-            .is_some_and(|t| t.lock().unwrap_or_else(|e| e.into_inner()).log.active());
-        let recording = tab
-            .terminal()
-            .is_some_and(|t| t.lock().unwrap_or_else(|e| e.into_inner()).log.recording());
-        Some((tab.live(), label, size, logging, recording))
+            {
+                let term = t.term.lock();
+                s.size = Some((term.columns(), term.screen_lines()));
+                let p = term.grid().cursor.point;
+                s.cursor = Some((usize::try_from(p.line.0).unwrap_or(0) + 1, p.column.0 + 1));
+            }
+            s.log = (t.log.active())
+                .then(|| t.log.path())
+                .flatten()
+                .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()));
+            s.recording = t.log.recording();
+        }
+        Some(s)
+    }
+
+    /// Some tab is connected: the status bar's clock runs.
+    pub fn any_live(&self) -> bool {
+        self.tabs.values().any(Tab::live)
     }
 
     /// The active tab, if it is an SFTP one (its keys are routed to it).

@@ -326,6 +326,15 @@ pub fn size_text(n: u64) -> String {
 }
 
 /// `2026-10-23 11:09` in the local time zone.
+/// How long something has been up: `m:ss`, from an hour `h:mm:ss`.
+pub fn duration_text(secs: u64) -> String {
+    let (h, m, s) = (secs / 3600, secs / 60 % 60, secs % 60);
+    match h {
+        0 => format!("{m}:{s:02}"),
+        _ => format!("{h}:{m:02}:{s:02}"),
+    }
+}
+
 pub fn time_text(secs: i64) -> String {
     jiff::Timestamp::from_second(secs)
         .map(|t| {
@@ -408,6 +417,13 @@ mod tests {
             .iter()
             .map(|e| e.name.to_string_lossy().into_owned())
             .collect()
+    }
+
+    #[test]
+    fn durations_read_as_a_clock() {
+        assert_eq!(duration_text(0), "0:00");
+        assert_eq!(duration_text(65), "1:05");
+        assert_eq!(duration_text(3600 + 2 * 60 + 3), "1:02:03");
     }
 
     #[test]

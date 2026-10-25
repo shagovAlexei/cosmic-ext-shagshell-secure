@@ -120,7 +120,7 @@ We do **not** implement SSH. The system OpenSSH does it; we drive it.
 - Menu: File, Edit, View, Options, Transfer, Script, Tools, Window, Help. Toolbar: Connect, Quick Connect, Reconnect, Disconnect, SFTP, Session Options.
 - Left: Session Manager — folder tree with filter; double-click connects; drag between folders; multi-select "Connect all".
 - Center: tabs inside a `pane_grid` (tab groups, as in cosmic-term); status icon per tab; tab menu: Clone, Reconnect, Connect SFTP Tab, Rename, Close.
-- Bottom: Command Window (send to current / all / selected tabs, history), Button Bar, status bar (state, protocol, rows×cols).
+- Bottom: Command Window (send to current / all / selected tabs, history), Button Bar, status bar (state, protocol, cols×rows, cursor, time up, log file; a 1 s tick while a tab is live).
 - Dialogs: Quick Connect (Alt+Q), Connect (Alt+C), Session Options, Global Options (context drawer), askpass, host key.
 - SFTP tab: dual pane (local | remote) + transfer queue at the bottom.
 
