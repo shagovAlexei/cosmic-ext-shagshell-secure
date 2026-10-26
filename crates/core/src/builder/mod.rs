@@ -3,6 +3,7 @@
 
 pub mod catalog;
 mod parse;
+pub mod tape;
 
 pub use parse::{Error, parse};
 
