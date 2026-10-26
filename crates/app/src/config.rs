@@ -183,6 +183,8 @@ pub struct Config {
     pub button_bar_visible: bool,
     /// View → Connect Bar (the toolbar's field).
     pub connect_bar_visible: bool,
+    /// View → Menu Bar unticked (Ctrl+Shift+M): no main menu.
+    pub menu_bar_hidden: bool,
     /// View → Command Manager.
     pub command_manager_visible: bool,
     /// Terminal colour scheme: "" (the theme's), or a key of `terminal_theme::schemes`.
@@ -337,6 +339,7 @@ impl Default for Config {
             command_window_visible: false,
             button_bar_visible: true,
             connect_bar_visible: true,
+            menu_bar_hidden: false,
             command_manager_visible: false,
             color_scheme: String::new(),
             highlight_enabled: true,

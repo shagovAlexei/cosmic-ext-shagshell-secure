@@ -2,6 +2,9 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.85.0 — 2026-10-26
+- feat: View → Menu Bar / Ctrl+Shift+M hides the main menu (the key brings it back); Window → Always on Top… (X11 sets it; on Wayland it opens the desktop's window menu, where COSMIC has «Sticky window»)
+
 ## 0.84.0 — 2026-10-26
 - feat: notes get their own font family and size (Global Options → Notes, «Font…» in a note tab's menu), Ctrl+= / Ctrl+− / Ctrl+0 zoom, and Edit → Find in the note's text with Replace / Replace all
 - fix: Ctrl+Shift+F, the zoom keys and F11 act while a note's editor has the keys (it took them)

@@ -20,6 +20,11 @@ pub enum Action {
     /// View → Button Bar.
     ToggleButtonBar,
     ToggleConnectBar,
+    /// View → Menu Bar (Ctrl+Shift+M): the main menu hidden / shown.
+    ToggleMenuBar,
+    /// Window → Always on Top…: X11 sets it; on Wayland only the compositor can, so its window
+    /// menu opens (COSMIC: «Sticky window»).
+    AlwaysOnTop,
     /// File → Log Session.
     ToggleLog,
     About,
@@ -106,7 +111,7 @@ pub enum Action {
 
 /// The functions a Button Bar button can call: the name in `buttonbars.toml` and its label.
 pub type NamedFn = (&'static str, fn() -> String);
-pub const NAMED: [NamedFn; 29] = [
+pub const NAMED: [NamedFn; 31] = [
     ("Connect", || fl!("menu-connect")),
     ("QuickConnect", || fl!("menu-quick-connect")),
     ("NewLocalShell", || fl!("menu-new-local-shell")),
@@ -136,6 +141,8 @@ pub const NAMED: [NamedFn; 29] = [
     ("RunScript", || fl!("menu-script-run")),
     ("CancelScript", || fl!("menu-script-cancel")),
     ("RerunScript", || fl!("menu-script-rerun")),
+    ("ToggleMenuBar", || fl!("menu-menu-bar")),
+    ("AlwaysOnTop", || fl!("menu-on-top")),
 ];
 
 impl Action {
@@ -173,6 +180,8 @@ impl Action {
             "RunScript" => Action::RunScript,
             "CancelScript" => Action::CancelScript,
             "RerunScript" => Action::RerunScript,
+            "ToggleMenuBar" => Action::ToggleMenuBar,
+            "AlwaysOnTop" => Action::AlwaysOnTop,
             _ => return None,
         })
     }
@@ -415,6 +424,8 @@ pub fn bar(
                     connect_bar,
                     Action::ToggleConnectBar,
                 ),
+                // Seen only while the menu is there: this hides it, its key brings it back.
+                CheckBox(fl!("menu-menu-bar"), None, true, Action::ToggleMenuBar),
                 Button(fl!("menu-notes"), None, Action::Notes),
                 Divider,
                 tab(fl!("menu-zoom-in"), Action::ZoomIn),
@@ -511,6 +522,8 @@ pub fn bar(
                 Divider,
                 tab(fl!("menu-tab-window"), Action::DetachTab),
                 Button(fl!("menu-reattach-all"), None, Action::ReattachAll),
+                Divider,
+                Button(fl!("menu-on-top"), None, Action::AlwaysOnTop),
             ],
         ),
         (fl!("menu-help"), {
