@@ -699,6 +699,7 @@ icon-star = Звезда
 icon-flag = Флажок
 bb-tip = Подсказка (появляется при наведении мыши на кнопку)
 panel-strip = Свернуть в полоску
+panel-pin = Закрепить
 
 # Lock Session, the note tab menu
 menu-lock = Заблокировать сеанс…

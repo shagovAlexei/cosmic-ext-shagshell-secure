@@ -698,6 +698,7 @@ icon-star = Star
 icon-flag = Flag
 bb-tip = Hint (shown when the pointer rests on the button)
 panel-strip = Fold into a strip
+panel-pin = Pin in place
 
 # Lock Session, the note tab menu
 menu-lock = Lock Session…
