@@ -19,8 +19,9 @@
 # Ctrl+Shift+S, Alt+L…) do not arrive through `key` — send those with `vkey`; named keys (F-keys,
 # Enter, Tab, arrows, Alt+F7…) and typed text go through `key`. Keys need
 # the 300 ms pauses below or the first one is lost to the keymap switch.
-# wtype's own keymap also gives arrows wrong physical codes (Right arrived as Escape): send arrows
-# and Enter as `vkey 103|108|105|106|28`. Dialogs tile full-size; to see their real size:
+# wtype's own keymap also gives keys wrong physical codes (Right, or a typed letter, arrived as
+# Escape and closed a bar): send arrows and Enter as `vkey 103|108|105|106|28`, and type into a
+# field that Esc closes letter by letter with `vkey r`, `vkey o`… Dialogs tile full-size; to see their real size:
 # swaymsg -s /run/user/$UID/sway-ipc.$UID.$(cat $DIR/sway.pid).sock 'for_window [title="^Script$"] floating enable'
 set -euo pipefail
 DIR=${SHAGSHELL_HEADLESS:-/tmp/shagshell-headless}

@@ -25,7 +25,7 @@ Every feature and every roadmap phase goes through these steps in order. Do not 
 7. **Review.** Run `/code-review` and fix what it confirms.
 8. **PR.**
    - Tick the phase / feature in `ROADMAP.md`; if the architecture changed, update `CLAUDE.md` and `specs/00-architecture.md`.
-   - Bump `version` in the root `Cargo.toml`: feature → minor, fix → patch.
+   - Bump `version` in the root `Cargo.toml`: feature → minor, fix → patch. Then build (`just verify`) so `Cargo.lock` follows, or CI's `--locked` fails.
    - ```sh
      git push -u origin feat/<topic>
      gh pr create --fill        # body links the spec and the plan
