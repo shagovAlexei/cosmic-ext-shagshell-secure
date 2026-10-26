@@ -100,6 +100,8 @@ pub struct App {
     restore: Vec<String>,
     /// Edit → Find: the text looked for in the active terminal (`None`: the bar is closed).
     find: Option<String>,
+    /// A folded side shown over the tabs while the pointer is on it (`Some(right)`).
+    peek: Option<bool>,
     /// The scheduled scripts (`schedule.toml`); a broken file is never written over.
     schedule: shagshell_core::schedule::Schedule,
     schedule_broken: bool,
@@ -130,6 +132,8 @@ pub enum Message {
     Config(Config),
     /// Global Options: a changed value, written to the config.
     SetConfig(Config),
+    /// The pointer came onto a folded side's strip (`Some(right)`) or left the pane it showed.
+    Peek(Option<bool>),
     OpenUrl(String),
     /// A recorded script and where the user put it (none: given up).
     RecordSaved(String, Option<std::path::PathBuf>),
@@ -311,6 +315,7 @@ impl Application for App {
             connect_list: Vec::new(),
             connect_pick: None,
             find: None,
+            peek: None,
             tool_edit: None,
             restore: Vec::new(),
             about: false,
@@ -678,13 +683,43 @@ impl Application for App {
             self.sessions.notice.as_deref(),
         ));
         let mut middle = widget::row::with_capacity(3).spacing(2);
-        if let Some(c) = self.side_column(&left, window, false) {
+        if let Some(c) = self.side_column(&left, window, false, false) {
             middle = middle.push(c);
         }
         middle = middle.push(centre.width(Length::Fill).height(Length::Fill));
-        if let Some(c) = self.side_column(&right, window, true) {
+        if let Some(c) = self.side_column(&right, window, true, false) {
             middle = middle.push(c);
         }
+        let middle = middle.height(Length::Fill);
+        // A folded side under the pointer: its panes over the tabs, the terminal keeps its size.
+        let peek = self.peek.filter(|&r| match r {
+            true => self.config.strip_right,
+            false => self.config.strip_left,
+        });
+        let middle: Element<'_, Message> = match peek.and_then(|r| {
+            self.side_column(if r { &right } else { &left }, window, r, true)
+                .map(|c| (r, c))
+        }) {
+            Some((r, pane)) => {
+                // Hidden again when the pointer reaches the rest of the window (the pane's own
+                // widgets take the motion it would see leaving).
+                let pane = widget::container(pane)
+                    .height(Length::Fill)
+                    .class(cosmic::theme::Container::WindowBackground);
+                let rest = widget::mouse_area(
+                    widget::Space::new()
+                        .width(Length::Fill)
+                        .height(Length::Fill),
+                )
+                .on_enter(Message::Peek(None));
+                let mut layer = vec![pane.into(), rest.into()];
+                if r {
+                    layer.reverse();
+                }
+                cosmic::iced::widget::stack![middle, widget::row::with_children(layer)].into()
+            }
+            None => middle.into(),
+        };
         let mut col = widget::column::with_capacity(3)
             .push(toolbar::view(
                 &self.connect_bar,
@@ -693,7 +728,7 @@ impl Application for App {
                 &toolbar::buttons(&self.config.toolbar_buttons),
                 self.config.connect_bar_visible,
             ))
-            .push(middle.height(Length::Fill));
+            .push(middle);
         if self.config.button_bar_visible {
             col = col.push(
                 self.buttons
@@ -795,6 +830,7 @@ impl App {
         panes: &[crate::config::Panel],
         window: cosmic::iced::window::Id,
         right: bool,
+        peek: bool,
     ) -> Option<Element<'_, Message>> {
         use crate::config::Panel;
         if panes.is_empty() {
@@ -810,7 +846,7 @@ impl App {
             true => c.strip_right = false,
             false => c.strip_left = false,
         };
-        if folded {
+        if folded && !peek {
             let mut c = self.config.clone();
             unfold(&mut c);
             let buttons = panes.iter().map(|p| {
@@ -827,15 +863,18 @@ impl App {
                 .into()
             });
             return Some(
-                widget::container(
-                    widget::column::with_children(buttons.collect::<Vec<Element<Message>>>())
-                        .spacing(6)
-                        .padding([8, 2])
-                        .align_x(cosmic::iced::Alignment::Center),
+                widget::mouse_area(
+                    widget::container(
+                        widget::column::with_children(buttons.collect::<Vec<Element<Message>>>())
+                            .spacing(6)
+                            .padding([8, 2])
+                            .align_x(cosmic::iced::Alignment::Center),
+                    )
+                    .width(Length::Fixed(36.0))
+                    .height(Length::Fill)
+                    .class(cosmic::theme::Container::Card),
                 )
-                .width(Length::Fixed(36.0))
-                .height(Length::Fill)
-                .class(cosmic::theme::Container::Card)
+                .on_enter(Message::Peek(Some(right)))
                 .into(),
             );
         }
@@ -881,15 +920,20 @@ impl App {
                 };
                 head = head.push(tip(text, icon, change(|c| c.commands_above ^= true)));
             }
+            // Shown over the tabs: pin it back in place.
             head = head.push(tip(
-                fl!("panel-strip"),
-                match right {
-                    true => "go-next-symbolic",
-                    false => "go-previous-symbolic",
+                match peek {
+                    true => fl!("panel-pin"),
+                    false => fl!("panel-strip"),
+                },
+                match (peek, right) {
+                    (true, _) => "pin-symbolic",
+                    (false, true) => "go-next-symbolic",
+                    (false, false) => "go-previous-symbolic",
                 },
                 change(match right {
-                    true => |c| c.strip_right = true,
-                    false => |c| c.strip_left = true,
+                    true => |c| c.strip_right ^= true,
+                    false => |c| c.strip_left ^= true,
                 }),
             ));
             head = head.push(tip(
@@ -964,7 +1008,13 @@ impl App {
         match message {
             Message::Action(a) => return self.act(a),
             Message::Config(c) => self.config = c,
+            Message::Peek(p) => self.peek = p,
             Message::SetConfig(c) => {
+                if (c.strip_left, c.strip_right)
+                    != (self.config.strip_left, self.config.strip_right)
+                {
+                    self.peek = None;
+                }
                 let (lang, theme) = (
                     c.language != self.config.language,
                     c.app_theme != self.config.app_theme,
