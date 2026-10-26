@@ -130,7 +130,7 @@ fn write(out: &mut String, blocks: &[Block], level: usize) {
                 }
                 if !orelse.is_empty() {
                     line(out, level, "else:");
-                    write(out, orelse, level + 1);
+                    body(out, orelse, level + 1);
                 }
             }
             Block::For {
@@ -410,6 +410,51 @@ mod tests {
             for c in src.lines().filter_map(|l| l.trim_start().strip_prefix('#')) {
                 assert!(g.contains(c.trim()), "{name}: lost comment {c:?}");
             }
+        }
+    }
+
+    fn no_python() -> bool {
+        std::process::Command::new("python3")
+            .arg("-V")
+            .output()
+            .is_err()
+    }
+
+    #[test]
+    fn regression_else_pass_comment() {
+        if no_python() {
+            return;
+        }
+        let src = "if a:\n    f()\nelse:\n    pass  # nothing\n";
+        let g = generate(&super::parse::tests::parse(src).unwrap());
+        assert_eq!(ast_dump(src), ast_dump(&g), "{g}");
+    }
+
+    #[test]
+    fn regression_call_on_expression() {
+        if no_python() {
+            return;
+        }
+        for src in [
+            "(lambda: 1)()\n",
+            "(a or b)()\n",
+            "x = (a if c else b)(1)\n",
+            "(-a)()\n",
+            "x = (a < b)()\n",
+        ] {
+            let g = generate(&super::parse::tests::parse(src).unwrap());
+            assert_eq!(ast_dump(src), ast_dump(&g), "{src} -> {g}");
+        }
+    }
+
+    #[test]
+    fn regression_shared_line_comment() {
+        if no_python() {
+            return;
+        }
+        for src in ["x = 1; y = 2  # c\n", "if a: f()  # c\n"] {
+            let g = generate(&super::parse::tests::parse(src).unwrap());
+            assert_eq!(g.matches("# c").count(), 1, "{src} -> {g}");
         }
     }
 }

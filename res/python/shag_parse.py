@@ -25,6 +25,7 @@ class Reader:
     def __init__(self, src):
         self.lines = src.split("\n")
         self.comments = {}
+        self.used = set()  # lines whose comment is out (statements can share a line)
         for tok in tokenize.generate_tokens(io.StringIO(src).readline):
             if tok.type == tokenize.COMMENT:
                 t = tok.string[1:].rstrip()
@@ -54,7 +55,8 @@ class Reader:
         """Lines between statements: comments, and one Blank per run of empty lines."""
         pending = False
         for n in range(a, b + 1):
-            if n in self.comments:
+            if n in self.comments and n not in self.used:
+                self.used.add(n)
                 if pending and out:
                     out.append({"kind": "blank"})
                 pending = False
@@ -67,7 +69,8 @@ class Reader:
     def own(self, a, b, out):
         """The comments on a statement's own lines go just before its block."""
         for n in range(a, b + 1):
-            if n in self.comments:
+            if n in self.comments and n not in self.used:
+                self.used.add(n)
                 out.append({"kind": "comment", "text": self.comments[n]})
 
     def stmt(self, st, first, out):
@@ -133,8 +136,10 @@ class Reader:
 
 
 def plain_call(e):
-    """A call the block's fields can hold: no `*args` / `**kwargs`."""
-    return (isinstance(e, ast.Call) and not any(isinstance(a, ast.Starred) for a in e.args)
+    """A call the block's fields can hold: no `*args` / `**kwargs`, and a function that needs no
+    brackets (`(a or b)()` written as `a or b()` would mean another thing)."""
+    return (isinstance(e, ast.Call) and isinstance(e.func, (ast.Name, ast.Attribute, ast.Call, ast.Subscript))
+            and not any(isinstance(a, ast.Starred) for a in e.args)
             and all(k.arg for k in e.keywords))
 
 
