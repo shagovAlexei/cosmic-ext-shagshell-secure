@@ -1,5 +1,6 @@
 pub mod askpass;
 pub mod bookmarks;
+pub mod builder;
 pub mod buttonbar;
 pub mod check;
 pub mod commands;
