@@ -2,8 +2,8 @@
 //! a string literal as its plain text, anything else as `=` + the expression (`=cmd + "\r"`), and
 //! takes `=…` back as an expression.
 
-use super::catalog::{Entry, Kind, Ty};
-use super::{Block, Handler};
+use super::catalog::{Entry, Kind, Ty, lookup};
+use super::{Arg, Block, Handler};
 
 /// A Python string literal (as `repr`): `'…'`, or `"…"` when the text has `'` and no `"`.
 pub fn literal(text: &str) -> String {
@@ -210,9 +210,233 @@ pub fn new_statement(kind: &str) -> Option<Block> {
     })
 }
 
+/// A field of a block: the n-th parameter of a `crt` call, a statement's own parts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum F {
+    /// The catalog entry's n-th parameter (`*texts` / `**kw` hold several arguments).
+    Arg(usize),
+    /// «save to»: the variable a call's result goes to.
+    Assign,
+    /// A function that is not in the catalog, and its arguments as one text.
+    Func,
+    Args,
+    Target,
+    Value,
+    /// `if` / `elif` branch n's condition; `while`'s is 0.
+    Cond(usize),
+    Iter,
+    Items,
+    Name,
+    Params,
+    HandlerTy(usize),
+    HandlerName(usize),
+    /// A comment's text, Custom Python's code.
+    Text,
+}
+
+/// `a, f(b, c), k='x, y'`: the arguments at the top level (brackets and quotes kept whole).
+fn split_top(s: &str) -> Vec<String> {
+    let (mut out, mut cur, mut depth, mut quote, mut esc) =
+        (vec![], String::new(), 0i32, None, false);
+    for c in s.chars() {
+        match (quote, c) {
+            (Some(_), _) if esc => esc = false,
+            (Some(_), '\\') => esc = true,
+            (Some(q), c) if c == q => quote = None,
+            (Some(_), _) => {}
+            (None, '\'' | '"') => quote = Some(c),
+            (None, '(' | '[' | '{') => depth += 1,
+            (None, ')' | ']' | '}') => depth -= 1,
+            (None, ',') if depth == 0 => {
+                out.push(std::mem::take(&mut cur).trim().to_string());
+                continue;
+            }
+            _ => {}
+        }
+        cur.push(c);
+    }
+    out.push(cur.trim().to_string());
+    out.retain(|a| !a.is_empty());
+    out
+}
+
+/// `name=value` (not `==`): a keyword argument.
+fn keyword(a: &str) -> Option<(String, String)> {
+    let (k, v) = a.split_once('=')?;
+    let k = k.trim();
+    let ident = k
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_alphabetic() || c == '_')
+        && k.chars().all(|c| c.is_alphanumeric() || c == '_');
+    (ident && !v.starts_with('=')).then(|| (k.to_string(), v.trim().to_string()))
+}
+
+fn args_of(text: &str) -> Vec<Arg> {
+    split_top(text)
+        .into_iter()
+        .map(|a| match keyword(&a) {
+            Some((k, v)) => Arg {
+                name: Some(k),
+                value: v,
+            },
+            None => Arg {
+                name: None,
+                value: a,
+            },
+        })
+        .collect()
+}
+
+fn join(args: &[&Arg]) -> Option<String> {
+    let t: Vec<String> = args
+        .iter()
+        .map(|a| match &a.name {
+            Some(n) => format!("{n}={}", a.value),
+            None => a.value.clone(),
+        })
+        .collect();
+    (!t.is_empty()).then(|| t.join(", "))
+}
+
+fn opt(v: &str) -> Option<String> {
+    (!v.is_empty()).then(|| v.to_string())
+}
+
+/// A field's value (Python text); `None`: not set (an optional parameter left at its default).
+pub fn get(b: &Block, f: F) -> Option<String> {
+    match (b, f) {
+        (Block::Call { func, args, .. }, F::Arg(i)) => {
+            let e = lookup(func)?;
+            let p = e.params.get(i)?;
+            let np = args.iter().take_while(|a| a.name.is_none()).count();
+            if p.name.starts_with("**") {
+                let named: Vec<&str> = e.params.iter().map(|p| p.name).collect();
+                join(
+                    &args
+                        .iter()
+                        .filter(|a| a.name.as_deref().is_some_and(|n| !named.contains(&n)))
+                        .collect::<Vec<_>>(),
+                )
+            } else if p.name.starts_with('*') {
+                join(&args[i.min(np)..np].iter().collect::<Vec<_>>())
+            } else if i < np {
+                Some(args[i].value.clone())
+            } else {
+                args.iter()
+                    .find(|a| a.name.as_deref() == Some(p.name))
+                    .map(|a| a.value.clone())
+            }
+        }
+        (Block::Call { assign, .. }, F::Assign) => assign.clone(),
+        (Block::Call { func, .. }, F::Func) => Some(func.clone()),
+        (Block::Call { args, .. }, F::Args) => join(&args.iter().collect::<Vec<_>>()),
+        (Block::Assign { target, .. } | Block::For { target, .. }, F::Target) => {
+            Some(target.clone())
+        }
+        (Block::Assign { value, .. }, F::Value) => Some(value.clone()),
+        (Block::If { branches, .. }, F::Cond(i)) => branches.get(i).map(|(c, _)| c.clone()),
+        (Block::While { cond, .. }, F::Cond(0)) => Some(cond.clone()),
+        (Block::For { iter, .. }, F::Iter) => Some(iter.clone()),
+        (Block::With { items, .. }, F::Items) => Some(items.clone()),
+        (Block::Def { name, .. }, F::Name) => Some(name.clone()),
+        (Block::Def { params, .. }, F::Params) => Some(params.clone()),
+        (Block::Try { handlers, .. }, F::HandlerTy(i)) => handlers.get(i)?.ty.clone(),
+        (Block::Try { handlers, .. }, F::HandlerName(i)) => handlers.get(i)?.name.clone(),
+        (Block::Comment { text }, F::Text) | (Block::Raw { code: text }, F::Text) => {
+            Some(text.clone())
+        }
+        _ => None,
+    }
+}
+
+/// Sets a field; `""` takes an optional parameter / «save to» out. `false`: no such field.
+pub fn set(b: &mut Block, f: F, value: &str) -> bool {
+    let v = value.trim();
+    match (b, f) {
+        (Block::Call { func, args, .. }, F::Arg(i)) => {
+            let Some(e) = lookup(func) else {
+                return false;
+            };
+            let Some(p) = e.params.get(i) else {
+                return false;
+            };
+            let np = args.iter().take_while(|a| a.name.is_none()).count();
+            if p.name.starts_with("**") {
+                let named: Vec<&str> = e.params.iter().map(|p| p.name).collect();
+                args.retain(|a| a.name.as_deref().is_none_or(|n| named.contains(&n)));
+                let new = args_of(v);
+                if new.iter().any(|a| a.name.is_none()) {
+                    return false;
+                }
+                args.extend(new);
+            } else if p.name.starts_with('*') {
+                let tail: Vec<Arg> = args.drain(i.min(np)..).collect();
+                args.extend(args_of(v).into_iter().filter(|a| a.name.is_none()));
+                args.extend(tail.into_iter().filter(|a| a.name.is_some()));
+            } else if v.is_empty() {
+                match (i < np, i + 1 == np) {
+                    (true, true) => {
+                        args.remove(i);
+                    }
+                    (true, false) => args[i].value = p.default.unwrap_or("None").to_string(),
+                    _ => args.retain(|a| a.name.as_deref() != Some(p.name)),
+                }
+            } else if i < np {
+                args[i].value = v.to_string();
+            } else if i == np && !args.iter().any(|a| a.name.as_deref() == Some(p.name)) {
+                args.insert(
+                    np,
+                    Arg {
+                        name: None,
+                        value: v.to_string(),
+                    },
+                );
+            } else {
+                match args.iter_mut().find(|a| a.name.as_deref() == Some(p.name)) {
+                    Some(a) => a.value = v.to_string(),
+                    None => args.push(Arg {
+                        name: Some(p.name.to_string()),
+                        value: v.to_string(),
+                    }),
+                }
+            }
+        }
+        (Block::Call { assign, .. }, F::Assign) => *assign = opt(v),
+        (Block::Call { func, .. }, F::Func) => *func = v.to_string(),
+        (Block::Call { args, .. }, F::Args) => *args = args_of(v),
+        (Block::Assign { target, .. } | Block::For { target, .. }, F::Target) => {
+            *target = v.to_string()
+        }
+        (Block::Assign { value: x, .. }, F::Value) => *x = v.to_string(),
+        (Block::If { branches, .. }, F::Cond(i)) => match branches.get_mut(i) {
+            Some((c, _)) => *c = v.to_string(),
+            None => return false,
+        },
+        (Block::While { cond, .. }, F::Cond(0)) => *cond = v.to_string(),
+        (Block::For { iter, .. }, F::Iter) => *iter = v.to_string(),
+        (Block::With { items, .. }, F::Items) => *items = v.to_string(),
+        (Block::Def { name, .. }, F::Name) => *name = v.to_string(),
+        (Block::Def { params, .. }, F::Params) => *params = v.to_string(),
+        (Block::Try { handlers, .. }, F::HandlerTy(i)) => match handlers.get_mut(i) {
+            Some(h) => h.ty = opt(v),
+            None => return false,
+        },
+        (Block::Try { handlers, .. }, F::HandlerName(i)) => match handlers.get_mut(i) {
+            Some(h) => h.name = opt(v),
+            None => return false,
+        },
+        // A comment / Custom Python keep their text as typed (spaces, lines).
+        (Block::Comment { text }, F::Text) | (Block::Raw { code: text }, F::Text) => {
+            *text = value.to_string()
+        }
+        _ => return false,
+    }
+    true
+}
+
 #[cfg(test)]
 mod tests {
-    use super::super::catalog::lookup;
     use super::*;
 
     #[test]
@@ -326,5 +550,84 @@ mod tests {
             assert!(!code.trim().is_empty(), "{k}");
         }
         assert_eq!(new_statement("class"), None);
+    }
+
+    fn send() -> Block {
+        new_block(lookup("crt.Screen.WaitForString").unwrap())
+    }
+
+    #[test]
+    fn field_positional_then_keyword() {
+        let mut b = send();
+        assert_eq!(get(&b, F::Arg(0)).as_deref(), Some("''"));
+        assert_eq!(get(&b, F::Arg(1)), None);
+        assert!(set(&mut b, F::Arg(1), "10"));
+        assert!(set(&mut b, F::Arg(2), "True"));
+        assert_eq!(
+            super::super::generate(std::slice::from_ref(&b)),
+            "crt.Screen.WaitForString('', 10, True)\n"
+        );
+        assert!(
+            set(&mut b, F::Arg(1), ""),
+            "the middle one back to its default"
+        );
+        assert_eq!(
+            super::super::generate(std::slice::from_ref(&b)),
+            "crt.Screen.WaitForString('', 0, True)\n"
+        );
+        assert!(set(&mut b, F::Arg(2), ""));
+        assert_eq!(
+            super::super::generate(std::slice::from_ref(&b)),
+            "crt.Screen.WaitForString('', 0)\n"
+        );
+        assert!(set(&mut b, F::Assign, "ok"));
+        assert_eq!(get(&b, F::Assign).as_deref(), Some("ok"));
+        assert!(set(&mut b, F::Assign, ""));
+        assert_eq!(get(&b, F::Assign), None);
+    }
+
+    #[test]
+    fn field_keyword_when_a_gap() {
+        let mut b = send();
+        assert!(set(&mut b, F::Arg(2), "True"));
+        assert_eq!(
+            super::super::generate(std::slice::from_ref(&b)),
+            "crt.Screen.WaitForString('', bCaseInsensitive=True)\n"
+        );
+        assert_eq!(get(&b, F::Arg(2)).as_deref(), Some("True"));
+    }
+
+    #[test]
+    fn field_varargs_and_kw() {
+        let mut b = new_block(lookup("crt.Screen.WaitForStrings").unwrap());
+        assert!(set(&mut b, F::Arg(0), "'#', '>'"));
+        assert!(set(&mut b, F::Arg(1), "timeout=10"));
+        assert_eq!(
+            super::super::generate(std::slice::from_ref(&b)),
+            "crt.Screen.WaitForStrings('#', '>', timeout=10)\n"
+        );
+        assert_eq!(get(&b, F::Arg(0)).as_deref(), Some("'#', '>'"));
+        assert_eq!(get(&b, F::Arg(1)).as_deref(), Some("timeout=10"));
+    }
+
+    #[test]
+    fn field_statements() {
+        let mut b = new_statement("for").unwrap();
+        assert!(set(&mut b, F::Iter, "hosts"));
+        assert_eq!(get(&b, F::Iter).as_deref(), Some("hosts"));
+        assert!(!set(&mut b, F::Cond(0), "x"));
+        let mut b = new_statement("call").unwrap();
+        assert!(set(&mut b, F::Func, "f"));
+        assert!(set(&mut b, F::Args, "1, b=2"));
+        assert_eq!(
+            super::super::generate(std::slice::from_ref(&b)),
+            "f(1, b=2)\n"
+        );
+        let mut b = new_statement("try").unwrap();
+        assert!(set(&mut b, F::HandlerTy(0), "OSError"));
+        assert_eq!(get(&b, F::HandlerTy(0)).as_deref(), Some("OSError"));
+        let mut b = new_statement("comment").unwrap();
+        assert!(set(&mut b, F::Text, "hi"));
+        assert_eq!(get(&b, F::Text).as_deref(), Some("hi"));
     }
 }
