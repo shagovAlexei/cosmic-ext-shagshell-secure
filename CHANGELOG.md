@@ -2,6 +2,9 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.83.0 — 2026-10-26
+- feat: Script → Run the last script again (SecureCRT's «Recent Script»: the last script started, with its arguments); Run… / Cancel / Run the last script again are functions for keys, Button Bar buttons and the toolbar, and on the default toolbar
+
 ## 0.82.0 — 2026-10-26
 - feat: arrows in a script's dialogs: ← → ↑ ↓ move between a MessageBox's buttons (Enter presses the highlighted one), ↑ ↓ through a one-choice List
 - fix: a script's dialog window is as tall as its text (a long MessageBox needed the scrollbar); taller than 640 px, the text scrolls and the buttons stay
