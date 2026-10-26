@@ -15,7 +15,7 @@ pub fn bar_id() -> widget::Id {
 
 /// The app functions a toolbar button can run: (name in the config, icon, action, label).
 pub type Tool = (&'static str, &'static str, Action, fn() -> String);
-pub const TOOLS: [Tool; 27] = [
+pub const TOOLS: [Tool; 29] = [
     // The Connect Bar's field itself, not a button (where it stands on the bar).
     (
         "ConnectBar",
@@ -99,6 +99,18 @@ pub const TOOLS: [Tool; 27] = [
         || fl!("menu-script-run"),
     ),
     (
+        "CancelScript",
+        "media-playback-stop-symbolic",
+        Action::CancelScript,
+        || fl!("menu-script-cancel"),
+    ),
+    (
+        "RerunScript",
+        "media-playlist-repeat-symbolic",
+        Action::RerunScript,
+        || fl!("menu-script-rerun"),
+    ),
+    (
         "ScriptConsole",
         "utilities-system-monitor-symbolic",
         Action::ScriptConsole,
@@ -179,6 +191,11 @@ pub fn default_bar() -> Vec<ToolButton> {
         ToolButton::sep(),
         f("Sftp"),
         f("SessionOptions"),
+        ToolButton::sep(),
+        // SecureCRT's Run… / Cancel / Recent Script.
+        f("RunScript"),
+        f("CancelScript"),
+        f("RerunScript"),
         ToolButton::sep(),
         f(CONNECT_BAR),
     ]
@@ -330,7 +347,7 @@ mod tests {
     #[test]
     fn the_default_bar_runs_known_functions() {
         let bar = default_bar();
-        assert_eq!(bar.iter().filter(|b| b.is_sep()).count(), 4);
+        assert_eq!(bar.iter().filter(|b| b.is_sep()).count(), 5);
         assert!(bar.iter().all(|b| b.is_sep() || function(&b.cmd).is_some()));
         let mut seen = std::collections::HashSet::new();
         assert!(TOOLS.iter().all(|t| seen.insert(t.0)), "names are unique");

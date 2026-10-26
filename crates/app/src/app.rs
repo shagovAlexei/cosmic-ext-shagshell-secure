@@ -100,6 +100,9 @@ pub struct App {
     restore: Vec<String>,
     /// Edit → Find: the text looked for in the active terminal (`None`: the bar is closed).
     find: Option<String>,
+    /// The last script started by hand (menu, button, key) with its arguments: Script → Run the
+    /// last script again. Before any this run, the newest recent one.
+    last_script: Option<(std::path::PathBuf, Vec<String>)>,
     /// A folded side shown over the tabs while the pointer is on it (`Some(right)`).
     peek: Option<bool>,
     /// The scheduled scripts (`schedule.toml`); a broken file is never written over.
@@ -315,6 +318,7 @@ impl Application for App {
             connect_list: Vec::new(),
             connect_pick: None,
             find: None,
+            last_script: None,
             peek: None,
             tool_edit: None,
             restore: Vec::new(),
@@ -1862,6 +1866,16 @@ impl App {
                     return cosmic::iced::window::set_mode(id, mode);
                 }
             }
+            Action::RerunScript => {
+                let last = self.last_script.clone().or_else(|| {
+                    let p = self.recent_files().into_iter().next()?;
+                    Some((p, Vec::new()))
+                });
+                match last {
+                    Some((p, args)) => return self.script(crate::script::ScMsg::Start(p, args)),
+                    None => self.sessions.notice = Some(fl!("script-no-last")),
+                }
+            }
             Action::CancelScript => {
                 self.scripts.cancel();
                 return self.script_window();
@@ -1934,6 +1948,7 @@ impl App {
                 Some(tab) => match self.scripts.run(&path, &args, tab) {
                     Ok(_) if quiet => {}
                     Ok(_) => {
+                        self.last_script = Some((path.clone(), args.clone()));
                         let name = path
                             .file_name()
                             .map_or_else(String::new, |n| n.to_string_lossy().into_owned());

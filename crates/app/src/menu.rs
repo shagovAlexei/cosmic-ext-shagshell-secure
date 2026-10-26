@@ -72,6 +72,8 @@ pub enum Action {
     RunScript,
     /// Script → Cancel.
     CancelScript,
+    /// Script → Run the last script again (SecureCRT's «Recent Script» button): with its arguments.
+    RerunScript,
     /// Script → Console.
     ScriptConsole,
     /// View → Notes: the main note's tab.
@@ -104,7 +106,7 @@ pub enum Action {
 
 /// The functions a Button Bar button can call: the name in `buttonbars.toml` and its label.
 pub type NamedFn = (&'static str, fn() -> String);
-pub const NAMED: [NamedFn; 26] = [
+pub const NAMED: [NamedFn; 29] = [
     ("Connect", || fl!("menu-connect")),
     ("QuickConnect", || fl!("menu-quick-connect")),
     ("NewLocalShell", || fl!("menu-new-local-shell")),
@@ -131,6 +133,9 @@ pub const NAMED: [NamedFn; 26] = [
     ("PrevTab", || fl!("menu-prev-tab")),
     ("Find", || fl!("menu-find")),
     ("ConnectBar", || fl!("menu-connect-bar")),
+    ("RunScript", || fl!("menu-script-run")),
+    ("CancelScript", || fl!("menu-script-cancel")),
+    ("RerunScript", || fl!("menu-script-rerun")),
 ];
 
 impl Action {
@@ -165,6 +170,9 @@ impl Action {
             "PrevTab" => Action::PrevTab,
             "Find" => Action::Find,
             "ConnectBar" => Action::ConnectBar,
+            "RunScript" => Action::RunScript,
+            "CancelScript" => Action::CancelScript,
+            "RerunScript" => Action::RerunScript,
             _ => return None,
         })
     }
@@ -252,6 +260,7 @@ fn icon_of(a: Action) -> Option<cosmic::widget::icon::Handle> {
         Action::Transfer(_, false) => "network-receive-symbolic",
         Action::CancelTransfer | Action::CancelScript => "media-playback-stop-symbolic",
         Action::RunScript => "system-run-symbolic",
+        Action::RerunScript => "media-playlist-repeat-symbolic",
         Action::ScriptConsole => "utilities-terminal-symbolic",
         Action::Scheduler => "alarm-symbolic",
         Action::ScriptsFolder => "folder-open-symbolic",
@@ -460,6 +469,7 @@ pub fn bar(
             vec![
                 Button(fl!("menu-script-run"), None, Action::RunScript),
                 on(scripting, fl!("menu-script-cancel"), Action::CancelScript),
+                Button(fl!("menu-script-rerun"), None, Action::RerunScript),
                 Button(fl!("menu-script-console"), None, Action::ScriptConsole),
                 Button(fl!("menu-script-scheduler"), None, Action::Scheduler),
                 Divider,
@@ -540,4 +550,25 @@ pub fn has_tool(name: &str) -> bool {
         shagshell_core::check::probe(&shagshell_core::zmodem::programs(), path.as_deref())
     });
     found.iter().any(|(n, ok)| n == name && *ok)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn regression_script_functions_can_be_bound() {
+        // Run / Cancel / the last script again were in the Script menu only: no key, Button Bar
+        // button or toolbar button could call them.
+        for (name, _) in NAMED {
+            assert!(Action::named(name).is_some(), "{name}");
+        }
+        for name in ["RunScript", "CancelScript", "RerunScript"] {
+            assert!(NAMED.iter().any(|(n, _)| *n == name), "{name} in NAMED");
+            assert!(
+                crate::toolbar::TOOLS.iter().any(|t| t.0 == name),
+                "{name} on the toolbar"
+            );
+        }
+    }
 }
