@@ -100,6 +100,8 @@ pub struct App {
     restore: Vec<String>,
     /// Edit → Find: the text looked for in the active terminal (`None`: the bar is closed).
     find: Option<String>,
+    /// Window → Always on Top, on X11 (Wayland: the compositor's).
+    on_top: bool,
     /// Edit → Find in a note: the replacement typed.
     find_with: String,
     /// The last script started by hand (menu, button, key) with its arguments: Script → Run the
@@ -322,6 +324,7 @@ impl Application for App {
             connect_pick: None,
             find: None,
             find_with: String::new(),
+            on_top: false,
             last_script: None,
             peek: None,
             tool_edit: None,
@@ -626,6 +629,9 @@ impl Application for App {
     }
 
     fn header_start(&self) -> Vec<Element<'_, Message>> {
+        if self.config.menu_bar_hidden {
+            return Vec::new();
+        }
         vec![menu::bar(
             (
                 self.config.session_manager_visible,
@@ -1762,6 +1768,35 @@ impl App {
                 self.tabs.save_notes();
                 let _ = std::fs::remove_file(askpass_sock(&self.control_dir));
                 return cosmic::iced::exit();
+            }
+            Action::ToggleMenuBar => {
+                self.config.menu_bar_hidden = !self.config.menu_bar_hidden;
+                self.save_config();
+                // Gone: what brings it back is said once.
+                self.sessions.notice = None;
+                if self.config.menu_bar_hidden {
+                    let key = crate::keymap_editor::builtin_keys()
+                        .into_iter()
+                        .find(|(_, id)| *id == "ToggleMenuBar")
+                        .map_or_else(String::new, |(c, _)| c.to_string());
+                    self.sessions.notice = Some(fl!("menu-bar-hidden", key = key));
+                }
+            }
+            Action::AlwaysOnTop => {
+                let Some(w) = self.core.main_window_id() else {
+                    return Task::none();
+                };
+                if std::env::var_os("WAYLAND_DISPLAY").is_some() {
+                    self.sessions.notice = Some(fl!("on-top-wayland"));
+                    return cosmic::iced::window::show_system_menu(w);
+                }
+                use cosmic::iced::window::Level;
+                self.on_top = !self.on_top;
+                let level = match self.on_top {
+                    true => Level::AlwaysOnTop,
+                    false => Level::Normal,
+                };
+                return cosmic::iced::window::set_level(w, level);
             }
             Action::ToggleConnectBar => {
                 self.config.connect_bar_visible = !self.config.connect_bar_visible;
@@ -3652,6 +3687,7 @@ fn over_fields(a: Action) -> bool {
             | Action::ZoomOut
             | Action::ZoomReset
             | Action::FullScreen
+            | Action::ToggleMenuBar
     )
 }
 

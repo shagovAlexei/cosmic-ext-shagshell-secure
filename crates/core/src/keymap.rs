@@ -151,7 +151,7 @@ pub struct Binding {
 
 /// The program's own keys: (function, default chord). The function names are those of the
 /// Button Bar's menu functions (`menu::NAMED`). Alt+1…9 (tab N) are not in the list: fixed.
-pub const BUILTIN: [(&str, &str); 16] = [
+pub const BUILTIN: [(&str, &str); 17] = [
     ("ToggleSessionManager", "Alt+M"),
     ("QuickConnect", "Alt+Q"),
     ("Connect", "Alt+C"),
@@ -168,6 +168,7 @@ pub const BUILTIN: [(&str, &str); 16] = [
     ("FullScreen", "F11"),
     ("Find", "Ctrl+Shift+F"),
     ("ConnectBar", "Ctrl+Shift+R"),
+    ("ToggleMenuBar", "Ctrl+Shift+M"),
 ];
 
 /// The default chord of a built-in function.
