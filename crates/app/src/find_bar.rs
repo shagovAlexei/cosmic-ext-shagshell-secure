@@ -1,5 +1,6 @@
-//! Edit → Find (Ctrl+Shift+F): a bar over the terminals; Enter / ↓ the next match, ↑ the one
-//! before, Esc closes. The active terminal searches (`Terminal::search`), the text taken literally.
+//! Edit → Find (Ctrl+Shift+F): a bar over the tabs; Enter / ↓ the next match, ↑ the one
+//! before, Esc closes. The active terminal searches (`Terminal::search`), the text taken literally;
+//! a note searches its text ignoring case, and the bar also replaces there.
 
 use crate::app::Message;
 use crate::fl;
@@ -13,6 +14,10 @@ pub enum FindMsg {
     Next,
     Prev,
     Close,
+    /// A note's bar: the replacement typed, Replace (this match, then the next), Replace all.
+    With(String),
+    Replace,
+    ReplaceAll,
 }
 
 /// The field (focused by id, so the terminal lets go of the keys).
@@ -21,10 +26,15 @@ pub fn field_id() -> widget::Id {
     ID.clone()
 }
 
-pub fn view(text: &str) -> Element<'static, Message> {
+/// `with`: the active tab is a note, and this is the replacement typed.
+pub fn view(text: &str, with: Option<&str>) -> Element<'static, Message> {
     let m = Message::Find;
-    widget::row::with_children(vec![
-        widget::search_input(fl!("find-hint"), text.to_string())
+    let hint = match with {
+        Some(_) => fl!("find-hint-note"),
+        None => fl!("find-hint"),
+    };
+    let mut row = widget::row::with_children(vec![
+        widget::search_input(hint, text.to_string())
             .id(field_id())
             .on_focus(Message::FocusField(field_id()))
             .on_input(move |t| m(FindMsg::Text(t)))
@@ -38,9 +48,33 @@ pub fn view(text: &str) -> Element<'static, Message> {
             fl!("find-close"),
             Some(m(FindMsg::Close)),
         ),
-    ])
-    .spacing(4)
-    .padding([2, 8])
-    .align_y(cosmic::iced::Alignment::Center)
-    .into()
+    ]);
+    if let Some(with) = with {
+        row = row
+            .push(
+                widget::text_input(fl!("find-with"), with.to_string())
+                    .id(with_id())
+                    .on_focus(Message::FocusField(with_id()))
+                    .on_input(move |t| m(FindMsg::With(t)))
+                    .on_submit(move |_| m(FindMsg::Replace))
+                    .width(cosmic::iced::Length::Fixed(220.0)),
+            )
+            .push(widget::button::standard(fl!("find-replace")).on_press(m(FindMsg::Replace)))
+            .push(
+                widget::button::standard(fl!("find-replace-all")).on_press(m(FindMsg::ReplaceAll)),
+            );
+    }
+    // A narrow window: what does not fit goes on a second line.
+    row.spacing(4)
+        .padding([2, 8])
+        .align_y(cosmic::iced::Alignment::Center)
+        .wrap()
+        .vertical_spacing(4)
+        .into()
+}
+
+/// The replacement's field.
+pub fn with_id() -> widget::Id {
+    static ID: std::sync::LazyLock<widget::Id> = std::sync::LazyLock::new(widget::Id::unique);
+    ID.clone()
 }

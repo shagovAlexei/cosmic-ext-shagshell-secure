@@ -158,3 +158,78 @@ pub fn select_all(editor: &Ed) {
         e.set_selection(cosmic_text::Selection::Normal(end));
     });
 }
+
+/// The text's lines (no endings), for Find.
+pub fn lines(editor: &Ed) -> Vec<String> {
+    with(editor, |e| {
+        e.with_buffer(|b| b.lines.iter().map(|l| l.text().to_string()).collect())
+    })
+}
+
+/// Where Find goes on from: the start of the selection (typing extends the match in place),
+/// or its end (the next match); the cursor without a selection.
+pub fn find_from(editor: &Ed, after: bool) -> (usize, usize) {
+    with(editor, |e| {
+        let c = e.cursor();
+        let (start, end) = e.selection_bounds().unwrap_or((c, c));
+        let at = if after { end } else { start };
+        (at.line, at.index)
+    })
+}
+
+/// A match selected (the cursor at its end: the view scrolls to it).
+pub fn select(editor: &Ed, line: usize, start: usize, end: usize) {
+    with(editor, |e| {
+        e.set_selection(cosmic_text::Selection::Normal(cosmic_text::Cursor::new(
+            line, start,
+        )));
+        e.set_cursor(cosmic_text::Cursor::new(line, end));
+    });
+}
+
+/// The selected text.
+pub fn selected(editor: &Ed) -> Option<String> {
+    with(editor, |e| e.copy_selection())
+}
+
+/// The selection replaced by `text` (one undo step).
+pub fn replace_selection(editor: &Ed, text: &str) {
+    with(editor, |e| {
+        e.start_change();
+        e.delete_selection();
+        e.insert_string(text, None);
+        e.finish_change();
+    });
+}
+
+/// The whole text replaced (Replace all, one undo step); the cursor back at the top.
+pub fn replace_text(editor: &Ed, text: &str) {
+    select_all(editor);
+    with(editor, |e| {
+        e.start_change();
+        e.delete_selection();
+        e.insert_string(text, None);
+        e.finish_change();
+        e.set_cursor(cosmic_text::Cursor::new(0, 0));
+    });
+}
+
+/// The text's font family. The syntax colours are drawn again: a theme change rebuilds them
+/// from every line's own attributes, so it goes to the other theme and back.
+pub fn set_family(editor: &Ed, family: Family<'static>) {
+    with(editor, |e| {
+        e.with_buffer_mut(|b| {
+            for line in b.lines.iter_mut() {
+                let attrs = line.attrs_list().defaults().family(family);
+                line.set_attrs_list(cosmic_text::AttrsList::new(&attrs));
+            }
+        });
+        let now = theme_name();
+        let other = match now {
+            "COSMIC Dark" => "COSMIC Light",
+            _ => "COSMIC Dark",
+        };
+        e.update_theme(other);
+        e.update_theme(now);
+    });
+}

@@ -271,23 +271,6 @@ pub fn view<'a>(
             fl!("options-download-dir"),
             text(&config.download_dir, |c, v| c.download_dir = v),
         ));
-    // Installed monospace families (the first entry: the system's), and the sizes to pick from.
-    let mut fonts = vec![fl!("options-system")];
-    fonts.extend(crate::term::style::monospace_families());
-    if !config.font_family.is_empty()
-        && !fonts
-            .iter()
-            .any(|f| f.eq_ignore_ascii_case(&config.font_family))
-    {
-        fonts.push(config.font_family.clone());
-    }
-    let mut sizes: Vec<u16> = vec![
-        8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 22, 24, 28, 32, 40, 48,
-    ];
-    if !sizes.iter().any(|n| f32::from(*n) == config.font_px()) {
-        sizes.push(config.font_px() as u16);
-        sizes.sort_unstable();
-    }
     // A height is picked from a list, the first entry being the theme's own.
     let heights = |now: u16, f: fn(&mut Config, u16)| -> cosmic::Element<'static, Message> {
         let steps: Vec<u16> = HEIGHTS.to_vec();
@@ -311,44 +294,11 @@ pub fn view<'a>(
         .title(fl!("options-terminal"))
         .add(settings::flex_item(
             fl!("options-font"),
-            widget::dropdown(
-                fonts.clone(),
-                Some(
-                    fonts
-                        .iter()
-                        .position(|f| f.eq_ignore_ascii_case(&config.font_family))
-                        .unwrap_or(0),
-                ),
-                {
-                    let c = config.clone();
-                    let fonts = fonts.clone();
-                    move |i| {
-                        let mut c = c.clone();
-                        // 0 = the system's monospace.
-                        c.font_family = if i == 0 {
-                            String::new()
-                        } else {
-                            fonts[i].clone()
-                        };
-                        Message::SetConfig(c)
-                    }
-                },
-            ),
+            font_choice(config, &config.font_family, |c, f| c.font_family = f),
         ))
         .add(settings::flex_item(
             fl!("options-font-size"),
-            widget::dropdown(
-                sizes.iter().map(u16::to_string).collect::<Vec<_>>(),
-                sizes.iter().position(|n| f32::from(*n) == config.font_px()),
-                {
-                    let c = config.clone();
-                    move |i| {
-                        let mut c = c.clone();
-                        c.font_size = sizes[i];
-                        Message::SetConfig(c)
-                    }
-                },
-            ),
+            size_choice(config, config.font_px(), |c, n| c.font_size = n),
         ))
         .add(settings::flex_item(
             fl!("options-cursor"),
@@ -463,10 +413,24 @@ pub fn view<'a>(
             widget::button::standard(fl!("options-open"))
                 .on_press(Message::Toolbar(crate::toolbar::TbMsg::Open)),
         ));
+    // Notes: a font of their own (the editor's, not the terminal's).
+    let notes = settings::section()
+        .title(fl!("options-notes"))
+        .add(settings::flex_item(
+            fl!("options-font"),
+            font_choice(config, &config.note_font_family, |c, f| {
+                c.note_font_family = f
+            }),
+        ))
+        .add(settings::flex_item(
+            fl!("options-font-size"),
+            size_choice(config, config.note_font_px(), |c, n| c.note_font_size = n),
+        ));
     let content = widget::column::with_children(vec![
         interface.into(),
         toolbar.into(),
         terminal.into(),
+        notes.into(),
         colours.into(),
         logging.into(),
         zmodem.into(),
@@ -477,6 +441,64 @@ pub fn view<'a>(
     ])
     .spacing(16);
     context_drawer::context_drawer(content, Message::CloseDrawer).title(fl!("menu-global-options"))
+}
+
+/// A font family to pick: the installed monospace ones, the first entry the system's ("").
+fn font_choice(
+    config: &Config,
+    now: &str,
+    set: fn(&mut Config, String),
+) -> cosmic::Element<'static, Message> {
+    let mut fonts = vec![fl!("options-system")];
+    fonts.extend(crate::term::style::monospace_families());
+    if !now.is_empty() && !fonts.iter().any(|f| f.eq_ignore_ascii_case(now)) {
+        fonts.push(now.to_string());
+    }
+    let at = fonts
+        .iter()
+        .position(|f| f.eq_ignore_ascii_case(now))
+        .unwrap_or(0);
+    let c = config.clone();
+    widget::dropdown(fonts.clone(), Some(at), move |i| {
+        let mut c = c.clone();
+        set(
+            &mut c,
+            if i == 0 {
+                String::new()
+            } else {
+                fonts[i].clone()
+            },
+        );
+        Message::SetConfig(c)
+    })
+    .into()
+}
+
+/// A font size to pick, px (the one in use is offered even when not in the list).
+fn size_choice(
+    config: &Config,
+    now: f32,
+    set: fn(&mut Config, u16),
+) -> cosmic::Element<'static, Message> {
+    let mut sizes: Vec<u16> = vec![
+        8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 22, 24, 28, 32, 40, 48,
+    ];
+    if !sizes.iter().any(|n| f32::from(*n) == now) {
+        sizes.push(now as u16);
+        sizes.sort_unstable();
+    }
+    let at = sizes.iter().position(|n| f32::from(*n) == now);
+    let c = config.clone();
+    widget::dropdown(
+        sizes.iter().map(u16::to_string).collect::<Vec<_>>(),
+        at,
+        move |i| {
+            let mut c = c.clone();
+            set(&mut c, sizes[i]);
+            Message::SetConfig(c)
+        },
+    )
+    .into()
 }
 
 /// The heights offered for tab headers and Button Bar buttons (0: the theme's).

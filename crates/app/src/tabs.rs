@@ -332,6 +332,8 @@ pub enum TabCmd {
     NoteSaveAs,
     NoteWrap,
     NoteNumbers,
+    /// A note's «Font…»: Global Options, where the notes' font is.
+    NoteFont,
     NoteRename,
 }
 
@@ -458,6 +460,8 @@ pub struct Tabs {
     lock_ask: Option<LockAsk>,
     /// Config: the buttons a note's bar shows.
     pub note_buttons: Vec<String>,
+    /// Config: the notes' font family ("" = the system's monospace) and size.
+    note_font: (String, f32),
     /// `crt.Session.Lock`: tab → the script run that locked it.
     locks: HashMap<TabId, u64>,
     /// The tab pressed last: a drag that starts is about it (the drag carries no tab).
@@ -490,6 +494,31 @@ impl Tabs {
         self.tabs
             .values()
             .any(|t| matches!(&t.body, Body::Sftp(v) if v.has_edits()))
+    }
+
+    /// Global Options → Notes: every note's font.
+    pub fn set_note_font(&mut self, family: &str, size: f32) {
+        self.note_font = (family.to_string(), size);
+        for tab in self.tabs.values_mut() {
+            if let Body::Note(v) = &mut tab.body {
+                v.set_font(family, size);
+            }
+        }
+    }
+
+    /// The active tab is a note (Edit → Find also replaces then).
+    pub fn front_is_note(&self) -> bool {
+        (self.active_id().and_then(|id| self.tabs.get(&id)))
+            .is_some_and(|t| matches!(t.body, Body::Note(_)))
+    }
+
+    /// The note in front (where keys and Edit → Find act), if the active tab is one.
+    pub fn active_note(&mut self) -> Option<&mut crate::notes::NoteView> {
+        let id = self.active_id()?;
+        match &mut self.tabs.get_mut(&id)?.body {
+            Body::Note(v) => Some(v),
+            _ => None,
+        }
     }
 
     /// A note has an edit not written yet (the timer runs only then).
@@ -962,9 +991,10 @@ impl Tabs {
             return Some(Body::Console);
         }
         if let Some(path) = &launch.note {
-            return crate::notes::NoteView::open(path)
-                .ok()
-                .map(|v| Body::Note(Box::new(v)));
+            return crate::notes::NoteView::open(path).ok().map(|mut v| {
+                v.set_font(&self.note_font.0, self.note_font.1);
+                Body::Note(Box::new(v))
+            });
         }
         if launch.sftp {
             let connect = Connect {
@@ -1457,6 +1487,11 @@ impl Tabs {
             TabCmd::NoteSave => note(NoteMsg::Save),
             TabCmd::NoteWrap => note(NoteMsg::Wrap),
             TabCmd::NoteNumbers => note(NoteMsg::LineNumbers),
+            TabCmd::NoteFont => {
+                return Some(Task::done(cosmic::Action::App(Message::Action(
+                    crate::menu::Action::GlobalOptions,
+                ))));
+            }
             TabCmd::NoteRename => note(NoteMsg::RenameStart),
             TabCmd::NoteSaveAs => {
                 let dir = self.note_path(id)?.parent()?.to_path_buf();
@@ -2035,6 +2070,18 @@ impl Tabs {
             Action::NewLocalShell => self.open(Launch::local_shell(), look),
             Action::CloseTab => on_active(self, TabCmd::Close),
             Action::Reconnect => on_active(self, TabCmd::Reconnect),
+            Action::ZoomIn | Action::ZoomOut | Action::ZoomReset
+                if self.active_note().is_some() =>
+            {
+                if let Some(v) = self.active_note() {
+                    v.zoom(match action {
+                        Action::ZoomIn => Some(1),
+                        Action::ZoomOut => Some(-1),
+                        _ => None,
+                    });
+                }
+                Task::none()
+            }
             Action::ZoomIn | Action::ZoomOut | Action::ZoomReset => {
                 if let Some(t) = self.active_terminal().and_then(|id| self.terminal(id)) {
                     let mut t = t.lock().unwrap_or_else(|e| e.into_inner());
@@ -2648,6 +2695,7 @@ fn tab_menu(
                 Divider,
                 CheckBox(fl!("note-wrap"), None, v.wrap, TabCmd::NoteWrap),
                 CheckBox(fl!("note-numbers"), None, v.numbers, TabCmd::NoteNumbers),
+                Button(fl!("note-font"), None, TabCmd::NoteFont),
                 Divider,
                 on(!v.locked, fl!("note-rename"), TabCmd::NoteRename),
                 lock,

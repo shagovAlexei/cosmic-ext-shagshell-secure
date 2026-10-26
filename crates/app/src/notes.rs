@@ -17,6 +17,14 @@ use std::time::{Duration, Instant};
 /// COSMIC Edit's default size.
 const FONT_SIZE: f32 = 14.0;
 
+/// Edit → Find in a note: the text typed (the match may grow in place), the next, the previous.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Seek {
+    Typed,
+    Next,
+    Prev,
+}
+
 #[derive(Clone, Debug)]
 pub enum NoteMsg {
     /// The editor's text changed.
@@ -61,6 +69,11 @@ pub struct NoteView {
     pub locked: bool,
     /// The «⋯» list is open.
     picker: bool,
+    /// Global Options → Notes: the font family applied ("" = the system's monospace) and size.
+    family: String,
+    size: f32,
+    /// Ctrl+= / Ctrl+− on this note: px over `size`.
+    zoom: i8,
 }
 
 impl Drop for NoteView {
@@ -99,7 +112,80 @@ impl NoteView {
             numbers: true,
             locked: false,
             picker: false,
+            family: String::new(),
+            size: FONT_SIZE,
+            zoom: 0,
         })
+    }
+
+    /// Global Options → Notes: the font family ("" = the system's monospace) and size.
+    pub fn set_font(&mut self, family: &str, size: f32) {
+        self.size = size;
+        if family != self.family {
+            let style = crate::term::style::Style {
+                font_family: family.to_string(),
+                ..Default::default()
+            };
+            crate::editor::set_family(&self.editor, style.family());
+            self.family = family.to_string();
+        }
+    }
+
+    /// Ctrl+= / Ctrl+− (`by` px, 6–48 in all), Ctrl+0 (`None`): this note's size.
+    pub fn zoom(&mut self, by: Option<i8>) {
+        self.zoom = match by {
+            None => 0,
+            Some(by) => {
+                let px = (self.size as i32 + i32::from(self.zoom) + i32::from(by)).clamp(6, 48);
+                i8::try_from(px - self.size as i32).unwrap_or(0)
+            }
+        };
+    }
+
+    fn font_px(&self) -> f32 {
+        (self.size + f32::from(self.zoom)).clamp(6.0, 48.0)
+    }
+
+    /// Edit → Find: the match of `needle` selected; `false` when there is none.
+    pub fn find(&mut self, needle: &str, seek: Seek) -> bool {
+        let lines = crate::editor::lines(&self.editor);
+        let lines: Vec<&str> = lines.iter().map(String::as_str).collect();
+        let from = crate::editor::find_from(&self.editor, seek == Seek::Next);
+        match shagshell_core::find::next_in(&lines, from, needle, seek != Seek::Prev) {
+            Some((l, start, end)) => {
+                crate::editor::select(&self.editor, l, start, end);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Replace: the selected match becomes `with`, then the next one is selected.
+    pub fn replace(&mut self, needle: &str, with: &str) -> bool {
+        if self.locked || needle.is_empty() {
+            return false;
+        }
+        let on_match = crate::editor::selected(&self.editor)
+            .is_some_and(|t| shagshell_core::find::is_match(&t, needle));
+        if on_match {
+            crate::editor::replace_selection(&self.editor, with);
+            self.dirty = Some(Instant::now());
+        }
+        self.find(needle, Seek::Next)
+    }
+
+    /// Replace all: how many.
+    pub fn replace_all(&mut self, needle: &str, with: &str) -> usize {
+        if self.locked {
+            return 0;
+        }
+        let (text, n) =
+            shagshell_core::find::replace_all(&crate::editor::text(&self.editor), needle, with);
+        if n > 0 {
+            crate::editor::replace_text(&self.editor, &text);
+            self.dirty = Some(Instant::now());
+        }
+        n
     }
 
     pub fn name(&self) -> String {
@@ -386,7 +472,7 @@ impl NoteView {
         crate::editor::follow_theme(&self.editor);
         // The tab's widget id: the app's «focus the tab» then gives it the keys.
         let body: Element<'_, Message> =
-            crate::editor::text_box::text_box(&self.editor, crate::editor::metrics(FONT_SIZE))
+            crate::editor::text_box::text_box(&self.editor, crate::editor::metrics(self.font_px()))
                 .id(editor_id)
                 .on_changed(m(NoteMsg::Changed))
                 .highlight_current_line()
