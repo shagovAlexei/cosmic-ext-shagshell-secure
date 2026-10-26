@@ -40,6 +40,9 @@ jobs:
         with:
           # PRs read main's cache; saving their own would only push it out (10 GB per repo).
           save-if: ${{ github.ref == 'refs/heads/main' }}
+          # The key follows Cargo.lock, not [profile.*]: bump this when the profiles change, or
+          # main keeps restoring builds made with the old ones (and never saves new ones).
+          key: profile-v2
 
       - name: Formatting
         run: cargo fmt --all -- --check
