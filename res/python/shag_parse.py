@@ -120,7 +120,7 @@ class Reader:
             for h in st.handlers:
                 hb, nxt = self.body(h.body, nxt)
                 handlers.append({"ty": u(h.type) if h.type else None, "name": h.name, "body": hb})
-            fin, _ = self.body(st.finalbody, nxt)
+            fin = self.body(st.finalbody, nxt)[0] if st.finalbody else None
             out.append({"kind": "try", "body": body, "handlers": handlers, "finally": fin})
         elif (isinstance(st, ast.FunctionDef) and not st.decorator_list and not st.returns
               and not getattr(st, "type_params", None) and not st.type_comment):

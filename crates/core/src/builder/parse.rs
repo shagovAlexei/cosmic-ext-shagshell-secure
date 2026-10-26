@@ -72,7 +72,7 @@ fn parse_with(src: &str, dir: &Path) -> Result<Vec<Block>, Error> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::super::Arg;
     use super::*;
 
@@ -292,7 +292,7 @@ mod tests {
                             body: vec![]
                         },
                     ],
-                    finally: vec![call0("k")],
+                    finally: Some(vec![call0("k")]),
                 },
             ]
         );

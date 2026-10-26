@@ -59,7 +59,8 @@ pub enum Block {
     Try {
         body: Vec<Block>,
         handlers: Vec<Handler>,
-        finally: Vec<Block>,
+        /// `None`: no `finally:`.
+        finally: Option<Vec<Block>>,
     },
     Def {
         name: String,
@@ -164,9 +165,9 @@ fn write(out: &mut String, blocks: &[Block], level: usize) {
                     line(out, level, &head);
                     body(out, &h.body, level + 1);
                 }
-                if !finally.is_empty() || handlers.is_empty() {
+                if finally.is_some() || handlers.is_empty() {
                     line(out, level, "finally:");
-                    body(out, finally, level + 1);
+                    body(out, finally.as_deref().unwrap_or_default(), level + 1);
                 }
             }
             Block::Def {
@@ -270,7 +271,7 @@ mod tests {
                     body: vec![call("h", &[])],
                 },
             ],
-            finally: vec![call("k", &[])],
+            finally: Some(vec![call("k", &[])]),
         };
         assert_eq!(
             generate(&[b]),
@@ -307,7 +308,7 @@ mod tests {
         let b = Block::Try {
             body: vec![],
             handlers: vec![],
-            finally: vec![],
+            finally: None,
         };
         assert_eq!(generate(&[b]), "try:\n    pass\nfinally:\n    pass\n");
     }
@@ -340,5 +341,75 @@ mod tests {
             "# a\n#\n\ndef f():\n    class A:\n        x = 1\n"
         );
         assert_eq!(generate(&[]), "");
+    }
+
+    /// `ast.dump` of a source: its meaning, without the layout and comments.
+    fn ast_dump(src: &str) -> String {
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+        let mut c = Command::new("python3")
+            .args([
+                "-I",
+                "-c",
+                "import ast,sys; print(ast.dump(ast.parse(sys.stdin.read())))",
+            ])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        c.stdin
+            .take()
+            .unwrap()
+            .write_all(src.trim_start_matches('\u{feff}').as_bytes())
+            .unwrap();
+        String::from_utf8(c.wait_with_output().unwrap().stdout).unwrap()
+    }
+
+    #[test]
+    fn round_trip_examples() {
+        use super::parse::tests::parse;
+        if std::process::Command::new("python3")
+            .arg("-V")
+            .output()
+            .is_err()
+        {
+            return;
+        }
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut files: Vec<(String, String)> = std::fs::read_dir(root.join("../../Example"))
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| p.extension().is_some_and(|x| x == "py"))
+            .map(|p| {
+                (
+                    p.display().to_string(),
+                    std::fs::read_to_string(&p).unwrap(),
+                )
+            })
+            .collect();
+        files.push((s("multiline.py"), s(include_str!("tests/multiline.py"))));
+        let mut rec = crate::recorder::Recorder::new();
+        rec.output(b"host$ ");
+        rec.input(b"ls\r");
+        files.push((s("recording"), rec.script("t")));
+        assert!(files.len() > 10);
+        for (name, src) in files {
+            let b = parse(&src).unwrap_or_else(|e| panic!("{name}: {e}"));
+            let g = generate(&b);
+            assert_eq!(
+                parse(&g).unwrap(),
+                b,
+                "{name}: blocks change on the second pass"
+            );
+            assert_eq!(
+                generate(&parse(&g).unwrap()),
+                g,
+                "{name}: code changes on the second pass"
+            );
+            assert_eq!(ast_dump(&src), ast_dump(&g), "{name}: meaning changed");
+            for c in src.lines().filter_map(|l| l.trim_start().strip_prefix('#')) {
+                assert!(g.contains(c.trim()), "{name}: lost comment {c:?}");
+            }
+        }
     }
 }
