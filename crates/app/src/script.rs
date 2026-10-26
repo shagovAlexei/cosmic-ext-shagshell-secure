@@ -605,7 +605,8 @@ impl Scripts {
                             .on_input(move |v| m(ScMsg::Filter(v)))
                             .on_submit(move |_| m(ScMsg::Ok)),
                     )
-                    .push(widget::scrollable(rows).height(Length::Fixed(220.0)));
+                    // The rest of the window: OK / Cancel below stay in sight.
+                    .push(widget::scrollable(rows).height(Length::Fill));
                 buttons = buttons
                     .push(widget::button::standard(fl!("cancel")).on_press(m(ScMsg::Cancel)))
                     .push(widget::button::suggested(fl!("ok")).on_press(m(ScMsg::Ok)));
@@ -651,7 +652,7 @@ impl Scripts {
                 .into(),
             widget::container(
                 widget::column::with_children(vec![
-                    body.into(),
+                    body.height(Length::Fill).into(),
                     widget::container(buttons)
                         .width(Length::Fill)
                         .align_x(cosmic::iced::alignment::Horizontal::Right)

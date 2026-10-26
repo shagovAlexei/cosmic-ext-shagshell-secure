@@ -1432,7 +1432,7 @@ impl App {
                 if is_escape(&m) {
                     return self.script(crate::script::ScMsg::Cancel);
                 }
-                if matches!(*m, Message::EnterKey) {
+                if is_enter(&m) {
                     return self.script(crate::script::ScMsg::Ok);
                 }
             }
@@ -3583,6 +3583,12 @@ fn is_escape(m: &Message) -> bool {
     matches!(m, Message::Key(Physical::Code(Code::Escape), mods) if mods.is_empty())
 }
 
+/// An Enter no widget took: a key of a window other than the main one comes as `Message::Key`
+/// (only the main window's go through `route_key` to `Message::EnterKey`).
+fn is_enter(m: &Message) -> bool {
+    matches!(m, Message::Key(Physical::Code(Code::Enter | Code::NumpadEnter), mods) if mods.is_empty())
+}
+
 /// Keys no widget took, other than the app's (`key_action`): Enter connects from the tree or
 /// restarts an ended tab; the tree's own keys.
 fn route_key(key: &Physical, mods: Modifiers) -> Option<Message> {
@@ -3649,6 +3655,15 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn regression_enter_in_a_script_dialog_window_is_seen() {
+        let k = |code, mods| Message::Key(Physical::Code(code), mods);
+        assert!(is_enter(&k(Code::Enter, Modifiers::empty())));
+        assert!(is_enter(&k(Code::NumpadEnter, Modifiers::empty())));
+        assert!(!is_enter(&k(Code::Enter, Modifiers::CTRL)));
+        assert!(!is_enter(&Message::EnterKey));
+    }
 
     #[test]
     fn zoom_and_full_screen_keys() {
