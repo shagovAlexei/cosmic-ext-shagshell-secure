@@ -2,6 +2,7 @@
 //! `generate` writes the code; expressions are kept as Python text (as `ast.unparse` wrote them).
 
 pub mod catalog;
+pub mod field;
 mod parse;
 pub mod tape;
 
