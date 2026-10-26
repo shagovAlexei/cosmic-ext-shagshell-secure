@@ -2056,7 +2056,14 @@ impl App {
         if out.raise
             && let Some(w) = self.core.main_window_id()
         {
+            // Wayland lets no program raise itself (winit's focus_window does nothing there):
+            // asking for attention lets the compositor activate the window or mark it on the
+            // panel. X11 takes the focus.
             tasks.push(cosmic::iced::window::gain_focus(w));
+            tasks.push(cosmic::iced::window::request_user_attention(
+                w,
+                Some(cosmic::iced::window::UserAttention::Critical),
+            ));
         }
         if let Some((n, reply)) = out.create {
             reply.send(self.script_create(&n));
