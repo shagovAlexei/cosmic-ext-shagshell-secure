@@ -336,6 +336,7 @@
 | `securecrt::tests::command_manager_folders` | импорт команд не идёт за `..` и ссылками (петля), порядок папок как в SecureCRT |
 | `notes::tests::regression_a_renamed_main_note_is_still_the_main_note` | View → Заметки после переименования главной заметки открывает её же, а не ошибку «Notes.md: No such file» |
 | `script::tests::regression_any_file_filter_has_a_pattern` | `FileOpenDialog` / `FileSaveDialog` с фильтром «All (*.*)» открывают окно выбора (фильтр без шаблона система отвергала, скрипт сразу получал пустую строку) |
+| `app::tests::regression_enter_in_a_script_dialog_window_is_seen` (app) | Enter в окне диалога скрипта (MessageBox, List после щелчка по строке) нажимает OK: клавиша окна приходит как `Message::Key`, а ждали `EnterKey` |
 
 ## Command Window: многострочный ввод
 - [ ] **Командное окно: Enter и перевод строки**
