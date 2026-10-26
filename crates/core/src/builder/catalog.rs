@@ -659,7 +659,7 @@ print(json.dumps(out))
 "#;
         let o = Command::new("python3")
             .args(["-I", "-c", SNIPPET])
-            .arg(crate::script::python_dir())
+            .arg(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../res/python"))
             .output()
             .unwrap();
         assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));

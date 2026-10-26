@@ -2,6 +2,9 @@
 //! `generate` writes the code; expressions are kept as Python text (as `ast.unparse` wrote them).
 
 pub mod catalog;
+mod parse;
+
+pub use parse::{Error, parse};
 
 use serde::{Deserialize, Serialize};
 
@@ -89,11 +92,14 @@ fn line(out: &mut String, level: usize, text: &str) {
     out.push('\n');
 }
 
-/// A compound statement's body: `pass` when empty (Python needs one).
+/// A compound statement's body: `pass` when it has no statement (Python needs one).
 fn body(out: &mut String, blocks: &[Block], level: usize) {
-    match blocks.is_empty() {
-        true => line(out, level, "pass"),
-        false => write(out, blocks, level),
+    write(out, blocks, level);
+    if blocks
+        .iter()
+        .all(|b| matches!(b, Block::Comment { .. } | Block::Blank))
+    {
+        line(out, level, "pass");
     }
 }
 
@@ -304,6 +310,15 @@ mod tests {
             finally: vec![],
         };
         assert_eq!(generate(&[b]), "try:\n    pass\nfinally:\n    pass\n");
+    }
+
+    #[test]
+    fn gen_comment_only_body_gets_pass() {
+        let b = Block::If {
+            branches: vec![(s("x"), vec![Block::Comment { text: s("c") }])],
+            orelse: vec![],
+        };
+        assert_eq!(generate(&[b]), "if x:\n    # c\n    pass\n");
     }
 
     #[test]
