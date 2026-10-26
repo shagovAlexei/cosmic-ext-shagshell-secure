@@ -203,6 +203,9 @@ pub struct Config {
     pub toolbar_buttons: Vec<shagshell_core::toolbar::ToolButton>,
     /// The tab bar under the tabs' content (SecureCRT's «tabs at the bottom»).
     pub tabs_bottom: bool,
+    /// Notes' font family ("" = the system's monospace) and size, px (0 = 14; `note_font_px`).
+    pub note_font_family: String,
+    pub note_font_size: u16,
     /// The buttons a note's bar shows (`core::notes::BUTTONS`), ticked in a note tab's menu.
     pub note_buttons: Vec<String>,
     /// Ctrl+Tab goes back to the tab used before (SecureCRT's option), not the next one.
@@ -287,6 +290,14 @@ impl Config {
 }
 
 impl Config {
+    /// The notes' font size in px, kept to 6–48 (0 = the default 14).
+    pub fn note_font_px(&self) -> f32 {
+        match self.note_font_size {
+            0 => 14.0,
+            n => f32::from(n.clamp(6, 48)),
+        }
+    }
+
     /// The terminal font size in px, kept to 6–48 (0 = the default 14).
     pub fn font_px(&self) -> f32 {
         match self.font_size {
@@ -338,6 +349,8 @@ impl Default for Config {
             cursor_blink: false,
             tabs_bottom: false,
             note_buttons: shagshell_core::notes::default_buttons(),
+            note_font_family: String::new(),
+            note_font_size: 14,
             strip_left: false,
             strip_right: false,
             toolbar_buttons: Vec::new(),

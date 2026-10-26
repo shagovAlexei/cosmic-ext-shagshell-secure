@@ -100,6 +100,8 @@ pub struct App {
     restore: Vec<String>,
     /// Edit → Find: the text looked for in the active terminal (`None`: the bar is closed).
     find: Option<String>,
+    /// Edit → Find in a note: the replacement typed.
+    find_with: String,
     /// The last script started by hand (menu, button, key) with its arguments: Script → Run the
     /// last script again. Before any this run, the newest recent one.
     last_script: Option<(std::path::PathBuf, Vec<String>)>,
@@ -272,6 +274,7 @@ impl Application for App {
         let mut tabs = Tabs::default();
         tabs.set_sftp_prefs(&config);
         tabs.note_buttons = config.note_buttons.clone();
+        tabs.set_note_font(&config.note_font_family, config.note_font_px());
         tabs.set_log_prefs(&config);
         let scripts = crate::script::Scripts::new(tabs.taps.clone(), control_dir.clone());
         scripts
@@ -318,6 +321,7 @@ impl Application for App {
             connect_list: Vec::new(),
             connect_pick: None,
             find: None,
+            find_with: String::new(),
             last_script: None,
             peek: None,
             tool_edit: None,
@@ -660,9 +664,15 @@ impl Application for App {
                 .into(),
             };
         let center = match &self.find {
-            Some(text) => widget::column::with_children(vec![crate::find_bar::view(text), center])
-                .height(Length::Fill)
-                .into(),
+            Some(text) => widget::column::with_children(vec![
+                crate::find_bar::view(
+                    text,
+                    self.tabs.front_is_note().then_some(self.find_with.as_str()),
+                ),
+                center,
+            ])
+            .height(Length::Fill)
+            .into(),
             None => center,
         };
         let (left, right) = crate::config::panels(
@@ -808,17 +818,36 @@ impl App {
                 return widget::text_input::focus(crate::find_bar::field_id());
             }
             FindMsg::Text(t) => {
-                let found = shagshell_core::find::literal(&t);
                 if !t.is_empty() {
-                    self.tabs.find(&found, true);
+                    self.find_in(&t, crate::notes::Seek::Typed);
                 }
                 self.find = Some(t);
             }
             FindMsg::Next | FindMsg::Prev => {
-                if let Some(t) = self.find.as_ref().filter(|t| !t.is_empty()) {
-                    let found = shagshell_core::find::literal(t);
-                    self.tabs.find(&found, matches!(m, FindMsg::Next));
+                if let Some(t) = self.find.clone().filter(|t| !t.is_empty()) {
+                    let seek = match m {
+                        FindMsg::Next => crate::notes::Seek::Next,
+                        _ => crate::notes::Seek::Prev,
+                    };
+                    self.find_in(&t, seek);
                 }
+            }
+            FindMsg::With(t) => self.find_with = t,
+            FindMsg::Replace | FindMsg::ReplaceAll => {
+                let needle = self.find.clone().unwrap_or_default();
+                let with = self.find_with.clone();
+                let Some(v) = self.tabs.active_note().filter(|_| !needle.is_empty()) else {
+                    return Task::none();
+                };
+                self.sessions.notice = match m {
+                    FindMsg::Replace => {
+                        (!v.replace(&needle, &with)).then(|| fl!("find-none", text = needle))
+                    }
+                    _ => {
+                        let n = i64::try_from(v.replace_all(&needle, &with)).unwrap_or(0);
+                        Some(fl!("find-replaced", count = n))
+                    }
+                };
             }
             FindMsg::Close => {
                 self.find = None;
@@ -826,6 +855,20 @@ impl App {
             }
         }
         Task::none()
+    }
+
+    /// Edit → Find in the active tab: a note selects the match, a terminal shows it.
+    fn find_in(&mut self, text: &str, seek: crate::notes::Seek) {
+        match self.tabs.active_note() {
+            Some(v) => {
+                let found = v.find(text, seek);
+                self.sessions.notice = (!found).then(|| fl!("find-none", text = text));
+            }
+            None => self.tabs.find(
+                &shagshell_core::find::literal(text),
+                seek != crate::notes::Seek::Prev,
+            ),
+        }
     }
 
     /// The panes of one side stacked in a column (and the Session Manager's splitter beside it).
@@ -1031,6 +1074,9 @@ impl App {
                 }
                 self.tabs.set_sftp_prefs(&self.config);
                 self.tabs.note_buttons = self.config.note_buttons.clone();
+                let px = self.config.note_font_px();
+                self.tabs
+                    .set_note_font(&self.config.note_font_family.clone(), px);
                 self.tabs.set_log_prefs(&self.config);
                 self.tabs
                     .set_looks(&self.config, &self.hl, &look(&self.config));
@@ -3590,7 +3636,8 @@ fn look(config: &Config) -> tabs::Look {
     (style, c.is_dark, bg)
 }
 
-/// App keys that act even when a text field took the key.
+/// App keys that act even when a text field took the key. A note's editor takes every key, so
+/// Find, the zoom keys and F11 are here too (no field types anything for them).
 fn over_fields(a: Action) -> bool {
     matches!(
         a,
@@ -3600,6 +3647,11 @@ fn over_fields(a: Action) -> bool {
             | Action::SelectTab(_)
             | Action::NextTab
             | Action::PrevTab
+            | Action::Find
+            | Action::ZoomIn
+            | Action::ZoomOut
+            | Action::ZoomReset
+            | Action::FullScreen
     )
 }
 
@@ -3711,6 +3763,22 @@ mod tests {
         assert_eq!(k(Code::ArrowDown, Modifiers::empty()), Some(1));
         assert_eq!(k(Code::ArrowLeft, Modifiers::SHIFT), None);
         assert_eq!(k(Code::Enter, Modifiers::empty()), None);
+    }
+
+    #[test]
+    fn regression_find_and_zoom_keys_reach_a_note() {
+        // A note's editor takes every key: Ctrl+Shift+F typed into it instead of opening Find.
+        for a in [
+            Action::Find,
+            Action::ZoomIn,
+            Action::ZoomOut,
+            Action::ZoomReset,
+            Action::FullScreen,
+        ] {
+            assert!(over_fields(a), "{a:?}");
+        }
+        assert!(!over_fields(Action::Copy));
+        assert!(!over_fields(Action::Paste));
     }
 
     #[test]
