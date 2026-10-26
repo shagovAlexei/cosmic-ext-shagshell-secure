@@ -283,6 +283,30 @@ pub fn list_picked(
 }
 
 /// The items of a List dialog that contain `filter` (any case), as indexes into `items`.
+/// How many rows `text` takes when lines wrap at `per_row` characters: a dialog's window is
+/// sized to it.
+pub fn text_rows(text: &str, per_row: usize) -> usize {
+    let per_row = per_row.max(1);
+    text.split('\n')
+        .map(|l| l.chars().count().div_ceil(per_row).max(1))
+        .sum()
+}
+
+/// An arrow key in a dialog: the item `by` places from `cur` in `list`, round the ends;
+/// from none, the first (forward) or the last.
+pub fn step<T: PartialEq + Copy>(list: &[T], cur: Option<T>, by: i32) -> Option<T> {
+    let n = list.len() as i32;
+    if n == 0 {
+        return None;
+    }
+    let at = match cur.and_then(|c| list.iter().position(|&x| x == c)) {
+        Some(i) => (i as i32 + by).rem_euclid(n),
+        None if by > 0 => 0,
+        None => n - 1,
+    };
+    Some(list[at as usize])
+}
+
 pub fn list_matches(items: &[String], filter: &str) -> Vec<usize> {
     let f = filter.to_lowercase();
     (0..items.len())
@@ -755,6 +779,32 @@ mod tests {
         );
         assert!(file_filters("").is_empty());
         assert!(file_filters("broken").is_empty());
+    }
+
+    #[test]
+    fn regression_a_long_message_gets_its_rows() {
+        // Seven result lines of the gallery did not fit a window sized for one or two.
+        let text = (1..=7)
+            .map(|i| format!("line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(text_rows(&text, 40), 7);
+        assert_eq!(text_rows(&"x".repeat(85), 40), 3);
+        assert_eq!(text_rows("", 40), 1);
+        assert_eq!(text_rows("a\n\nb", 40), 3);
+    }
+
+    #[test]
+    fn arrows_step_round_the_ends() {
+        let ids = [ID_YES, ID_NO, ID_CANCEL];
+        assert_eq!(step(&ids, Some(ID_NO), -1), Some(ID_YES));
+        assert_eq!(step(&ids, Some(ID_NO), 1), Some(ID_CANCEL));
+        assert_eq!(step(&ids, Some(ID_CANCEL), 1), Some(ID_YES));
+        assert_eq!(step(&ids, Some(ID_YES), -1), Some(ID_CANCEL));
+        // A row the filter hides: start from an end.
+        assert_eq!(step(&[2, 5], Some(9), 1), Some(2));
+        assert_eq!(step(&[2, 5], None, -1), Some(5));
+        assert_eq!(step::<usize>(&[], Some(1), 1), None);
     }
 
     #[test]

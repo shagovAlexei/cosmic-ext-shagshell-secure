@@ -76,6 +76,9 @@ pub enum ScMsg {
     Button(i64),
     /// A row of a List dialog, and its filter.
     Pick(usize),
+    /// An arrow key: the next (`1`) or previous (`-1`) button of a MessageBox, or row of a
+    /// one-choice List.
+    Step(i32),
     Filter(String),
     /// A file chosen for `FileOpenDialog` / `FileSaveDialog` (`None`: given up).
     Chosen(Reply, Option<String>),
@@ -105,6 +108,8 @@ struct Ask {
     /// List: the rows chosen, and the filter typed.
     picked: std::collections::BTreeSet<usize>,
     filter: String,
+    /// MessageBox: the button the arrows moved to (`None`: the default one).
+    choice: Option<i64>,
 }
 
 impl Ask {
@@ -146,8 +151,13 @@ impl Ask {
                     (false, Some(r)) => json!(r[0]),
                 }
             }
-            _ => json!(self.flags().enter()),
+            _ => json!(self.button()),
         }
+    }
+
+    /// MessageBox: the button Enter presses.
+    fn button(&self) -> i64 {
+        self.choice.unwrap_or_else(|| self.flags().enter())
     }
 
     /// What the script gets for Esc / the window closed.
@@ -231,13 +241,21 @@ impl Scripts {
         !self.asks.is_empty()
     }
 
-    /// The window size the oldest ask needs (a list is taller).
+    /// The window size the oldest ask needs: room for its text (rows of ~20 px at ~44
+    /// characters, the text column of a 460 px window), a list taller; long text scrolls.
     pub fn size(&self) -> cosmic::iced::Size {
-        let list = self
-            .asks
-            .front()
-            .is_some_and(|a| a.call.call == "Dialog.List");
-        cosmic::iced::Size::new(460.0, if list { 420.0 } else { 220.0 })
+        let Some(a) = self.asks.front() else {
+            return cosmic::iced::Size::new(460.0, 220.0);
+        };
+        let text = 20.0 * script::text_rows(a.arg(0), 44) as f32;
+        // Title bar, paddings, the buttons; a field or a list under the text.
+        let (chrome, under) = match a.call.call.as_str() {
+            "Dialog.List" => (150.0, 260.0),
+            "Dialog.Prompt" => (150.0, 44.0),
+            _ => (150.0, 0.0),
+        };
+        let h = chrome + text.max(48.0) + under;
+        cosmic::iced::Size::new(460.0, h.clamp(220.0, 640.0))
     }
 
     /// The window of the oldest ask.
@@ -395,6 +413,7 @@ impl Scripts {
                             value,
                             picked,
                             filter: String::new(),
+                            choice: None,
                         });
                         out.focus = true;
                     }
@@ -508,6 +527,22 @@ impl Scripts {
                             a.picked.insert(i);
                         }
                         false => a.picked = [i].into(),
+                    }
+                }
+            }
+            ScMsg::Step(by) => {
+                if let Some(a) = self.asks.front_mut() {
+                    match a.call.call.as_str() {
+                        "Dialog.Prompt" => {}
+                        "Dialog.List" if a.multi() => {}
+                        "Dialog.List" => {
+                            let rows = script::list_matches(&a.items(), &a.filter);
+                            let cur = a.picked.iter().next().copied();
+                            if let Some(i) = script::step(&rows, cur, by) {
+                                a.picked = [i].into();
+                            }
+                        }
+                        _ => a.choice = script::step(&a.flags().ids(), Some(a.button()), by),
                     }
                 }
             }
@@ -626,9 +661,16 @@ impl Scripts {
                 if let Some(kind) = icon {
                     line = line.push(kind.icon(48));
                 }
-                body = body.push(line.push(widget::text::body(a.arg(0).to_string())));
+                // Taller than the window can grow: the text scrolls, the buttons stay.
+                body = body.push(
+                    widget::scrollable(
+                        line.push(widget::text::body(a.arg(0).to_string()))
+                            .width(Length::Fill),
+                    )
+                    .height(Length::Fill),
+                );
                 let ids = f.ids();
-                let default = f.enter();
+                let default = a.button();
                 for id in ids {
                     let label = match id {
                         script::ID_OK => fl!("ok"),

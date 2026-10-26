@@ -1435,6 +1435,9 @@ impl App {
                 if is_enter(&m) {
                     return self.script(crate::script::ScMsg::Ok);
                 }
+                if let Some(by) = arrow_step(&m) {
+                    return self.script(crate::script::ScMsg::Step(by));
+                }
             }
             Message::Input(..) => {}
             Message::CloseRequested(w) if self.tabs.tab_in(w).is_some() => {
@@ -3589,6 +3592,18 @@ fn is_enter(m: &Message) -> bool {
     matches!(m, Message::Key(Physical::Code(Code::Enter | Code::NumpadEnter), mods) if mods.is_empty())
 }
 
+/// An arrow no widget took, as a step through a dialog's buttons or rows: ← ↑ back, → ↓ on.
+fn arrow_step(m: &Message) -> Option<i32> {
+    match m {
+        Message::Key(Physical::Code(c), mods) if mods.is_empty() => match c {
+            Code::ArrowLeft | Code::ArrowUp => Some(-1),
+            Code::ArrowRight | Code::ArrowDown => Some(1),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 /// Keys no widget took, other than the app's (`key_action`): Enter connects from the tree or
 /// restarts an ended tab; the tree's own keys.
 fn route_key(key: &Physical, mods: Modifiers) -> Option<Message> {
@@ -3663,6 +3678,17 @@ mod tests {
         assert!(is_enter(&k(Code::NumpadEnter, Modifiers::empty())));
         assert!(!is_enter(&k(Code::Enter, Modifiers::CTRL)));
         assert!(!is_enter(&Message::EnterKey));
+    }
+
+    #[test]
+    fn arrows_step_in_a_dialog() {
+        let k = |code, mods| arrow_step(&Message::Key(Physical::Code(code), mods));
+        assert_eq!(k(Code::ArrowLeft, Modifiers::empty()), Some(-1));
+        assert_eq!(k(Code::ArrowUp, Modifiers::empty()), Some(-1));
+        assert_eq!(k(Code::ArrowRight, Modifiers::empty()), Some(1));
+        assert_eq!(k(Code::ArrowDown, Modifiers::empty()), Some(1));
+        assert_eq!(k(Code::ArrowLeft, Modifiers::SHIFT), None);
+        assert_eq!(k(Code::Enter, Modifiers::empty()), None);
     }
 
     #[test]
