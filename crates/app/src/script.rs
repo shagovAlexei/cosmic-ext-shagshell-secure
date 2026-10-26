@@ -98,6 +98,8 @@ pub enum ScMsg {
 struct Run {
     name: String,
     cancel: Arc<AtomicBool>,
+    /// It wrote the status bar (`Session.SetStatusText`): its text stays when it ends well.
+    status: bool,
 }
 
 /// A dialog a script asked for.
@@ -311,6 +313,7 @@ impl Scripts {
             Run {
                 name,
                 cancel: cancel.clone(),
+                status: false,
             },
         );
         let sink = Sink {
@@ -441,6 +444,9 @@ impl Scripts {
                         Err(e) => c.reply.send(Err(e)),
                     },
                     "Session.SetStatusText" => {
+                        if let Some(r) = self.runs.get_mut(&c.run) {
+                            r.status = true;
+                        }
                         out.notice = c.args.first().and_then(Value::as_str).map(str::to_string);
                         c.reply.send(Ok(Value::Null));
                     }
@@ -452,7 +458,9 @@ impl Scripts {
                 },
             },
             ScMsg::Ended(n, end) => {
-                let name = self.runs.remove(&n).map(|r| r.name).unwrap_or_default();
+                let (name, status) = (self.runs.remove(&n))
+                    .map(|r| (r.name, r.status))
+                    .unwrap_or_default();
                 // Dialogs of that run go with it; their calls fail.
                 let (gone, kept): (VecDeque<_>, VecDeque<_>) =
                     self.asks.drain(..).partition(|a| a.call.run == n);
@@ -468,7 +476,8 @@ impl Scripts {
                     }
                 }
                 let failed = matches!(end, End::Failed(_));
-                out.ended = Some((n, matches!(end, End::Done)));
+                let done = matches!(end, End::Done);
+                out.ended = Some((n, done));
                 let notice = match end {
                     End::Done => fl!("script-done", name = name),
                     End::Cancelled => fl!("script-stopped", name = name),
@@ -479,7 +488,11 @@ impl Scripts {
                     false => script::Kind::Mark,
                 };
                 self.sink(n).push(kind, format!("── {notice} ──"));
-                out.notice = Some(notice);
+                // As in SecureCRT, what the script put in the status bar stays there; that it
+                // failed or was stopped still shows.
+                if !(status && done) {
+                    out.notice = Some(notice);
+                }
             }
             ScMsg::Output(first) => {
                 self.dirty.store(false, Ordering::SeqCst);
