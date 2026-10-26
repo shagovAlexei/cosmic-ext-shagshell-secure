@@ -244,21 +244,24 @@ impl Flags {
     }
 }
 
-/// A SecureCRT file filter, `"Text (*.txt)|*.txt|All (*.*)|*.*"`, as (description, extensions);
-/// a pattern for any file gives no extensions.
+/// A SecureCRT file filter, `"Text (*.txt)|*.txt|All (*.*)|*.*"`, as (description, globs);
+/// a pattern for any file is `*` (the portal refuses a filter with no pattern).
 pub fn file_filters(spec: &str) -> Vec<(String, Vec<String>)> {
     let parts: Vec<&str> = spec.split('|').collect();
     parts
         .chunks(2)
         .filter(|c| c.len() == 2 && !c[0].trim().is_empty())
         .map(|c| {
-            let exts = c[1]
+            let mut globs: Vec<String> = c[1]
                 .split(';')
                 .filter_map(|p| p.trim().strip_prefix("*."))
                 .filter(|e| !e.is_empty() && *e != "*")
-                .map(str::to_string)
+                .map(|e| format!("*.{e}"))
                 .collect();
-            (c[0].trim().to_string(), exts)
+            if globs.is_empty() {
+                globs.push("*".to_string());
+            }
+            (c[0].trim().to_string(), globs)
         })
         .collect()
 }
@@ -745,13 +748,21 @@ mod tests {
             vec![
                 (
                     "Text (*.txt;*.log)".to_string(),
-                    vec!["txt".to_string(), "log".to_string()]
+                    vec!["*.txt".to_string(), "*.log".to_string()]
                 ),
-                ("All Files (*.*)".to_string(), vec![]),
+                ("All Files (*.*)".to_string(), vec!["*".to_string()]),
             ]
         );
         assert!(file_filters("").is_empty());
         assert!(file_filters("broken").is_empty());
+    }
+
+    #[test]
+    fn regression_any_file_filter_has_a_pattern() {
+        // A filter with no pattern made the portal refuse the chooser: the script got "" at once.
+        for spec in ["All (*.*)|*.*", "All|*", "Any|"] {
+            assert_eq!(file_filters(spec)[0].1, vec!["*".to_string()], "{spec}");
+        }
     }
 
     #[test]

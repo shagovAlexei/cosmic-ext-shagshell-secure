@@ -760,9 +760,8 @@ impl Scripts {
         };
         let (title, label) = (s(0), s(1));
         let filters = script::file_filters(&s(3));
-        let filter = |(d, exts): &(String, Vec<String>)| {
-            exts.iter()
-                .fold(FileFilter::new(d), |f, e| f.glob(&format!("*.{e}")))
+        let filter = |(d, globs): &(String, Vec<String>)| {
+            globs.iter().fold(FileFilter::new(d), |f, g| f.glob(g))
         };
         let url = match save {
             true => {
