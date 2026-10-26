@@ -3,8 +3,11 @@ name: release
 # Push a tag `vX.Y.Z` (matching `version` in Cargo.toml) → a GitHub release with the .deb;
 # only the last 5 releases (and their tags) are kept.
 # A PR changing this file builds the .deb only (an artifact, no release).
+# A push to main builds it too, with no release: that run keeps the build cache. A tag can only
+# read caches of its own ref and of main, so without it every release built all from scratch.
 on:
   push:
+    branches: [main]
     tags: ['v*']
   pull_request:
     paths: ['.github/workflows/release.yml', 'justfile']
@@ -30,6 +33,9 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          # Only main's cache: a tag's would be read by nothing else (670 MB each).
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       # `just` is not packaged in 22.04.
       - uses: taiki-e/install-action@v2
         with:

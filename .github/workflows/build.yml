@@ -37,6 +37,9 @@ jobs:
       # libcosmic is a large git dependency; without a cache every run rebuilds
       # the whole tree.
       - uses: Swatinem/rust-cache@v2
+        with:
+          # PRs read main's cache; saving their own would only push it out (10 GB per repo).
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Formatting
         run: cargo fmt --all -- --check

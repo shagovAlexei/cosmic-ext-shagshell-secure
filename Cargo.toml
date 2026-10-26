@@ -10,5 +10,14 @@ license = "GPL-3.0-only"
 repository = "https://github.com/shagovAlexei/cosmic-ext-shagshell-secure"
 
 # Smaller packages; the .deb strips again, harmless.
+# Line tables only: a panic's backtrace still has file:line, but target/debug is far smaller
+# (full debug info made it 14 GB) and links faster.
+[profile.dev]
+debug = "line-tables-only"
+
+# No debug info for the dependencies (libcosmic and the rest): nobody steps into them.
+[profile.dev.package."*"]
+debug = false
+
 [profile.release]
 strip = true
