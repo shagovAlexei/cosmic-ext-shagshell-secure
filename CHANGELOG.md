@@ -2,6 +2,9 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.81.1 — 2026-10-26
+- fix: a script's `FileOpenDialog` / `FileSaveDialog` with an «All (*.*)» filter opens the chooser (the portal refused a filter with no pattern and the script got "" at once)
+
 ## 0.81.0 — 2026-10-26
 - feat: a side folded into a strip shows its panes over the tabs while the pointer is on it (SecureCRT's auto-hide); the pin button keeps them in place
 
