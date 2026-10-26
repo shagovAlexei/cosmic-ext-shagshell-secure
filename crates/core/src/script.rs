@@ -629,17 +629,13 @@ fn nap(d: Duration, cancel: &AtomicBool) {
     }
 }
 
-/// Where `crt.py` lives: installed, or (running from the repository) `res/python`.
+/// Where `crt.py` lives: `~/.config/shagshell/scripts/.lib` (`bundled::install` writes it at start);
+/// `SHAGSHELL_PYTHON` replaces it.
 pub fn python_dir() -> std::path::PathBuf {
-    use std::path::PathBuf;
-    if let Some(d) = std::env::var_os("SHAGSHELL_PYTHON") {
-        return d.into();
+    match std::env::var_os("SHAGSHELL_PYTHON") {
+        Some(d) => d.into(),
+        None => default_dir().join(".lib"),
     }
-    let installed = PathBuf::from("/usr/share/shagshell/python");
-    if installed.join("crt.py").is_file() {
-        return installed;
-    }
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../res/python")
 }
 
 /// The command that runs `script` with `crt` defined, talking to `sock`, about tab `tab`:
@@ -1068,6 +1064,15 @@ mod tests {
         assert!(r[5]["err"].as_str().unwrap().contains("Bogus"));
     }
 
+    /// `crt.py` comes from `scripts/.lib` (written by `bundled::install`), never an older
+    /// `/usr/share/shagshell/python` left by an earlier install.
+    #[test]
+    fn regression_python_dir_is_scripts_lib() {
+        if std::env::var_os("SHAGSHELL_PYTHON").is_none() {
+            assert_eq!(python_dir(), default_dir().join(".lib"));
+        }
+    }
+
     /// A real `python3` and the real `crt.py` against `serve`.
     #[test]
     fn python_script_runs_against_serve() {
@@ -1089,7 +1094,8 @@ mod tests {
         )
         .unwrap();
         let l = UnixListener::bind(&sock).unwrap();
-        let (prog, args, env) = command(&script, &["a".into()], &sock, 1, &python_dir());
+        let repo_python = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../res/python");
+        let (prog, args, env) = command(&script, &["a".into()], &sock, 1, &repo_python);
         let mut child = Command::new(prog)
             .args(args)
             .envs(env)

@@ -81,6 +81,10 @@ fn main() -> cosmic::iced::Result {
         .env()
         .init()
         .ok();
+    // Our Python files and the examples, under ~/.config/shagshell/scripts.
+    if let Err(e) = shagshell_core::bundled::install(&shagshell_core::script::default_dir()) {
+        log::warn!("scripts folder: {e}");
+    }
     let software = pick_renderer();
     i18n::init(&i18n_embed::DesktopLanguageRequester::requested_languages());
     let settings = cosmic::app::Settings::default()

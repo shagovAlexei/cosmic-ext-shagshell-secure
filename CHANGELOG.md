@@ -2,6 +2,9 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.86.1 — 2026-10-27
+- fix: everything of ours lives under `~/.config/shagshell`: `crt.py` / `shag_parse.py` are built into the binary and written to `scripts/.lib/` at start, the examples to `scripts/examples/` (only missing files, edits stay); nothing is installed to `/usr/share/shagshell` any more (an older copy there was what scripts picked up)
+
 ## 0.86.0 — 2026-10-27
 - feat: script builder core: every crt member as a block (catalog), .py ↔ blocks (parsed by python3's ast), stable on all examples; no UI yet
 
