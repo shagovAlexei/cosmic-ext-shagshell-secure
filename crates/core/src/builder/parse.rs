@@ -76,7 +76,7 @@ pub(crate) mod tests {
     use super::super::Arg;
     use super::*;
 
-    /// The repository's helper, not an older installed one (`script::python_dir` prefers that).
+    /// The repository's helper: `script::python_dir` is the user's `scripts/.lib`, written at start.
     pub(crate) fn parse(src: &str) -> Result<Vec<Block>, Error> {
         parse_with(
             src,
