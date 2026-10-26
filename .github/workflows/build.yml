@@ -52,6 +52,3 @@ jobs:
 
       - name: Tests
         run: cargo test --locked
-
-      - name: Build
-        run: cargo build --release --locked
