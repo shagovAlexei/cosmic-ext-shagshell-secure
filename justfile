@@ -31,7 +31,7 @@ install:
     install -Dm0644 res/{{appid}}.desktop {{dest}}/share/applications/{{appid}}.desktop
     install -Dm0644 res/{{appid}}.metainfo.xml {{dest}}/share/metainfo/{{appid}}.metainfo.xml
     install -Dm0644 res/icons/{{appid}}.svg {{dest}}/share/icons/hicolor/scalable/apps/{{appid}}.svg
-    install -Dm0644 res/python/crt.py {{dest}}/share/shagshell/python/crt.py
+    install -Dm0644 -t {{dest}}/share/shagshell/python res/python/crt.py res/python/shag_parse.py
     install -Dm0644 -t {{dest}}/share/shagshell/examples Example/*
 
 uninstall:
