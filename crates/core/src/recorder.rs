@@ -96,9 +96,10 @@ impl Recorder {
                 out.push_str(&format!("crt.Screen.WaitForString({})\n", literal(&wait)));
             }
             if s.secret {
+                // Asked into a variable first: a block of its own in the Script Builder.
                 let enter = if s.enter { " + \"\\r\"" } else { "" };
                 out.push_str(&format!(
-                    "crt.Screen.Send(crt.Dialog.Prompt({}, \"Password\", \"\", True){enter})\n",
+                    "password = crt.Dialog.Prompt({}, \"Password\", \"\", True)\ncrt.Screen.Send(password{enter})\n",
                     literal(&s.prompt)
                 ));
             } else {
@@ -257,5 +258,35 @@ mod tests {
         r.input(b"ls");
         assert!(!r.is_empty());
         assert!(body(r).contains("Send(\"ls\")"));
+    }
+}
+
+#[cfg(test)]
+mod builder_tests {
+    use super::*;
+    use crate::builder::{self, Block};
+
+    /// Stop opens the recording in the Script Builder: every step is a block of its own (a
+    /// `crt` call, a password asked for), not «Custom Python».
+    #[test]
+    fn recording_opens_as_blocks() {
+        let mut r = Recorder::new();
+        r.output(b"user@host's password: ");
+        r.input(b"hunter2\r");
+        r.output(b"\r\nuser@host:~$ ");
+        r.input(b"uptime\r");
+        let blocks = builder::parse(&r.script("Recorded")).unwrap();
+        let calls: Vec<&str> = (blocks.iter())
+            .filter_map(|b| match b {
+                Block::Call { func, .. } => Some(func.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(calls.contains(&"crt.Dialog.Prompt"), "{blocks:?}");
+        assert!(calls.contains(&"crt.Screen.Send"), "{blocks:?}");
+        assert!(
+            !blocks.iter().any(|b| matches!(b, Block::Raw { .. })),
+            "{blocks:?}"
+        );
     }
 }
