@@ -437,6 +437,10 @@ pub fn view<'a>(
         .add(settings::flex_item(
             fl!("options-font-size"),
             size_choice(config, config.note_font_px(), |c, n| c.note_font_size = n),
+        ))
+        .add(settings::flex_item(
+            fl!("options-notes-right"),
+            widget::toggler(config.notes_right).on_toggle(set(|c, on| c.notes_right = on)),
         ));
     let content = widget::column::with_children(vec![
         interface.into(),

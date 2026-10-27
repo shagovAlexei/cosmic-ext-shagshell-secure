@@ -2074,9 +2074,12 @@ impl Tabs {
         Task::none()
     }
 
-    /// A note as a tab in the group at the right (a new one beside the focused when there is only
-    /// one), where the Script Console lives too; the note is shown and takes the focus.
-    pub fn open_note_right(&mut self, launch: Launch, look: &Look) -> Task<Message> {
+    /// A note as a tab: `right`, in the group at the right (a new one beside the focused when
+    /// there is only one), else in the group in front; it is shown and takes the focus.
+    pub fn open_note(&mut self, launch: Launch, right: bool, look: &Look) -> Task<Message> {
+        if !right {
+            return self.open(launch, look);
+        }
         let note = launch.note.clone();
         if let (Some(grid), Some(mut p)) = (&self.grid, self.focus) {
             while let Some(next) = grid.adjacent(p, pane_grid::Direction::Right) {

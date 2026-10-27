@@ -558,6 +558,7 @@ console-copy = Копировать
 console-debug = Отладка: вызовы crt
 console-empty = Пока пусто: здесь вывод скриптов и их ошибки.
 options-console-auto = Открывать консоль, когда скрипт что-то пишет
+options-notes-right = Открывать заметки в отдельной группе справа
 options-console-at = Где открывать консоль скриптов
 options-bottom = Внизу
 menu-script-folder = Скрипты

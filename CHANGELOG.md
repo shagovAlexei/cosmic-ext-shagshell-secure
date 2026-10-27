@@ -2,6 +2,9 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.94.0 — 2026-10-27
+- feat: a note opens as a tab in the group in front; Global Options → Notes → «Open notes in a group of their own at the right» brings back the old place (off by default)
+
 ## 0.93.1 — 2026-10-27
 - fix: the bar «⋯» lists move a button with ↑ / ↓ (up = to the left on the bar), not ‹ / ›
 
