@@ -817,3 +817,21 @@ builder-exit-title = { $n ->
 }
 builder-exit-body = Exit anyway? The changes will be lost.
 builder-exit = Exit without saving
+stmt-for-host = For each host
+stmt-for-host-help = Connects to every saved session of a list (a new tab each), runs the blocks inside on it, disconnects. Parallel: several hosts at once. Inside, tab is the host's tab and host its name.
+builder-for-host = for each host in
+builder-hosts = hosts
+builder-parallel = in parallel
+builder-limit = at most
+builder-host-hint = (inside: tab = the host's tab, host = its name)
+builder-big = Big blocks
+builder-from-template = From a template ▾
+builder-no-templates = No templates in ~/.config/shagshell/scripts/templates
+builder-save-template = Save as template…
+block-prompt = Wait for the prompt
+block-run = Run a command
+block-read-list = Read a list from a file
+block-log-to = Log to a file
+block-append-file = Append to a file
+block-to-clipboard = To the clipboard
+block-each-host = each_host (a function per host)

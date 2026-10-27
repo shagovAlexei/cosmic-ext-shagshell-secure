@@ -2775,6 +2775,21 @@ impl App {
         self.tabs.open(launch, &look(&self.config))
     }
 
+    /// A template / example as a new unsaved script.
+    fn open_template(&mut self, path: &std::path::Path) -> Task<Message> {
+        match crate::builder::BuilderView::new(Some(path.to_path_buf())) {
+            Ok(v) => {
+                let task = self.open_builder(None);
+                self.tabs.replace_builder(v.untitled());
+                task
+            }
+            Err(e) => {
+                self.sessions.notice = Some(e);
+                Task::none()
+            }
+        }
+    }
+
     /// What a Script Builder tab asks for.
     fn builder_out(&mut self, id: crate::term::TabId, out: crate::builder::Out) -> Task<Message> {
         use crate::builder::{BuilderMsg, Out};
@@ -2789,6 +2804,14 @@ impl App {
                 |p| cosmic::Action::App(Message::BuilderPicked(p)),
             ),
             Out::New => self.open_builder(None),
+            Out::Template(p) => self.open_template(&p),
+            Out::SaveTemplate => Task::perform(
+                crate::notes::save_as(
+                    fl!("builder-save-template"),
+                    shagshell_core::script::default_dir().join("templates"),
+                ),
+                move |p| cosmic::Action::App(Message::Builder(id, BuilderMsg::SaveAs(p))),
+            ),
             Out::SaveAs => Task::perform(
                 crate::notes::save_as(fl!("note-save-as"), self.script_start_dir()),
                 move |p| cosmic::Action::App(Message::Builder(id, BuilderMsg::SaveAs(p))),

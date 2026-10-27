@@ -867,6 +867,21 @@ impl Tabs {
             .map(|(id, _)| *id)
     }
 
+    /// The Script Builder tab just opened gets `v` (a template's blocks).
+    pub fn replace_builder(&mut self, v: crate::builder::BuilderView) {
+        let Some(id) = self.last_opened else {
+            return;
+        };
+        if let Some(tab) = self.tabs.get_mut(&id)
+            && let Body::Builder(b) = &mut tab.body
+        {
+            let label = format!("{} •", v.name());
+            **b = v;
+            tab.launch.label = label;
+            self.retitle(id);
+        }
+    }
+
     /// Script Builder tabs with unsaved work.
     pub fn unsaved_builders(&self) -> usize {
         (self.tabs.values())
