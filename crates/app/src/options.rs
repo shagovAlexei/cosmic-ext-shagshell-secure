@@ -1,7 +1,7 @@
 //! Options → Global Options, in the context drawer. Each change is written at once.
 
 use crate::app::Message;
-use crate::config::{AppTheme, Config, ExistsRule, LANGUAGES, Side};
+use crate::config::{AppTheme, Config, ConsoleAt, ExistsRule, LANGUAGES, Side};
 use crate::fl;
 use cosmic::app::context_drawer::{self, ContextDrawer};
 use cosmic::widget::{self, settings};
@@ -79,6 +79,18 @@ pub fn view<'a>(
             widget::toggler(config.script_console_auto)
                 .on_toggle(set(|c, on| c.script_console_auto = on)),
         ))
+        .add(settings::flex_item(fl!("options-console-at"), {
+            let c = config.clone();
+            widget::dropdown(
+                vec![fl!("options-bottom"), fl!("options-right")],
+                ConsoleAt::ALL.iter().position(|s| *s == config.console_at),
+                move |i| {
+                    let mut c = c.clone();
+                    c.console_at = ConsoleAt::ALL[i];
+                    Message::SetConfig(c)
+                },
+            )
+        }))
         .add(settings::flex_item(
             fl!("options-tabs-on-start"),
             widget::toggler(config.tabs_on_start).on_toggle(set(|c, on| c.tabs_on_start = on)),

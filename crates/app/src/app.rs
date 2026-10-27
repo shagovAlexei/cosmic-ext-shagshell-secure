@@ -2328,7 +2328,8 @@ impl App {
     /// Script → Console: a tab in the right-hand group; `raise`: shown when it is there already
     /// (a script's first output only opens it).
     fn open_console(&mut self, raise: bool) -> Task<Message> {
-        self.tabs.open_console(raise, &look(&self.config))
+        let below = self.config.console_at == crate::config::ConsoleAt::Bottom;
+        self.tabs.open_console(raise, below, &look(&self.config))
     }
 
     /// The window of the script dialog that is up: opened with the first ask, gone with the last.

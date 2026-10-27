@@ -2,6 +2,9 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.90.0 — 2026-10-27
+- feat: the Script Console opens in a group under the terminals; Global Options → Interface → «Where the script console opens» (Bottom / Right)
+
 ## 0.89.0 — 2026-10-27
 - feat: Script Builder runs light their blocks up (where the script is, what it went through, the block of an error with its words), breakpoints (○ / ● on a block, also while running), Pause / Step / Continue / Stop, the variables of a stop under the palette and on the blocks that keep them; ⚙ turns light-up and stops off (a plain run); every thread of a parallel run stops together; a traced run runs the generated code (its lines are the blocks'), `elif` / `except` / `each_host(…)` light their own block, a breakpoint on «For each host» stops at the loop, a tab closed while paused lets its script go on
 

@@ -2013,7 +2013,7 @@ impl Tabs {
 
     /// The Script Console as a tab in the group at the right (a new one beside the focused when
     /// there is only one); there already: shown when `raise`. The focus stays where it was.
-    pub fn open_console(&mut self, raise: bool, look: &Look) -> Task<Message> {
+    pub fn open_console(&mut self, raise: bool, below: bool, look: &Look) -> Task<Message> {
         if let Some(id) = self.console_id() {
             if raise {
                 self.show(id);
@@ -2021,10 +2021,17 @@ impl Tabs {
             return Task::none();
         }
         let back = self.focus;
-        // The right-most group from the focused one.
+        // The right-most (`below`: bottom-most) group from the focused one; none there: a group
+        // of its own on that side.
+        let (dir, axis) = match below {
+            true => (pane_grid::Direction::Down, pane_grid::Axis::Horizontal),
+            false => (pane_grid::Direction::Right, pane_grid::Axis::Vertical),
+        };
+        let mut moved = false;
         if let (Some(grid), Some(mut p)) = (&self.grid, self.focus) {
-            while let Some(next) = grid.adjacent(p, pane_grid::Direction::Right) {
+            while let Some(next) = grid.adjacent(p, dir) {
                 p = next;
+                moved = true;
             }
             self.focus = Some(p);
         }
@@ -2039,21 +2046,19 @@ impl Tabs {
         let Some(id) = self.console_id() else {
             return task;
         };
-        // Alone in the only group: a group of its own, at its right.
-        let alone_group = self.grid.as_ref().is_some_and(|g| g.len() == 1);
         let at = self.grid.as_ref().and_then(|g| {
             g.iter()
                 .find_map(|(pane, group)| entity_of(&group.model, id).map(|e| (*pane, e, id)))
         });
         let split = match at {
-            Some(at) if alone_group => self.split(at, pane_grid::Axis::Vertical),
+            Some(at) if !moved => self.split(at, axis),
             _ => Task::none(),
         };
         if raise {
             return Task::batch([task, split]);
         }
         if let (Some((Some(p), e)), Some(grid)) = (shown, self.grid.as_mut())
-            && !alone_group
+            && moved
             && let Some(g) = grid.get_mut(p)
         {
             g.model.activate(e);
