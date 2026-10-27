@@ -739,8 +739,8 @@ note-undo = Отменить
 note-redo = Вернуть
 note-cut = Вырезать
 note-buttons = Кнопки панели
-builder-bar-left = Левее
-builder-bar-right = Правее
+builder-bar-up = Выше (левее на панели)
+builder-bar-down = Ниже (правее на панели)
 builder-bar-reset = Как было
 builder-bar-target = Вкладка для запуска
 

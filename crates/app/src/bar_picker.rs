@@ -1,5 +1,5 @@
 //! «⋯» at the end of a tab's bar (Script Builder, notes): every button, ticked when shown,
-//! ‹ / › to move it, «Reset» (`core::bar`).
+//! ↑ / ↓ to move it (up = to the left on the bar), «Reset» (`core::bar`).
 
 use crate::app::Message;
 use crate::fl;
@@ -42,8 +42,8 @@ pub fn view<'a>(
                 };
                 widget::row::with_children(vec![
                     widget::container(check).width(Length::Fill).into(),
-                    arrow("go-previous-symbolic", fl!("builder-bar-left"), true),
-                    arrow("go-next-symbolic", fl!("builder-bar-right"), false),
+                    arrow("go-up-symbolic", fl!("builder-bar-up"), true),
+                    arrow("go-down-symbolic", fl!("builder-bar-down"), false),
                 ])
                 .spacing(4)
                 .align_y(Alignment::Center)
