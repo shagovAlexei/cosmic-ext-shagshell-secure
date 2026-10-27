@@ -738,6 +738,10 @@ note-undo = Undo
 note-redo = Redo
 note-cut = Cut
 note-buttons = Bar Buttons
+builder-bar-left = Move left
+builder-bar-right = Move right
+builder-bar-reset = Reset
+builder-bar-target = Tab to run on
 
 # Script Builder (spec 36)
 menu-script-builder = Script Builder…

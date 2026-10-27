@@ -130,6 +130,7 @@ pub enum BuilderMsg {
     DebugStop,
     /// ⚙: the run's switches.
     Settings,
+    BarPicker,
     SetTrace(bool),
     SetStops(bool),
 }
@@ -224,6 +225,8 @@ pub struct BuilderView {
     trace: bool,
     stops: bool,
     settings_open: bool,
+    /// «⋯»: the bar's buttons, ticked and moved.
+    bar_open: bool,
     /// This tab's own file for code that runs unsaved.
     uid: u64,
 }
@@ -316,6 +319,7 @@ impl BuilderView {
             trace: true,
             stops: true,
             settings_open: false,
+            bar_open: false,
             uid: NEXT_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         })
     }
@@ -908,6 +912,7 @@ impl BuilderView {
                 }
             }
             BuilderMsg::Settings => self.settings_open = !self.settings_open,
+            BuilderMsg::BarPicker => self.bar_open = !self.bar_open,
             BuilderMsg::SetTrace(v) => self.trace = v,
             BuilderMsg::SetStops(v) => self.stops = v,
             BuilderMsg::Press(d) => {
@@ -966,7 +971,12 @@ impl BuilderView {
         }
     }
 
-    pub fn view<'a>(&'a self, id: TabId, targets: &[(TabId, String)]) -> Element<'a, Message> {
+    pub fn view<'a>(
+        &'a self,
+        id: TabId,
+        targets: &[(TabId, String)],
+        buttons: &[String],
+    ) -> Element<'a, Message> {
         let m = move |x| Message::Builder(id, x);
         let palette = widget::container(
             widget::column::with_children(vec![
@@ -989,7 +999,7 @@ impl BuilderView {
             .spacing(6)
             .padding(8)
             .height(Length::Fill)
-            .push(self.bar(m, targets));
+            .push(self.bar(m, targets, buttons));
         if let Some(e) = &self.error {
             col = col.push(widget::text::body(e.clone()).class(theme::Text::Accent));
         }
@@ -1005,6 +1015,7 @@ impl BuilderView {
         &'a self,
         m: impl Fn(BuilderMsg) -> Message + Copy + 'a,
         targets: &[(TabId, String)],
+        buttons: &[String],
     ) -> Element<'a, Message> {
         use crate::toolbar::tip_button;
         let ready = self.ready();
@@ -1038,55 +1049,140 @@ impl BuilderView {
                     .class(theme::Container::Dropdown),
             );
         }
+        let mut pick = Some(pop);
+        let mut row: Vec<Element<'a, Message>> = vec![];
+        for name in buttons {
+            let e = match name.as_str() {
+                "New" => tip_button(
+                    "document-new-symbolic",
+                    fl!("builder-new"),
+                    Some(m(BuilderMsg::New)),
+                ),
+                "Open" => tip_button(
+                    "document-open-symbolic",
+                    fl!("builder-open"),
+                    Some(m(BuilderMsg::Open)),
+                ),
+                "Template" => self.templates_view(m),
+                "SaveTemplate" => tip_button(
+                    "bookmark-new-symbolic",
+                    fl!("builder-save-template"),
+                    ready.then(|| m(BuilderMsg::SaveTemplate)),
+                ),
+                "Save" => tip_button(
+                    "document-save-symbolic",
+                    fl!("note-save"),
+                    ready.then(|| m(BuilderMsg::Save)),
+                ),
+                "SaveAs" => tip_button(
+                    "document-save-as-symbolic",
+                    fl!("note-save-as"),
+                    ready.then(|| m(BuilderMsg::SaveAsAsk)),
+                ),
+                "Undo" => tip_button(
+                    "edit-undo-symbolic",
+                    fl!("note-undo"),
+                    Some(m(BuilderMsg::Undo)),
+                ),
+                "Redo" => tip_button(
+                    "edit-redo-symbolic",
+                    fl!("note-redo"),
+                    Some(m(BuilderMsg::Redo)),
+                ),
+                "Target" => match pick.take() {
+                    Some(p) => p.into(),
+                    None => continue,
+                },
+                "Settings" => self.settings_view(m),
+                "Run" => self.run_controls(m, ready),
+                _ => continue,
+            };
+            row.push(e);
+        }
+        // The buttons in a row of their own: «⋯» keeps its place in the tree (and stays open)
+        // when one is shown or hidden.
         widget::row::with_children(vec![
             widget::text::heading(self.name())
                 .width(Length::Fill)
                 .into(),
-            tip_button(
-                "document-new-symbolic",
-                fl!("builder-new"),
-                Some(m(BuilderMsg::New)),
-            ),
-            tip_button(
-                "document-open-symbolic",
-                fl!("builder-open"),
-                Some(m(BuilderMsg::Open)),
-            ),
-            self.templates_view(m),
-            tip_button(
-                "bookmark-new-symbolic",
-                fl!("builder-save-template"),
-                self.ready().then(|| m(BuilderMsg::SaveTemplate)),
-            ),
-            tip_button(
-                "document-save-symbolic",
-                fl!("note-save"),
-                ready.then(|| m(BuilderMsg::Save)),
-            ),
-            tip_button(
-                "document-save-as-symbolic",
-                fl!("note-save-as"),
-                ready.then(|| m(BuilderMsg::SaveAsAsk)),
-            ),
-            tip_button(
-                "edit-undo-symbolic",
-                fl!("note-undo"),
-                Some(m(BuilderMsg::Undo)),
-            ),
-            tip_button(
-                "edit-redo-symbolic",
-                fl!("note-redo"),
-                Some(m(BuilderMsg::Redo)),
-            ),
-            pop.into(),
-            self.run_controls(m, ready),
+            widget::row::with_children(row)
+                .spacing(6)
+                .align_y(Alignment::Center)
+                .into(),
+            self.bar_picker(m, buttons),
         ])
         .spacing(6)
         .align_y(Alignment::Center)
         .into()
     }
 
-    /// Run (⚙ its switches), or while it runs: Pause / Continue, Step, Stop.
+    /// «⋯» at the end of the bar: every button, ticked when shown, ← / → to move it (every
+    /// builder tab's bar).
+    fn bar_picker<'a>(
+        &self,
+        m: impl Fn(BuilderMsg) -> Message + Copy + 'a,
+        buttons: &[String],
+    ) -> Element<'a, Message> {
+        use crate::toolbar::tip_button;
+        use shagshell_core::builder::bar;
+        let more = tip_button(
+            "view-more-symbolic",
+            fl!("note-buttons"),
+            Some(m(BuilderMsg::BarPicker)),
+        );
+        let mut pop = widget::popover(more)
+            .position(widget::popover::Position::Bottom)
+            .on_close(m(BuilderMsg::BarPicker));
+        if self.bar_open {
+            // Shown ones in their order, then the hidden ones.
+            let hidden = bar::BUTTONS
+                .iter()
+                .filter(|b| !buttons.iter().any(|n| n == *b));
+            let shown =
+                (buttons.iter()).filter_map(|n| bar::BUTTONS.iter().find(|b| *b == n).copied());
+            let names: Vec<&'static str> = shown.chain(hidden.copied()).collect();
+            let rows = names.into_iter().map(|name| -> Element<'a, Message> {
+                let on = buttons.iter().any(|n| n == name);
+                let list = buttons.to_vec();
+                let mut check = widget::checkbox(on).label(bar_label(name));
+                if name != bar::ALWAYS {
+                    let l = list.clone();
+                    check =
+                        check.on_toggle(move |_| Message::BuilderButtons(bar::toggle(&l, name)));
+                }
+                let arrow = |icon: &'static str, tip: String, left: bool| {
+                    let l = list.clone();
+                    tip_button(
+                        icon,
+                        tip,
+                        on.then(|| Message::BuilderButtons(bar::shift(&l, name, left))),
+                    )
+                };
+                widget::row::with_children(vec![
+                    widget::container(check).width(Length::Fill).into(),
+                    arrow("go-previous-symbolic", fl!("builder-bar-left"), true),
+                    arrow("go-next-symbolic", fl!("builder-bar-right"), false),
+                ])
+                .spacing(4)
+                .align_y(Alignment::Center)
+                .into()
+            });
+            let mut col = widget::column::with_children(rows.collect::<Vec<_>>()).spacing(4);
+            col = col.push(
+                widget::button::text(fl!("builder-bar-reset"))
+                    .on_press(Message::BuilderButtons(bar::default_buttons())),
+            );
+            pop = pop.popup(
+                widget::container(col)
+                    .width(Length::Fixed(300.0))
+                    .padding(12)
+                    .class(theme::Container::Dropdown),
+            );
+        }
+        pop.into()
+    }
+
+    /// Run, or while it runs: Pause / Continue, Step, Stop.
     fn run_controls<'a>(
         &self,
         m: impl Fn(BuilderMsg) -> Message + Copy + 'a,
@@ -1127,6 +1223,18 @@ impl BuilderView {
                 .align_y(Alignment::Center)
                 .into();
         }
+        widget::button::suggested(fl!("builder-run"))
+            .leading_icon(widget::icon::from_name("media-playback-start-symbolic"))
+            .on_press_maybe(ready.then(|| m(BuilderMsg::Run)))
+            .into()
+    }
+
+    /// ⚙: the switches of a run (light-up, stops).
+    fn settings_view<'a>(
+        &self,
+        m: impl Fn(BuilderMsg) -> Message + Copy + 'a,
+    ) -> Element<'a, Message> {
+        use crate::toolbar::tip_button;
         let gear = tip_button(
             "emblem-system-symbolic",
             fl!("builder-settings"),
@@ -1154,16 +1262,7 @@ impl BuilderView {
                 .class(theme::Container::Dropdown),
             );
         }
-        widget::row::with_children(vec![
-            pop.into(),
-            widget::button::suggested(fl!("builder-run"))
-                .leading_icon(widget::icon::from_name("media-playback-start-symbolic"))
-                .on_press_maybe(ready.then(|| m(BuilderMsg::Run)))
-                .into(),
-        ])
-        .spacing(6)
-        .align_y(Alignment::Center)
-        .into()
+        pop.into()
     }
 
     /// «From a template ▾»: a button and, open, the list of templates and examples.
@@ -1992,4 +2091,21 @@ pub fn key(
 /// «Open in builder…»: a `.py`.
 pub async fn pick(title: String, dir: PathBuf) -> Option<PathBuf> {
     crate::script::pick(title, dir).await
+}
+
+/// A bar button's name in «⋯».
+fn bar_label(name: &str) -> String {
+    match name {
+        "New" => fl!("builder-new"),
+        "Open" => fl!("builder-open"),
+        "Template" => fl!("builder-from-template"),
+        "SaveTemplate" => fl!("builder-save-template"),
+        "Save" => fl!("note-save"),
+        "SaveAs" => fl!("note-save-as"),
+        "Undo" => fl!("note-undo"),
+        "Redo" => fl!("note-redo"),
+        "Target" => fl!("builder-bar-target"),
+        "Settings" => fl!("builder-settings"),
+        _ => fl!("builder-run"),
+    }
 }

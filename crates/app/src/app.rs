@@ -199,6 +199,8 @@ pub enum Message {
     ExitCancel,
     /// A note bar's button shown / hidden (index into `core::notes::BUTTONS`).
     NoteButton(u8),
+    /// The Script Builder bar's buttons now (its «⋯»).
+    BuilderButtons(Vec<String>),
     NoteTick,
     /// The note chooser answered.
     NotePicked(Option<std::path::PathBuf>),
@@ -286,6 +288,7 @@ impl Application for App {
         let mut tabs = Tabs::default();
         tabs.set_sftp_prefs(&config);
         tabs.note_buttons = config.note_buttons.clone();
+        tabs.builder_buttons = shagshell_core::builder::bar::clean(&config.builder_buttons);
         tabs.set_note_font(&config.note_font_family, config.note_font_px());
         tabs.set_log_prefs(&config);
         let scripts = crate::script::Scripts::new(tabs.taps.clone(), control_dir.clone());
@@ -1109,6 +1112,8 @@ impl App {
                 }
                 self.tabs.set_sftp_prefs(&self.config);
                 self.tabs.note_buttons = self.config.note_buttons.clone();
+                self.tabs.builder_buttons =
+                    shagshell_core::builder::bar::clean(&self.config.builder_buttons);
                 let px = self.config.note_font_px();
                 self.tabs
                     .set_note_font(&self.config.note_font_family.clone(), px);
@@ -1165,6 +1170,12 @@ impl App {
                     self.tabs.note_buttons = self.config.note_buttons.clone();
                     self.save_config();
                 }
+            }
+            Message::BuilderButtons(list) => {
+                self.config.builder_buttons = list;
+                self.tabs.builder_buttons =
+                    shagshell_core::builder::bar::clean(&self.config.builder_buttons);
+                self.save_config();
             }
             Message::CloseAbout => {
                 self.about = false;

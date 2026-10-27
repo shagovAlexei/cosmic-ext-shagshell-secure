@@ -1,6 +1,7 @@
 //! Script Builder (spec 36): the blocks of a `crt` script, `.py` <-> blocks.
 //! `generate` writes the code; expressions are kept as Python text (as `ast.unparse` wrote them).
 
+pub mod bar;
 pub mod catalog;
 pub mod field;
 pub(crate) mod parse;
