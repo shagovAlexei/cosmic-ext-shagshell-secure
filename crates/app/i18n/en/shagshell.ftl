@@ -557,6 +557,7 @@ console-copy = Copy
 console-debug = Debug: trace crt calls
 console-empty = Nothing yet: what scripts print, and their errors, show here.
 options-console-auto = Open the script console when a script writes
+options-notes-right = Open notes in a group of their own at the right
 options-console-at = Where the script console opens
 options-bottom = Bottom
 menu-script-folder = Scripts

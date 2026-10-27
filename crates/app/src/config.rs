@@ -221,6 +221,8 @@ pub struct Config {
     pub tabs_bottom: bool,
     /// Notes' font family ("" = the system's monospace) and size, px (0 = 14; `note_font_px`).
     pub note_font_family: String,
+    /// A note opens in a group of its own at the right (off: in the group in front).
+    pub notes_right: bool,
     pub note_font_size: u16,
     /// The buttons a note's bar shows (`core::notes::BUTTONS`), ticked in a note tab's menu.
     pub note_buttons: Vec<String>,
@@ -371,6 +373,7 @@ impl Default for Config {
             note_buttons: shagshell_core::notes::default_buttons(),
             builder_buttons: shagshell_core::builder::bar::default_buttons(),
             note_font_family: String::new(),
+            notes_right: false,
             note_font_size: 14,
             strip_left: false,
             strip_right: false,
