@@ -11,9 +11,10 @@ use shagshell_core::builder::catalog::{self, CATALOG, Entry, Ty};
 use shagshell_core::builder::field::{self, Bad, F};
 use shagshell_core::builder::tape::{self, Doc, Pos};
 use shagshell_core::builder::{self, Block};
+use shagshell_core::debugger::{Debugger, Event, Mode};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 const FONT: f32 = 13.0;
@@ -117,6 +118,20 @@ pub enum BuilderMsg {
     Press(Drag),
     Over(Option<Pos>),
     Release,
+    /// A breakpoint on / off at a block.
+    Break(Pos),
+    /// The run started (its id), its debugger spoke, it ended (its error).
+    Started(u64),
+    Debug(Event),
+    Ended(u64, Option<String>),
+    DebugPause,
+    DebugStep,
+    DebugContinue,
+    DebugStop,
+    /// ⚙: the run's switches.
+    Settings,
+    SetTrace(bool),
+    SetStops(bool),
 }
 
 /// What the tab asks of the app.
@@ -131,8 +146,38 @@ pub enum Out {
     Template(PathBuf),
     /// Save As, starting in the templates folder.
     SaveTemplate,
-    /// The script file, the terminal tab (`None`: the first one; `Some(None)`: none).
-    Run(PathBuf, Option<Option<TabId>>),
+    /// The script file, the terminal tab (`None`: the first one; `Some(None)`: none), the
+    /// debugger (traced run) when its blocks are to light up / stop.
+    Run(PathBuf, Option<Option<TabId>>, Option<Arc<Debugger>>),
+    /// Stop that run.
+    Stop(u64),
+}
+
+/// A run from the tab (or the last one: its marks stay until the next edit).
+struct Run {
+    id: Option<u64>,
+    /// Every block's first line in the code that runs.
+    map: Vec<(Pos, usize)>,
+    dbg: Option<Arc<Debugger>>,
+    seen: HashSet<Pos>,
+    current: Option<Pos>,
+    paused: Option<(Pos, Vec<(String, String)>)>,
+    error: Option<(Pos, String)>,
+    done: bool,
+}
+
+impl Run {
+    /// The block of a line of the code that runs.
+    fn pos(&self, line: u64) -> Option<Pos> {
+        let line = usize::try_from(line).ok()?;
+        (self.map.iter().find(|(_, l)| *l == line).map(|(p, _)| p))
+            .or_else(|| builder::at_line(&self.map, line))
+            .cloned()
+    }
+
+    fn live(&self) -> bool {
+        !self.done
+    }
 }
 
 pub struct BuilderView {
@@ -170,6 +215,12 @@ pub struct BuilderView {
     error: Option<String>,
     /// Closed with «close without saving».
     discarded: bool,
+    run: Option<Run>,
+    breaks: HashSet<Pos>,
+    /// ⚙: light the blocks up while running; stop at breakpoints / steps.
+    trace: bool,
+    stops: bool,
+    settings_open: bool,
 }
 
 impl Drop for BuilderView {
@@ -238,6 +289,11 @@ impl BuilderView {
             target: None,
             error: None,
             discarded: false,
+            run: None,
+            breaks: HashSet::new(),
+            trace: true,
+            stops: true,
+            settings_open: false,
         })
     }
 
@@ -277,12 +333,27 @@ impl BuilderView {
     fn forget_typing(&mut self) {
         self.bad.clear();
         self.entered.clear();
+        // ponytail: places shift with the tape, so breakpoints go; keep them by block identity
+        // if that annoys
+        self.breaks.clear();
+    }
+
+    /// The run (going, or its marks) is about this tape: an edit drops the marks of an ended one.
+    pub fn run_id(&self) -> Option<u64> {
+        self.run.as_ref().and_then(|r| r.id)
+    }
+
+    fn running(&self) -> bool {
+        self.run.as_ref().is_some_and(Run::live)
     }
 
     /// The tape changed: the code follows, and is checked a moment later. A parse already
     /// running is of older code: its answer is dropped.
     fn changed(&mut self) {
         self.seq += 1;
+        if self.run.as_ref().is_some_and(|r| r.done) {
+            self.run = None;
+        }
         crate::editor::replace_text(&self.editor, &builder::generate(&self.doc.blocks));
         crate::editor::scroll_home(&self.editor);
         (self.editor.lock().unwrap_or_else(|e| e.into_inner())).set_changed(false);
@@ -694,7 +765,7 @@ impl BuilderView {
                 self.target = Some(t);
                 self.targets_open = false;
             }
-            BuilderMsg::Run if !self.ready() => {}
+            BuilderMsg::Run if !self.ready() || self.running() => {}
             BuilderMsg::Run => {
                 let path = match (&self.path, self.unsaved()) {
                     (Some(p), false) => p.clone(),
@@ -713,8 +784,108 @@ impl BuilderView {
                         p
                     }
                 };
-                return Out::Run(path, self.target);
+                let map = builder::generate_map(&self.doc.blocks).1;
+                let dbg = (self.trace || self.stops).then(|| {
+                    let lines = (self.stops)
+                        .then(|| {
+                            map.iter()
+                                .filter(|(p, _)| self.breaks.contains(p))
+                                .map(|(_, l)| *l as u64)
+                        })
+                        .into_iter()
+                        .flatten();
+                    Arc::new(Debugger::new(lines))
+                });
+                self.run = dbg.as_ref().map(|d| Run {
+                    id: None,
+                    map,
+                    dbg: Some(d.clone()),
+                    seen: HashSet::new(),
+                    current: None,
+                    paused: None,
+                    error: None,
+                    done: false,
+                });
+                return Out::Run(path, self.target, dbg);
             }
+            BuilderMsg::Break(p) => {
+                if !self.breaks.remove(&p) {
+                    self.breaks.insert(p);
+                }
+                // A run going on hears of it (its lines are those of the code it runs).
+                if let Some(r) = self.run.as_ref().filter(|r| r.live())
+                    && let Some(d) = &r.dbg
+                {
+                    let lines = (r.map.iter())
+                        .filter(|(p, _)| self.breaks.contains(p))
+                        .map(|(_, l)| *l as u64);
+                    d.set_breaks(lines);
+                }
+            }
+            BuilderMsg::Started(n) => {
+                if let Some(r) = &mut self.run {
+                    r.id = Some(n);
+                }
+            }
+            BuilderMsg::Debug(e) => {
+                if let Some(r) = &mut self.run {
+                    match e {
+                        Event::Progress { current, seen } => {
+                            for l in seen {
+                                if let Some(p) = r.pos(l) {
+                                    r.seen.insert(p);
+                                }
+                            }
+                            r.current = r.pos(current);
+                        }
+                        Event::Paused { line, vars } => {
+                            if let Some(p) = r.pos(line) {
+                                r.current = Some(p.clone());
+                                r.paused = Some((p, vars));
+                            }
+                        }
+                    }
+                }
+            }
+            BuilderMsg::Ended(n, failed) => {
+                // `None`: it never started.
+                if let Some(r) = &mut self.run
+                    && (r.id.is_none() || r.id == Some(n))
+                {
+                    r.done = true;
+                    r.paused = None;
+                    r.dbg = None;
+                    r.error = failed.and_then(|e| Some((r.current.clone()?, e)));
+                    if r.error.is_none() {
+                        r.current = None;
+                    }
+                }
+            }
+            BuilderMsg::DebugPause | BuilderMsg::DebugStep | BuilderMsg::DebugContinue => {
+                if let Some(r) = &mut self.run
+                    && let Some(d) = &r.dbg
+                {
+                    let mode = match msg {
+                        BuilderMsg::DebugPause => Mode::Pause,
+                        BuilderMsg::DebugStep => Mode::Step,
+                        _ => Mode::Run,
+                    };
+                    if mode != Mode::Pause {
+                        r.paused = None;
+                    }
+                    d.resume(mode);
+                }
+            }
+            BuilderMsg::DebugStop => {
+                if let Some(r) = &self.run
+                    && let Some(n) = r.id
+                {
+                    return Out::Stop(n);
+                }
+            }
+            BuilderMsg::Settings => self.settings_open = !self.settings_open,
+            BuilderMsg::SetTrace(v) => self.trace = v,
+            BuilderMsg::SetStops(v) => self.stops = v,
             BuilderMsg::Press(d) => {
                 match &d {
                     // The selection stays: a double click adds after (or into) it.
@@ -884,6 +1055,83 @@ impl BuilderView {
                 Some(m(BuilderMsg::Redo)),
             ),
             pop.into(),
+            self.run_controls(m, ready),
+        ])
+        .spacing(6)
+        .align_y(Alignment::Center)
+        .into()
+    }
+
+    /// Run (⚙ its switches), or while it runs: Pause / Continue, Step, Stop.
+    fn run_controls<'a>(
+        &self,
+        m: impl Fn(BuilderMsg) -> Message + Copy + 'a,
+        ready: bool,
+    ) -> Element<'a, Message> {
+        use crate::toolbar::tip_button;
+        if let Some(r) = self.run.as_ref().filter(|r| r.live()) {
+            let paused = r.paused.is_some();
+            let traced = r.dbg.is_some();
+            let mut row = vec![];
+            if traced {
+                row.push(match paused {
+                    true => tip_button(
+                        "media-playback-start-symbolic",
+                        fl!("builder-continue"),
+                        Some(m(BuilderMsg::DebugContinue)),
+                    ),
+                    false => tip_button(
+                        "media-playback-pause-symbolic",
+                        fl!("builder-pause"),
+                        Some(m(BuilderMsg::DebugPause)),
+                    ),
+                });
+                row.push(tip_button(
+                    "go-next-symbolic",
+                    fl!("builder-step"),
+                    Some(m(BuilderMsg::DebugStep)),
+                ));
+            }
+            row.push(
+                widget::button::destructive(fl!("builder-stop"))
+                    .leading_icon(widget::icon::from_name("media-playback-stop-symbolic"))
+                    .on_press_maybe(r.id.map(|_| m(BuilderMsg::DebugStop)))
+                    .into(),
+            );
+            return widget::row::with_children(row)
+                .spacing(6)
+                .align_y(Alignment::Center)
+                .into();
+        }
+        let gear = tip_button(
+            "emblem-system-symbolic",
+            fl!("builder-settings"),
+            Some(m(BuilderMsg::Settings)),
+        );
+        let mut pop = widget::popover(gear)
+            .position(widget::popover::Position::Bottom)
+            .on_close(m(BuilderMsg::Settings));
+        if self.settings_open {
+            pop = pop.popup(
+                widget::container(
+                    widget::column::with_children(vec![
+                        widget::checkbox(self.trace)
+                            .label(fl!("builder-trace"))
+                            .on_toggle(move |v| m(BuilderMsg::SetTrace(v)))
+                            .into(),
+                        widget::checkbox(self.stops)
+                            .label(fl!("builder-stops"))
+                            .on_toggle(move |v| m(BuilderMsg::SetStops(v)))
+                            .into(),
+                    ])
+                    .spacing(8),
+                )
+                .padding(12)
+                .class(theme::Container::Dropdown),
+            );
+        }
+        widget::row::with_children(vec![
+            pop.into(),
             widget::button::suggested(fl!("builder-run"))
                 .leading_icon(widget::icon::from_name("media-playback-start-symbolic"))
                 .on_press_maybe(ready.then(|| m(BuilderMsg::Run)))
@@ -1031,6 +1279,18 @@ impl BuilderView {
 
     /// The help panel: the clicked palette item, or the selected block.
     fn help<'a>(&self, m: impl Fn(BuilderMsg) -> Message + Copy + 'a) -> Element<'a, Message> {
+        if let Some((_, vars)) = self.run.as_ref().and_then(|r| r.paused.as_ref()) {
+            let mut col = widget::column::with_capacity(vars.len() + 1)
+                .spacing(2)
+                .push(widget::text::heading(fl!("builder-variables")));
+            if vars.is_empty() {
+                col = col.push(widget::text::caption(fl!("builder-no-variables")));
+            }
+            for (k, v) in vars {
+                col = col.push(widget::text::monotext(format!("{k} = {v}")));
+            }
+            return widget::scrollable(col).height(Length::Shrink).into();
+        }
         let item = self.picked.or_else(|| {
             let b = tape::get(&self.doc.blocks, self.selected.as_ref()?)?;
             Some(match b {
@@ -1233,12 +1493,28 @@ impl BuilderView {
     ) -> Element<'a, Message> {
         let selected = self.selected.as_ref() == Some(&pos);
         let raw = |f: F| field::get(b, f);
-        let mut head: Vec<Element<'a, Message>> = vec![
+        let mut head: Vec<Element<'a, Message>> = vec![];
+        if self.stops {
+            let on = self.breaks.contains(&pos);
+            let dot = widget::text::body(if on { "●" } else { "○" }).class(match on {
+                true => theme::Text::Color(cosmic::iced::Color::from_rgb(0.85, 0.2, 0.2)),
+                false => theme::Text::Default,
+            });
+            head.push(
+                widget::tooltip(
+                    widget::mouse_area(dot).on_press(m(BuilderMsg::Break(pos.clone()))),
+                    widget::text::caption(fl!("builder-break")),
+                    widget::tooltip::Position::Top,
+                )
+                .into(),
+            );
+        }
+        head.push(
             widget::mouse_area(widget::text::body("⠿"))
                 .on_press(m(BuilderMsg::Press(Drag::Move(pos.clone()))))
                 .interaction(cosmic::iced::mouse::Interaction::Grab)
                 .into(),
-        ];
+        );
         let label = |t: String| -> Element<'a, Message> {
             widget::text::body(t).font(cosmic::font::bold()).into()
         };
@@ -1453,7 +1729,29 @@ impl BuilderView {
                 Bad::Required => fl!("builder-required"),
                 Bad::NotNumber => fl!("builder-not-number"),
             });
-        let error = broken.or(bad);
+        let run = self.run.as_ref();
+        let run_error = run
+            .and_then(|r| r.error.as_ref())
+            .filter(|(p, _)| *p == pos)
+            .map(|(_, e)| e.clone());
+        let error = broken.or(bad).or(run_error);
+        // Light-up of a run: where it is (paused: there), what it went through.
+        let current = run.is_some_and(|r| r.current.as_ref() == Some(&pos) && r.live());
+        let paused_here = run.is_some_and(|r| r.paused.as_ref().is_some_and(|(p, _)| *p == pos));
+        let seen = run.is_some_and(|r| r.seen.contains(&pos));
+        // A paused run's value of what this block keeps.
+        let var = match b {
+            Block::Call {
+                assign: Some(t), ..
+            }
+            | Block::Assign { target: t, .. } => Some(t),
+            _ => None,
+        };
+        if let Some((_, vars)) = run.and_then(|r| r.paused.as_ref())
+            && let Some(v) = var.and_then(|t| vars.iter().find(|(k, _)| k == t))
+        {
+            col = col.push(widget::text::monotext(format!("{} = {}", v.0, v.1)));
+        }
         let red = error.is_some();
         if let Some(e) = error {
             col = col.push(widget::text::caption(e).class(theme::Text::Accent));
@@ -1469,18 +1767,24 @@ impl BuilderView {
                     let c = t.cosmic();
                     let mut s = widget::container::Style::default();
                     s.border.radius = c.corner_radii.radius_s.into();
-                    s.border.width = if selected || red { 2.0 } else { 1.0 };
-                    s.border.color = match (red, selected) {
-                        (true, _) => c.destructive_color().into(),
-                        (_, true) => c.accent_color().into(),
+                    s.border.width = if selected || red || current || paused_here {
+                        2.0
+                    } else {
+                        1.0
+                    };
+                    s.border.color = match (red, paused_here, current, selected) {
+                        (true, ..) => c.destructive_color().into(),
+                        (_, true, ..) => c.warning_color().into(),
+                        (_, _, true, _) | (.., true) => c.accent_color().into(),
                         _ => c.palette.neutral_4.into(),
                     };
-                    let mut bg: cosmic::iced::Color = match kind {
-                        "call" => c.accent_color().into(),
-                        "comment" | "blank" => c.palette.neutral_3.into(),
+                    let mut bg: cosmic::iced::Color = match (seen, kind) {
+                        (true, _) => c.success_color().into(),
+                        (_, "call") => c.accent_color().into(),
+                        (_, "comment" | "blank") => c.palette.neutral_3.into(),
                         _ => c.success_color().into(),
                     };
-                    bg.a = 0.07;
+                    bg.a = if seen { 0.22 } else { 0.07 };
                     s.background = Some(bg.into());
                     s
                 })),

@@ -342,6 +342,35 @@ def __getattr__(name):  # `import crt; crt.Screen.Send(...)`
     return getattr(crt, name)
 
 
+def _vars(frame):
+    """The frame's variables a person wants on a pause: no modules, functions, classes, dunders."""
+    import types
+    out = []
+    for k, v in frame.f_locals.items():
+        if k.startswith("__") or k == "crt" or isinstance(v, (types.ModuleType, types.FunctionType, type)):
+            continue
+        r = repr(v)
+        out.append([k, r if len(r) <= 120 else r[:117] + "..."])
+    return out
+
+
+def _trace(path):
+    """The Script Builder's run: every line of the script (in every thread) is reported; one the
+    window wants to stop at (a breakpoint, a step, Pause) waits here with its variables."""
+    names = {path, os.path.abspath(path)}
+
+    def local(frame, event, arg):
+        if event == "line" and _call("Builder.Line", 0, frame.f_lineno):
+            _call("Builder.Paused", 0, frame.f_lineno, _vars(frame))
+        return local
+
+    def calls(frame, event, arg):
+        return local if event == "call" and frame.f_code.co_filename in names else None
+
+    sys.settrace(calls)
+    threading.settrace(calls)
+
+
 def main():
     """Runs the script named by argv[1] with `crt` defined."""
     import runpy
@@ -362,6 +391,8 @@ def main():
     for k, v in list(globals().items()):  # BUTTON_YESNO, IDYES … as in SecureCRT
         if k.startswith(("BUTTON_", "ICON_", "DEFBUTTON", "ID")) and k.isupper():
             setattr(builtins, k, v)
+    if os.environ.get("SHAGSHELL_TRACE"):
+        _trace(path)
     code = 0
     try:
         runpy.run_path(path, run_name="__main__")

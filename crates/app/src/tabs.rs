@@ -882,6 +882,13 @@ impl Tabs {
         }
     }
 
+    /// The Script Builder tab a run was started from.
+    pub fn builder_of_run(&self, run: u64) -> Option<TabId> {
+        (self.tabs.iter())
+            .find(|(_, t)| matches!(&t.body, Body::Builder(v) if v.run_id() == Some(run)))
+            .map(|(id, _)| *id)
+    }
+
     /// Script Builder tabs with unsaved work.
     pub fn unsaved_builders(&self) -> usize {
         (self.tabs.values())

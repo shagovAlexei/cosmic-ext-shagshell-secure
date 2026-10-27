@@ -377,6 +377,12 @@ pub trait Host: Send + Sync {
         false
     }
     fn trace(&self, _line: String) {}
+    /// A Script Builder run's debugger (trace mode).
+    fn debugger(&self) -> Option<&crate::debugger::Debugger> {
+        None
+    }
+    /// What the debugger tells the window (where the script is, a stop).
+    fn debug_event(&self, _e: crate::debugger::Event) {}
 }
 
 /// What the Script Console shows a line as.
@@ -581,6 +587,24 @@ fn handle(req: &Value, host: &dyn Host, cancel: &AtomicBool) -> Result<Value, St
                     }
                     Piece::Pause(d) => nap(d, cancel),
                 }
+            }
+            Ok(Value::Null)
+        }
+        // Trace mode (the Script Builder): `true` = stop here and send the variables.
+        "Builder.Line" => {
+            let line = args.first().and_then(Value::as_u64).unwrap_or(0);
+            Ok(json!(
+                host.debugger()
+                    .is_some_and(|d| d.line(line, &|e| host.debug_event(e)))
+            ))
+        }
+        "Builder.Paused" => {
+            let line = args.first().and_then(Value::as_u64).unwrap_or(0);
+            let vars = (args.get(1).and_then(Value::as_array).into_iter().flatten())
+                .filter_map(|p| Some((p[0].as_str()?.to_string(), p[1].as_str()?.to_string())))
+                .collect();
+            if let Some(d) = host.debugger() {
+                d.paused(line, vars, cancel, &|e| host.debug_event(e));
             }
             Ok(Value::Null)
         }
@@ -1113,6 +1137,79 @@ mod tests {
         assert!(child.wait().unwrap().success());
         let sent = String::from_utf8(host.sent.lock().unwrap().clone()).unwrap();
         assert_eq!(sent, "ls\rwho? 1 True\rScriptError\r");
+    }
+
+    /// Trace mode (the Script Builder's run): lines are reported, a breakpoint stops the script
+    /// with its variables until Continue.
+    #[test]
+    fn python_trace_stops_at_a_breakpoint() {
+        use crate::debugger::{Debugger, Event, Mode};
+        use std::os::unix::net::UnixListener;
+        use std::process::{Command, Stdio};
+        if Command::new("python3").arg("-V").output().is_err() {
+            return;
+        }
+        struct H {
+            d: Debugger,
+            ev: Mutex<Vec<Event>>,
+        }
+        impl Host for H {
+            fn buffer(&self, _: u64) -> Option<Arc<Buffer>> {
+                None
+            }
+            fn input(&self, _: u64, _: Vec<u8>) -> bool {
+                true
+            }
+            fn ui(&self, _: &str, _: u64, _: &[Value]) -> Result<Value, String> {
+                Err("no".into())
+            }
+            fn debugger(&self) -> Option<&Debugger> {
+                Some(&self.d)
+            }
+            fn debug_event(&self, e: Event) {
+                if matches!(e, Event::Paused { .. }) {
+                    self.d.resume(Mode::Run);
+                }
+                self.ev.lock().unwrap().push(e);
+            }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let sock = dir.path().join("s.sock");
+        let script = dir.path().join("t.py");
+        std::fs::write(&script, "x = 41\ny = x + 1\nz = 'done'\n").unwrap();
+        let l = UnixListener::bind(&sock).unwrap();
+        let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../res/python");
+        let (prog, args, mut env) = command(&script, &[], &sock, 1, &repo);
+        env.push(("SHAGSHELL_TRACE".into(), "1".into()));
+        let mut child = Command::new(prog)
+            .args(args)
+            .envs(env)
+            .stdout(Stdio::null())
+            .spawn()
+            .unwrap();
+        let host = H {
+            d: Debugger::new([2]),
+            ev: Mutex::default(),
+        };
+        l.set_nonblocking(true).unwrap();
+        let end = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while child.try_wait().unwrap().is_none() && std::time::Instant::now() < end {
+            if let Ok((s, _)) = l.accept() {
+                s.set_nonblocking(false).unwrap();
+                serve(s.try_clone().unwrap(), s, &host, &no());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let _ = child.kill();
+        assert!(child.wait().unwrap().success());
+        let ev = host.ev.lock().unwrap();
+        assert!(
+            ev.contains(&Event::Paused {
+                line: 2,
+                vars: vec![("x".into(), "41".into())]
+            }),
+            "{ev:?}"
+        );
     }
 
     /// Threads of a script (parallel hosts) each talk over a connection of their own.
