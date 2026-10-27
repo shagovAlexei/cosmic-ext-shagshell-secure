@@ -339,9 +339,9 @@ pub fn list_dir(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
         .filter(|p| {
             p.is_file()
                 && p.extension().is_some_and(|e| e == "py")
-                && !p
-                    .file_name()
-                    .is_some_and(|n| n.as_encoded_bytes().starts_with(b"."))
+                && !p.file_name().is_some_and(|n| {
+                    n.as_encoded_bytes().starts_with(b".") || n == "shag_blocks.py"
+                })
         })
         .collect();
     files.sort_by_key(|p| p.file_name().map(|n| n.to_string_lossy().to_lowercase()));
@@ -681,7 +681,7 @@ mod tests {
         let d = std::env::temp_dir().join(format!("shagshell-list-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(d.join("sub.py")).unwrap();
-        for n in ["b.py", "A.py", ".hidden.py", "notes.txt"] {
+        for n in ["b.py", "A.py", ".hidden.py", "notes.txt", "shag_blocks.py"] {
             std::fs::write(d.join(n), "").unwrap();
         }
         let names: Vec<_> = list_dir(&d)
@@ -1113,6 +1113,65 @@ mod tests {
         assert!(child.wait().unwrap().success());
         let sent = String::from_utf8(host.sent.lock().unwrap().clone()).unwrap();
         assert_eq!(sent, "ls\rwho? 1 True\rScriptError\r");
+    }
+
+    /// Threads of a script (parallel hosts) each talk over a connection of their own.
+    #[test]
+    fn python_threads_have_their_own_connection() {
+        use std::os::unix::net::UnixListener;
+        use std::process::{Command, Stdio};
+        if Command::new("python3").arg("-V").output().is_err() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let sock = dir.path().join("s.sock");
+        let script = dir.path().join("t.py");
+        std::fs::write(
+            &script,
+            "import threading\n\
+             def f(t):\n    for _ in range(20):\n        crt.Screen.Send(t)\n\
+             ts = [threading.Thread(target=f, args=(x,)) for x in 'ab']\n\
+             [t.start() for t in ts]\n[t.join() for t in ts]\n",
+        )
+        .unwrap();
+        let l = UnixListener::bind(&sock).unwrap();
+        l.set_nonblocking(true).unwrap();
+        let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../res/python");
+        let (prog, args, env) = command(&script, &[], &sock, 1, &repo);
+        let mut child = Command::new(prog)
+            .args(args)
+            .envs(env)
+            .stdout(Stdio::null())
+            .spawn()
+            .unwrap();
+        let host = Fake {
+            buf: Arc::new(armed()),
+            sent: Mutex::default(),
+        };
+        let end = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let mut conns = 0;
+        std::thread::scope(|sc| {
+            while child.try_wait().unwrap().is_none() && std::time::Instant::now() < end {
+                if let Ok((s, _)) = l.accept() {
+                    s.set_nonblocking(false).unwrap();
+                    conns += 1;
+                    let host = &host;
+                    sc.spawn(move || serve(s.try_clone().unwrap(), s, host, &no()));
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+        });
+        let _ = child.kill();
+        assert!(
+            child.wait().unwrap().success(),
+            "the script did not end well"
+        );
+        assert_eq!(conns, 2);
+        let sent = String::from_utf8(host.sent.lock().unwrap().clone()).unwrap();
+        assert_eq!(
+            (sent.matches('a').count(), sent.matches('b').count()),
+            (20, 20)
+        );
     }
 
     #[test]

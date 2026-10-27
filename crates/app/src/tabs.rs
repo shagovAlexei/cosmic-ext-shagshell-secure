@@ -867,6 +867,21 @@ impl Tabs {
             .map(|(id, _)| *id)
     }
 
+    /// The Script Builder tab just opened gets `v` (a template's blocks).
+    pub fn replace_builder(&mut self, v: crate::builder::BuilderView) {
+        let Some(id) = self.last_opened else {
+            return;
+        };
+        if let Some(tab) = self.tabs.get_mut(&id)
+            && let Body::Builder(b) = &mut tab.body
+        {
+            let label = format!("{} •", v.name());
+            **b = v;
+            tab.launch.label = label;
+            self.retitle(id);
+        }
+    }
+
     /// Script Builder tabs with unsaved work.
     pub fn unsaved_builders(&self) -> usize {
         (self.tabs.values())
@@ -1018,6 +1033,11 @@ impl Tabs {
 
     pub fn last_opened(&self) -> Option<TabId> {
         self.last_opened
+    }
+
+    /// Before opening: what `last_opened` says after is about this opening only.
+    pub fn forget_last_opened(&mut self) {
+        self.last_opened = None;
     }
 
     /// A new tab running `launch` in the focused group (the first group if none).

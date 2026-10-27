@@ -4,10 +4,12 @@ Scripts run with `crt` already defined (as in SecureCRT); `import crt` works too
 is one JSON line to the app and blocks for its answer.
 """
 import builtins
+import itertools
 import json
 import os
 import socket
 import sys
+import threading
 
 __all__ = ["crt", "ScriptError"]
 Version = "1.1"
@@ -28,21 +30,21 @@ class Cancelled(SystemExit):
     """The user cancelled the script, or the app went away."""
 
 
-_conn = None
-_next = 0
+# A connection per thread: a script's threads (parallel hosts) wait for their own answers.
+_local = threading.local()
+_next = itertools.count(1)
 _last_error = [""]
 
 
 def _call(call, tab, *args):
-    global _conn, _next
-    if _conn is None:
+    conn = getattr(_local, "conn", None)
+    if conn is None:
         s = socket.socket(socket.AF_UNIX)
         s.connect(os.environ["SHAGSHELL_SCRIPT_SOCK"])
-        _conn = (s, s.makefile("rw", encoding="utf-8", newline="\n"))
-    _next += 1
-    f = _conn[1]
+        conn = _local.conn = (s, s.makefile("rw", encoding="utf-8", newline="\n"))
+    f = conn[1]
     try:
-        f.write(json.dumps({"id": _next, "call": call, "tab": tab, "args": list(args)}) + "\n")
+        f.write(json.dumps({"id": next(_next), "call": call, "tab": tab, "args": list(args)}) + "\n")
         f.flush()
         line = f.readline()
     except OSError:
@@ -165,8 +167,9 @@ class _Session:
         _call("Session.Log", self._tab, bool(on), None if append is None else bool(append))
 
     def Connect(self, cmd):
-        """`/S "name"` — a saved session — opens a new tab."""
-        _call("Session.Connect", self._tab, cmd)
+        """`/S "name"` — a saved session — opens a new tab. ShagShell: returns the new tab's
+        id; ScriptError when no tab opened (no such session)."""
+        return _call("Session.Connect", self._tab, cmd)
 
     def Disconnect(self):
         _call("Session.Disconnect", self._tab)
@@ -346,6 +349,14 @@ def main():
 
     path = sys.argv[1]
     sys.argv = sys.argv[1:]
+    # `import shag_blocks` (or a module of the user's) next to the script, or in the scripts folder.
+    config = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    # The script's own folder first; the scripts folder last (a csv.py there must not hide the
+    # standard one from scripts elsewhere).
+    sys.path.insert(0, os.path.dirname(os.path.abspath(path)))
+    scripts = os.path.join(config, "shagshell", "scripts")
+    if scripts not in sys.path:
+        sys.path.append(scripts)
     crt.Arguments = _Arguments(sys.argv[1:])
     builtins.crt = crt
     for k, v in list(globals().items()):  # BUTTON_YESNO, IDYES … as in SecureCRT

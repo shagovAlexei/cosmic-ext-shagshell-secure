@@ -29,3 +29,9 @@ for i in range(3):
         crt.Screen.Send(CMD + "\r")
 while False:
     pass
+
+
+def _host_1(tab, host):
+    # per host
+    run(tab, 'uptime')
+each_host(hosts, _host_1, parallel=True, limit=5)

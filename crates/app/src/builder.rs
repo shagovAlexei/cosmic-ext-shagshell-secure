@@ -19,7 +19,14 @@ use std::time::{Duration, Instant};
 const FONT: f32 = 13.0;
 
 /// The palette's «Frequent» members.
-const FREQUENT: [&str; 9] = [
+/// The palette's «Frequent»: the big blocks first (`stmt:` = a statement).
+const FREQUENT: [&str; 15] = [
+    "blocks.run",
+    "stmt:for_host",
+    "blocks.read_list",
+    "blocks.log_to",
+    "blocks.append_file",
+    "blocks.to_clipboard",
     "Screen.Send",
     "Screen.WaitForString",
     "Screen.ReadString",
@@ -30,7 +37,8 @@ const FREQUENT: [&str; 9] = [
     "Sleep",
     "Clipboard.Text",
 ];
-const GROUPS: [&str; 9] = [
+const GROUPS: [&str; 10] = [
+    "blocks",
     "Screen",
     "Session",
     "Dialog",
@@ -42,9 +50,11 @@ const GROUPS: [&str; 9] = [
     "crt",
 ];
 /// The palette's «Other»: statements (`field::new_statement`).
-const STATEMENTS: [&str; 10] = [
-    "assign", "if", "for", "while", "with", "try", "def", "call", "comment", "raw",
+const STATEMENTS: [&str; 11] = [
+    "for_host", "assign", "if", "for", "while", "with", "try", "def", "call", "comment", "raw",
 ];
+/// The line the big blocks need (`res/python/shag_blocks.py`).
+const IMPORT: &str = "from shag_blocks import *";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Item {
@@ -99,6 +109,10 @@ pub enum BuilderMsg {
     SaveAs(Option<PathBuf>),
     TargetsOpen,
     Target(Option<TabId>),
+    /// «From a template ▾»: the list shown / one picked; «Save as template».
+    TemplatesOpen,
+    Template(PathBuf),
+    SaveTemplate,
     Run,
     Press(Drag),
     Over(Option<Pos>),
@@ -113,6 +127,10 @@ pub enum Out {
     New,
     SaveAs,
     Clipboard(String),
+    /// A template / example opened as a new unsaved tape.
+    Template(PathBuf),
+    /// Save As, starting in the templates folder.
+    SaveTemplate,
     /// The script file, the terminal tab (`None`: the first one; `Some(None)`: none).
     Run(PathBuf, Option<Option<TabId>>),
 }
@@ -145,6 +163,8 @@ pub struct BuilderView {
     pub drag: Option<Drag>,
     over: Option<Pos>,
     targets_open: bool,
+    /// «From a template ▾» open: its files (templates, then examples).
+    templates: Option<Vec<PathBuf>>,
     /// Where Run runs: `None` = the first terminal tab, `Some(None)` = no tab.
     target: Option<Option<TabId>>,
     error: Option<String>,
@@ -214,6 +234,7 @@ impl BuilderView {
             drag: None,
             over: None,
             targets_open: false,
+            templates: None,
             target: None,
             error: None,
             discarded: false,
@@ -227,6 +248,13 @@ impl BuilderView {
             }
             None => fl!("builder-untitled"),
         }
+    }
+
+    /// A template's blocks as a new script: no file, nothing saved yet.
+    pub fn untitled(mut self) -> Self {
+        self.path = None;
+        self.saved = vec![];
+        self
     }
 
     /// Closed on purpose («close without saving»): nothing is kept.
@@ -333,8 +361,80 @@ impl BuilderView {
         }
     }
 
-    fn insert_selected(&mut self, at: Pos, b: Block) {
-        if self.edit(|t| tape::insert(t, &at, b)) {
+    /// `fresh`: a new block from the palette (adapted to where it goes: the host's tab inside
+    /// «for each host»); a pasted one goes in as it is.
+    fn insert_selected(&mut self, mut at: Pos, mut b: Block, fresh: bool) {
+        // A big block needs `from shag_blocks import *` at the top: put there with it (one undo).
+        let big = match &b {
+            Block::Call { func, .. } => {
+                catalog::lookup(func).is_some_and(|e| e.group() == "blocks")
+            }
+            Block::ForHost { .. } => true,
+            _ => false,
+        };
+        let import = big
+            && !(self.doc.blocks.iter())
+                .any(|b| matches!(b, Block::Raw { code } if code.trim() == IMPORT));
+        if let Block::ForHost { func, .. } = &mut b {
+            *func = builder::fresh_host_func(&self.doc.blocks);
+        }
+        let in_host = (1..at.len()).any(|n| {
+            matches!(
+                tape::get(&self.doc.blocks, &at[..n]),
+                Some(Block::ForHost { .. })
+            )
+        });
+        if fresh
+            && in_host
+            && let Block::Call { func, args, .. } = &mut b
+        {
+            // `crt.Screen.Send` would type into the script's tab: the host's is `tab`.
+            for obj in ["Screen", "Session", "FileTransfer"] {
+                if let Some(rest) = func.strip_prefix(&format!("crt.{obj}.")) {
+                    *func = format!("tab.{obj}.{rest}");
+                }
+            }
+            if catalog::lookup(func)
+                .is_some_and(|e| e.params.first().is_some_and(|p| p.name == "tab"))
+            {
+                match args.first_mut() {
+                    Some(a) if a.name.is_none() => a.value = "tab".into(),
+                    _ => args.insert(
+                        0,
+                        shagshell_core::builder::Arg {
+                            name: None,
+                            value: "tab".into(),
+                        },
+                    ),
+                }
+            }
+        }
+        // After the leading comments (`# $language = "python3"`) and `from __future__`.
+        let top = (self.doc.blocks.iter())
+            .take_while(|b| match b {
+                Block::Comment { .. } | Block::Blank => true,
+                Block::Raw { code } => code.starts_with("from __future__"),
+                _ => false,
+            })
+            .count();
+        let nested = at.len() > 1;
+        if import
+            && let Some(first) = at.first_mut()
+            && (nested || first.1 >= top)
+        {
+            first.1 += 1;
+        }
+        if self.edit(|t| {
+            if import {
+                t.insert(
+                    top,
+                    Block::Raw {
+                        code: IMPORT.into(),
+                    },
+                );
+            }
+            tape::insert(t, &at, b)
+        }) {
             self.selected = Some(at);
             self.picked = None;
             self.forget_typing();
@@ -368,6 +468,8 @@ impl BuilderView {
                 _,
                 F::Assign | F::Text | F::Args | F::Params | F::HandlerTy(_) | F::HandlerName(_),
             ) => Ok(text.clone()),
+            (_, F::Limit) => field::typed(Ty::Number, &text),
+            (_, F::Parallel) => Ok(text.clone()),
             _ if text.trim().is_empty() => Err(Bad::Required),
             _ => Ok(text.clone()),
         };
@@ -402,7 +504,7 @@ impl BuilderView {
                         first.is_empty().then(|| [p.as_slice(), &[(0, 0)]].concat())
                     });
                     let at = into.unwrap_or_else(|| self.after_selected());
-                    self.insert_selected(at, b);
+                    self.insert_selected(at, b, true);
                 }
             }
             BuilderMsg::Select(p) => {
@@ -487,7 +589,7 @@ impl BuilderView {
             BuilderMsg::Paste => {
                 if let Some(b) = self.clip.clone() {
                     let at = self.after_selected();
-                    self.insert_selected(at, b);
+                    self.insert_selected(at, b, false);
                 }
             }
             BuilderMsg::Undo => {
@@ -576,6 +678,18 @@ impl BuilderView {
                 }
             }
             BuilderMsg::TargetsOpen => self.targets_open = !self.targets_open,
+            BuilderMsg::TemplatesOpen => {
+                self.templates = match self.templates {
+                    Some(_) => None,
+                    None => Some(templates()),
+                };
+            }
+            BuilderMsg::Template(p) => {
+                self.templates = None;
+                return Out::Template(p);
+            }
+            BuilderMsg::SaveTemplate if self.ready() => return Out::SaveTemplate,
+            BuilderMsg::SaveTemplate => {}
             BuilderMsg::Target(t) => {
                 self.target = Some(t);
                 self.targets_open = false;
@@ -603,10 +717,8 @@ impl BuilderView {
             }
             BuilderMsg::Press(d) => {
                 match &d {
-                    Drag::New(item) => {
-                        self.picked = Some(*item);
-                        self.selected = None;
-                    }
+                    // The selection stays: a double click adds after (or into) it.
+                    Drag::New(item) => self.picked = Some(*item),
                     Drag::Move(p) => self.selected = Some(p.clone()),
                 }
                 self.drag = Some(d);
@@ -622,7 +734,7 @@ impl BuilderView {
                 match (drag, over) {
                     (Some(Drag::New(item)), Some(at)) => {
                         if let Some(b) = item.block() {
-                            self.insert_selected(at, b);
+                            self.insert_selected(at, b, true);
                         }
                     }
                     (Some(Drag::Move(from)), Some(to)) => {
@@ -745,6 +857,12 @@ impl BuilderView {
                 fl!("builder-open"),
                 Some(m(BuilderMsg::Open)),
             ),
+            self.templates_view(m),
+            tip_button(
+                "bookmark-new-symbolic",
+                fl!("builder-save-template"),
+                self.ready().then(|| m(BuilderMsg::SaveTemplate)),
+            ),
             tip_button(
                 "document-save-symbolic",
                 fl!("note-save"),
@@ -776,13 +894,50 @@ impl BuilderView {
         .into()
     }
 
+    /// «From a template ▾»: a button and, open, the list of templates and examples.
+    fn templates_view<'a>(
+        &self,
+        m: impl Fn(BuilderMsg) -> Message + Copy + 'a,
+    ) -> Element<'a, Message> {
+        let b = widget::button::standard(fl!("builder-from-template"))
+            .on_press(m(BuilderMsg::TemplatesOpen));
+        let mut pop = widget::popover(b)
+            .position(widget::popover::Position::Bottom)
+            .on_close(m(BuilderMsg::TemplatesOpen));
+        if let Some(files) = &self.templates {
+            let rows: Vec<Element<'a, Message>> = match files.is_empty() {
+                true => vec![widget::text::caption(fl!("builder-no-templates")).into()],
+                false => (files.iter())
+                    .map(|p| {
+                        let name = (p.file_stem())
+                            .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+                        let dir = (p.parent().and_then(|d| d.file_name()))
+                            .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+                        widget::button::text(format!("{dir} · {name}"))
+                            .on_press(m(BuilderMsg::Template(p.clone())))
+                            .into()
+                    })
+                    .collect(),
+            };
+            pop = pop.popup(
+                widget::container(widget::scrollable(
+                    widget::column::with_children(rows).spacing(2),
+                ))
+                .max_height(420)
+                .padding(8)
+                .class(theme::Container::Dropdown),
+            );
+        }
+        pop.into()
+    }
+
     fn item<'a>(
         &self,
         item: Item,
         m: impl Fn(BuilderMsg) -> Message + Copy + 'a,
     ) -> Element<'a, Message> {
         let (label, help) = match item {
-            Item::Entry(e) => (e.path.to_string(), tr(e.help).to_string()),
+            Item::Entry(e) => (entry_label(e), tr(e.help).to_string()),
             Item::Stmt(k) => (stmt_name(k), stmt_help(k)),
         };
         let on = self.picked == Some(item);
@@ -843,12 +998,15 @@ impl BuilderView {
                 }
                 out
             };
-        let frequent: Vec<Item> = FREQUENT
-            .iter()
-            .filter_map(|p| CATALOG.iter().find(|e| e.path == *p))
-            .filter(|e| q.is_empty() && entry_hit(e))
-            .map(Item::Entry)
-            .collect();
+        let frequent: Vec<Item> = match q.is_empty() {
+            true => (FREQUENT.iter())
+                .filter_map(|p| match p.strip_prefix("stmt:") {
+                    Some(k) => STATEMENTS.iter().find(|s| *s == &k).map(|k| Item::Stmt(k)),
+                    None => CATALOG.iter().find(|e| e.path == *p).map(Item::Entry),
+                })
+                .collect(),
+            false => vec![],
+        };
         col = col.extend(section("frequent", fl!("builder-frequent"), frequent));
         for g in GROUPS {
             let items: Vec<Item> = CATALOG
@@ -856,7 +1014,11 @@ impl BuilderView {
                 .filter(|e| e.group() == g && entry_hit(e))
                 .map(Item::Entry)
                 .collect();
-            col = col.extend(section(g, g.to_string(), items));
+            let title = match g {
+                "blocks" => fl!("builder-big"),
+                g => g.to_string(),
+            };
+            col = col.extend(section(g, title, items));
         }
         let stmts: Vec<Item> = STATEMENTS
             .iter()
@@ -886,7 +1048,12 @@ impl BuilderView {
         match item {
             Item::Entry(e) => {
                 col = col
-                    .push(widget::text::heading(format!("crt.{}", e.path)))
+                    .push(widget::text::heading(
+                        match e.path.strip_prefix("blocks.") {
+                            Some(f) => format!("{} · {f}()", entry_label(e)),
+                            None => format!("crt.{}", e.path),
+                        },
+                    ))
                     .push(widget::text::caption(tr(e.help)));
                 if self.help_more {
                     for p in e.params {
@@ -1082,7 +1249,7 @@ impl BuilderView {
         match b {
             Block::Call { func, .. } => match catalog::lookup(func) {
                 Some(e) => {
-                    head.push(label(e.path.to_string()));
+                    head.push(label(entry_label(e)));
                     for (i, p) in e.params.iter().enumerate() {
                         let value = raw(F::Arg(i));
                         if p.more && value.is_none() && !selected {
@@ -1204,6 +1371,38 @@ impl BuilderView {
                 head.push(inp(F::Params, String::new()));
                 head.push(word(")".into()));
                 bodies.push((None, body, 0));
+            }
+            Block::ForHost { parallel, body, .. } => {
+                head.push(label(fl!("builder-for-host")));
+                head.push(inp(F::Hosts, fl!("builder-hosts")));
+                let p2 = pos.clone();
+                head.push(
+                    widget::checkbox(*parallel)
+                        .label(fl!("builder-parallel"))
+                        .on_toggle(move |v| {
+                            Message::Builder(
+                                id,
+                                BuilderMsg::Field(
+                                    p2.clone(),
+                                    F::Parallel,
+                                    if v { "True" } else { "False" }.into(),
+                                ),
+                            )
+                        })
+                        .into(),
+                );
+                if *parallel {
+                    head.push(word(fl!("builder-limit")));
+                    head.push(self.input(
+                        id,
+                        &pos,
+                        F::Limit,
+                        Ty::Number,
+                        raw(F::Limit),
+                        "10".into(),
+                    ));
+                }
+                bodies.push((Some(word(fl!("builder-host-hint"))), body, 0));
             }
             Block::Comment { .. } => {
                 head.push(word("#".into()));
@@ -1344,12 +1543,36 @@ impl BuilderView {
 /// A compound block's body: its title (`elif x:`, `except E as e:`), blocks, body number.
 type Sub<'a> = (Option<Element<'a, Message>>, &'a [Block], usize);
 
+/// The files «From a template ▾» lists: `scripts/templates/*.py`, then `scripts/examples/*.py`.
+fn templates() -> Vec<PathBuf> {
+    let dir = shagshell_core::script::default_dir();
+    ["templates", "examples"]
+        .iter()
+        .flat_map(|d| shagshell_core::script::list_dir(&dir.join(d)))
+        .collect()
+}
+
 fn search_id() -> widget::Id {
     widget::Id::new("builder-search")
 }
 
 fn field_id(id: TabId, pos: &Pos, f: F) -> widget::Id {
     widget::Id::new(format!("builder-{id}-{pos:?}-{f:?}"))
+}
+
+/// A catalog entry as the palette and the tape name it: a big block by its words, a `crt`
+/// member by its path.
+fn entry_label(e: &Entry) -> String {
+    match e.path {
+        "blocks.prompt" => fl!("block-prompt"),
+        "blocks.run" => fl!("block-run"),
+        "blocks.read_list" => fl!("block-read-list"),
+        "blocks.log_to" => fl!("block-log-to"),
+        "blocks.append_file" => fl!("block-append-file"),
+        "blocks.to_clipboard" => fl!("block-to-clipboard"),
+        "blocks.each_host" => fl!("block-each-host"),
+        p => p.to_string(),
+    }
 }
 
 fn stmt_kind(b: &Block) -> &'static str {
@@ -1365,6 +1588,7 @@ fn stmt_kind(b: &Block) -> &'static str {
         Block::Comment { .. } => "comment",
         Block::Blank => "blank",
         Block::Raw { .. } => "raw",
+        Block::ForHost { .. } => "for_host",
     }
 }
 
@@ -1378,6 +1602,7 @@ fn stmt_name(k: &str) -> String {
         "try" => fl!("stmt-try"),
         "def" => fl!("stmt-def"),
         "call" => fl!("stmt-call"),
+        "for_host" => fl!("stmt-for-host"),
         "comment" => fl!("stmt-comment"),
         "blank" => fl!("stmt-blank"),
         _ => fl!("stmt-raw"),
@@ -1394,6 +1619,7 @@ fn stmt_help(k: &str) -> String {
         "try" => fl!("stmt-try-help"),
         "def" => fl!("stmt-def-help"),
         "call" => fl!("stmt-call-help"),
+        "for_host" => fl!("stmt-for-host-help"),
         "comment" => fl!("stmt-comment-help"),
         "blank" => fl!("stmt-blank-help"),
         _ => fl!("stmt-raw-help"),

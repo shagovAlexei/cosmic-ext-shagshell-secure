@@ -963,15 +963,14 @@ fn supervise(
     pumps: Vec<std::thread::JoinHandle<()>>,
     sink: &Sink,
 ) -> End {
-    let mut served = false;
     let status = loop {
         if cancel.load(Ordering::SeqCst) {
             let _ = child.kill();
             let _ = child.wait();
             return End::Cancelled;
         }
-        if !served && let Ok((s, _)) = l.accept() {
-            served = true;
+        // A connection per thread of the script (`crt.py`): every one is served.
+        while let Ok((s, _)) = l.accept() {
             let _ = s.set_nonblocking(false);
             let (host, cancel) = (host.clone(), cancel.clone());
             std::thread::spawn(move || {

@@ -7,6 +7,7 @@ Out: {"ok": [block, ...]} or {"err": {"line": N, "msg": "..."}}.
 import ast
 import io
 import json
+import re
 import sys
 import tokenize
 
@@ -40,13 +41,26 @@ class Reader:
         """The blocks of a body whose gap starts at `line`, and the line after it."""
         out = []
         only_pass = len(stmts) == 1 and isinstance(stmts[0], ast.Pass)
-        for st in stmts:
+        skip = False
+        for i, st in enumerate(stmts):
+            if skip:  # the call of a «for each host» already in its block
+                skip = False
+                line = st.end_lineno + 1
+                continue
             deco = getattr(st, "decorator_list", None)
             first = deco[0].lineno if deco else st.lineno
             self.gap(line, first - 1, out)
             line = st.end_lineno + 1
+            host = for_host(st, stmts[i + 1] if i + 1 < len(stmts) else None)
             if only_pass:  # an empty body: the generator writes the `pass` back
                 self.own(first, st.end_lineno, out)
+            elif host is not None:
+                self.own(first, st.lineno, out)
+                body, _ = self.body(st.body, st.lineno + 1)
+                host["body"] = body
+                out.append(host)
+                self.own(stmts[i + 1].lineno, stmts[i + 1].end_lineno, out)
+                skip = True
             else:
                 self.stmt(st, first, out)
         return out, line
@@ -133,6 +147,31 @@ class Reader:
         else:
             self.own(first, st.end_lineno, out)
             out.append({"kind": "raw", "code": u(st)})
+
+
+def for_host(st, nxt):
+    """`def _host_N(tab, host): …` right before `each_host(<hosts>, _host_N, parallel=…, limit=…)`:
+    the «for each host» block (without its body), else None."""
+    a = getattr(st, "args", None)
+    if not (isinstance(st, ast.FunctionDef) and re.fullmatch(r"_host_\d+", st.name) and not st.decorator_list
+            and not st.returns and [x.arg for x in a.args] == ["tab", "host"] and not a.defaults
+            and not (a.vararg or a.kwarg or a.kwonlyargs or a.posonlyargs)):
+        return None
+    if not (isinstance(nxt, ast.Expr) and isinstance(nxt.value, ast.Call) and nxt.lineno == st.end_lineno + 1):
+        return None
+    c = nxt.value
+    if not (isinstance(c.func, ast.Name) and c.func.id == "each_host" and len(c.args) == 2
+            and isinstance(c.args[1], ast.Name) and c.args[1].id == st.name):
+        return None
+    kw = {k.arg: k.value for k in c.keywords}
+    if set(kw) - {"parallel", "limit"} or None in kw:
+        return None
+    par = kw.get("parallel", ast.Constant(False))
+    if not (isinstance(par, ast.Constant) and isinstance(par.value, bool)):
+        return None
+    limit = ast.unparse(kw["limit"]) if "limit" in kw else "10"
+    return {"kind": "for_host", "hosts": ast.unparse(c.args[0]), "func": st.name,
+            "parallel": par.value, "limit": limit}
 
 
 def plain_call(e):

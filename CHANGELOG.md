@@ -2,6 +2,9 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.88.0 — 2026-10-27
+- feat: Script Builder big blocks (Run a command, For each host with «in parallel», Read a list, Log to a file, Append to a file, To the clipboard) from `shag_blocks.py` in `~/.config/shagshell/scripts`; «For each host» is `def _host_N(tab, host)` + `each_host(…)` in the code; templates (From a template ▾, Save as template…) with three ready ones; a script's threads get their own crt connection; `crt.Session.Connect` returns the new tab's id (an error when no tab opened, e.g. a mistyped session name)
+
 ## 0.87.0 — 2026-10-27
 - feat: Script → Script Builder… / Open in Script Builder…: a tab with a palette of every crt command and statement (search, help on hover and below), a tape of blocks with their fields (text, number, yes / no, a list; `=` for an expression), double click or drag to add, drag to move into if / for / try…, Delete / Ctrl+C / Ctrl+V / Ctrl+Z, the code below edited both ways, Save / Save As / Open, Run on a chosen terminal tab
 
