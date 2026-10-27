@@ -7,6 +7,7 @@ pub mod check;
 pub mod commands;
 pub mod connect_bar;
 pub mod credentials;
+pub mod debugger;
 pub mod find;
 pub mod highlight;
 pub mod icons;

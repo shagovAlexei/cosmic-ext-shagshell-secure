@@ -63,6 +63,8 @@ pub enum End {
 pub enum ScMsg {
     Call(Call),
     Ended(u64, End),
+    /// A Script Builder run's debugger: where its script is, a stop.
+    Debug(u64, shagshell_core::debugger::Event),
     /// Script → Run…: the file picked.
     Picked(Option<PathBuf>),
     /// `--script file args…`, or a Button Bar button: run it on the active terminal.
@@ -212,6 +214,10 @@ pub struct Outcome {
     pub copy: Option<String>,
     /// A run ended: its id, and whether it finished well (a pre-script's session opens or not).
     pub ended: Option<(u64, bool)>,
+    /// …and its error, when it failed (the Script Builder marks the block).
+    pub failed: Option<(u64, String)>,
+    /// What Script Builder runs' debuggers said.
+    pub debug: Vec<(u64, shagshell_core::debugger::Event)>,
     /// `Session.Create`: the session to save (the app owns the store).
     pub create: Option<(script::NewSession, Reply)>,
     /// `Window.Activate`: raise the main window.
@@ -273,6 +279,33 @@ impl Scripts {
 
     /// Starts `script` on tab `tab`.
     pub fn run(&mut self, script: &Path, args: &[String], tab: u64) -> Result<u64, String> {
+        self.start(script, args, tab, None)
+    }
+
+    /// The Script Builder's run: traced (`SHAGSHELL_TRACE`), answered by `dbg`.
+    pub fn run_traced(
+        &mut self,
+        script: &Path,
+        tab: u64,
+        dbg: Arc<shagshell_core::debugger::Debugger>,
+    ) -> Result<u64, String> {
+        self.start(script, &[], tab, Some(dbg))
+    }
+
+    /// This run stops (the Script Builder's Stop).
+    pub fn cancel_run(&mut self, n: u64) {
+        if let Some(r) = self.runs.get(&n) {
+            r.cancel.store(true, Ordering::SeqCst);
+        }
+    }
+
+    fn start(
+        &mut self,
+        script: &Path,
+        args: &[String],
+        tab: u64,
+        dbg: Option<Arc<shagshell_core::debugger::Debugger>>,
+    ) -> Result<u64, String> {
         if !script.is_file() {
             return Err(fl!("script-missing", name = script.display().to_string()));
         }
@@ -285,7 +318,11 @@ impl Scripts {
             .and_then(|l| l.set_nonblocking(true).map(|()| l))
             .map_err(|e| format!("{}: {e}", sock.display()))?;
         let log = Arc::new(Mutex::new(open_log()));
-        let (prog, args, env) = script::command(script, args, &sock, tab, &script::python_dir());
+        let (prog, args, mut env) =
+            script::command(script, args, &sock, tab, &script::python_dir());
+        if dbg.is_some() {
+            env.push(("SHAGSHELL_TRACE".into(), "1".into()));
+        }
         let mut child = std::process::Command::new(&prog)
             .args(&args)
             .envs(env)
@@ -351,6 +388,7 @@ impl Scripts {
             sink: sink.clone(),
             debug: self.debug.clone(),
             cancel: cancel.clone(),
+            dbg,
         });
         let tx = self.tx.clone();
         std::thread::spawn(move || {
@@ -457,6 +495,7 @@ impl Scripts {
                     other => c.reply.send(Err(format!("unknown call {other}"))),
                 },
             },
+            ScMsg::Debug(n, e) => out.debug.push((n, e)),
             ScMsg::Ended(n, end) => {
                 let (name, status) = (self.runs.remove(&n))
                     .map(|r| (r.name, r.status))
@@ -478,6 +517,9 @@ impl Scripts {
                 let failed = matches!(end, End::Failed(_));
                 let done = matches!(end, End::Done);
                 out.ended = Some((n, done));
+                if let End::Failed(e) = &end {
+                    out.failed = Some((n, e.clone()));
+                }
                 let notice = match end {
                     End::Done => fl!("script-done", name = name),
                     End::Cancelled => fl!("script-stopped", name = name),
@@ -985,6 +1027,10 @@ fn supervise(
             Err(e) => break Err(e),
         }
     };
+    // The lines a Script Builder run went through last, before its end is told.
+    if let Some(d) = &host.dbg {
+        d.flush(&|e| host.debug_event(e));
+    }
     // Waits of a script that is gone stop.
     let user = cancel.swap(true, Ordering::SeqCst);
     // What it wrote last is in the console before the end is told.
@@ -1104,6 +1150,8 @@ struct RunHost {
     sink: Sink,
     debug: Arc<AtomicBool>,
     cancel: Arc<AtomicBool>,
+    /// A Script Builder run's.
+    dbg: Option<Arc<shagshell_core::debugger::Debugger>>,
 }
 
 impl RunHost {
@@ -1123,6 +1171,14 @@ impl Host for RunHost {
 
     fn trace(&self, line: String) {
         self.sink.push(script::Kind::Debug, line);
+    }
+
+    fn debugger(&self) -> Option<&shagshell_core::debugger::Debugger> {
+        self.dbg.as_deref()
+    }
+
+    fn debug_event(&self, e: shagshell_core::debugger::Event) {
+        let _ = self.sink.tx.send(ScMsg::Debug(self.run, e));
     }
 
     fn buffer(&self, tab: u64) -> Option<Arc<script::Buffer>> {

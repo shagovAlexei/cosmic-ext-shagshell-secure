@@ -2137,6 +2137,22 @@ impl App {
         if out.notice.is_some() {
             self.sessions.notice = out.notice.clone();
         }
+        // A Script Builder's run: its blocks light up, stop, end.
+        for (run, e) in out.debug.iter().cloned() {
+            if let Some(id) = self.tabs.builder_of_run(run) {
+                self.tabs
+                    .on_builder(id, crate::builder::BuilderMsg::Debug(e));
+            }
+        }
+        if let Some((run, _)) = out.ended
+            && let Some(id) = self.tabs.builder_of_run(run)
+        {
+            let failed = (out.failed.as_ref())
+                .filter(|f| f.0 == run)
+                .map(|f| f.1.clone());
+            self.tabs
+                .on_builder(id, crate::builder::BuilderMsg::Ended(run, failed));
+        }
         // After the run's own notice: that the session was not opened is what matters.
         let mut pre_task = Task::none();
         if let Some((run, _)) = out.ended {
@@ -2823,16 +2839,28 @@ impl App {
                 move |p| cosmic::Action::App(Message::Builder(id, BuilderMsg::SaveAs(p))),
             ),
             Out::Clipboard(t) => cosmic::iced::clipboard::write(t),
-            Out::Run(path, tab) => {
-                match tab.unwrap_or_else(|| self.tabs.terminal_list().first().map(|t| t.0)) {
-                    Some(tab) => self.script(crate::script::ScMsg::StartOn(tab, path, Vec::new())),
-                    None => {
-                        if let Err(e) = self.scripts.run(&path, &[], u64::MAX) {
-                            self.sessions.notice = Some(e);
-                        }
-                        Task::none()
+            Out::Run(path, tab, dbg) => {
+                let tab = (tab.unwrap_or_else(|| self.tabs.terminal_list().first().map(|t| t.0)))
+                    .unwrap_or(u64::MAX);
+                let started = match dbg {
+                    Some(d) => self.scripts.run_traced(&path, tab, d),
+                    None => self.scripts.run(&path, &[], tab),
+                };
+                match started {
+                    Ok(n) => {
+                        let out = self.tabs.on_builder(id, BuilderMsg::Started(n));
+                        self.builder_out(id, out)
+                    }
+                    Err(e) => {
+                        self.sessions.notice = Some(e);
+                        let out = self.tabs.on_builder(id, BuilderMsg::Ended(u64::MAX, None));
+                        self.builder_out(id, out)
                     }
                 }
+            }
+            Out::Stop(n) => {
+                self.scripts.cancel_run(n);
+                Task::none()
             }
         }
     }

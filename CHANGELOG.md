@@ -2,6 +2,9 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.89.0 — 2026-10-27
+- feat: Script Builder runs light their blocks up (where the script is, what it went through, the block of an error with its words), breakpoints (○ / ● on a block, also while running), Pause / Step / Continue / Stop, the variables of a stop under the palette and on the blocks that keep them; ⚙ turns light-up and stops off (a plain run); every thread of a parallel run stops together; a traced run runs the generated code (its lines are the blocks'), `elif` / `except` / `each_host(…)` light their own block, a breakpoint on «For each host» stops at the loop, a tab closed while paused lets its script go on
+
 ## 0.88.0 — 2026-10-27
 - feat: Script Builder big blocks (Run a command, For each host with «in parallel», Read a list, Log to a file, Append to a file, To the clipboard) from `shag_blocks.py` in `~/.config/shagshell/scripts`; «For each host» is `def _host_N(tab, host)` + `each_host(…)` in the code; templates (From a template ▾, Save as template…) with three ready ones; a script's threads get their own crt connection; `crt.Session.Connect` returns the new tab's id (an error when no tab opened, e.g. a mistyped session name)
 
