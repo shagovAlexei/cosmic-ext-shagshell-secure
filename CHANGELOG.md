@@ -2,6 +2,9 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.93.1 — 2026-10-27
+- fix: the bar «⋯» lists move a button with ↑ / ↓ (up = to the left on the bar), not ‹ / ›
+
 ## 0.93.0 — 2026-10-27
 - feat: a note's bar buttons are moved left / right too (its «⋯», as in the Script Builder, with Reset); the list stays open while ticking
 
