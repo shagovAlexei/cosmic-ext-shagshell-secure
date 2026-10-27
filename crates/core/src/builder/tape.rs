@@ -23,7 +23,8 @@ pub fn bodies(b: &Block) -> Vec<&Vec<Block>> {
         Block::For { body, .. }
         | Block::While { body, .. }
         | Block::With { body, .. }
-        | Block::Def { body, .. } => {
+        | Block::Def { body, .. }
+        | Block::ForHost { body, .. } => {
             vec![body]
         }
         _ => vec![],
@@ -48,7 +49,8 @@ pub fn bodies_mut(b: &mut Block) -> Vec<&mut Vec<Block>> {
         Block::For { body, .. }
         | Block::While { body, .. }
         | Block::With { body, .. }
-        | Block::Def { body, .. } => {
+        | Block::Def { body, .. }
+        | Block::ForHost { body, .. } => {
             vec![body]
         }
         _ => vec![],

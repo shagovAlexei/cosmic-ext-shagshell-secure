@@ -69,6 +69,15 @@ pub enum Block {
         params: String,
         body: Vec<Block>,
     },
+    /// «For each host»: the body as a function of (tab, host), called by `shag_blocks.each_host`
+    /// for every host (in threads when `parallel`, `limit` at a time).
+    ForHost {
+        hosts: String,
+        func: String,
+        parallel: bool,
+        limit: String,
+        body: Vec<Block>,
+    },
     /// Without the `# `.
     Comment {
         text: String,
@@ -93,6 +102,26 @@ pub fn at_line(map: &[(tape::Pos, usize)], line: usize) -> Option<&tape::Pos> {
         .take_while(|(_, l)| *l <= line)
         .last()
         .map(|(p, _)| p)
+}
+
+/// A «for each host» function name no block uses yet: `_host_1`, `_host_2`…
+pub fn fresh_host_func(blocks: &[Block]) -> String {
+    fn walk(l: &[Block], used: &mut Vec<String>) {
+        for b in l {
+            if let Block::ForHost { func, .. } = b {
+                used.push(func.clone());
+            }
+            for body in tape::bodies(b) {
+                walk(body, used);
+            }
+        }
+    }
+    let mut used = vec![];
+    walk(blocks, &mut used);
+    (1..)
+        .map(|n| format!("_host_{n}"))
+        .find(|n| !used.contains(n))
+        .unwrap_or_default()
 }
 
 /// The Python code of the blocks.
@@ -205,6 +234,21 @@ impl Writer {
                 self.line(level, &format!("def {name}({params}):"));
                 self.body(body, level + 1, pos, 0);
             }
+            Block::ForHost {
+                hosts,
+                func,
+                parallel,
+                limit,
+                body,
+            } => {
+                self.line(level, &format!("def {func}(tab, host):"));
+                self.body(body, level + 1, pos, 0);
+                let p = if *parallel { "True" } else { "False" };
+                self.line(
+                    level,
+                    &format!("each_host({hosts}, {func}, parallel={p}, limit={limit})"),
+                );
+            }
             Block::Comment { text } if text.is_empty() => self.line(level, "#"),
             Block::Comment { text } => self.line(level, &format!("# {text}")),
             Block::Blank => self.line(level, ""),
@@ -280,6 +324,38 @@ mod tests {
         assert_eq!(at_line(&map, 2), Some(&vec![(0, 1)]));
         assert_eq!(at_line(&map, 9), Some(&vec![(0, 1), (0, 0)]));
         assert_eq!(at_line(&map, 0), None);
+    }
+
+    #[test]
+    fn gen_for_host() {
+        let b = Block::ForHost {
+            hosts: s("hosts"),
+            func: s("_host_1"),
+            parallel: true,
+            limit: s("10"),
+            body: vec![call("run", &["tab", "'uptime'"])],
+        };
+        assert_eq!(
+            generate(&[b]),
+            "def _host_1(tab, host):\n    run(tab, 'uptime')\neach_host(hosts, _host_1, parallel=True, limit=10)\n"
+        );
+    }
+
+    #[test]
+    fn host_names_are_fresh() {
+        let used = |n: &str| Block::ForHost {
+            hosts: s("h"),
+            func: s(n),
+            parallel: false,
+            limit: s("10"),
+            body: vec![],
+        };
+        assert_eq!(fresh_host_func(&[]), "_host_1");
+        let inner = Block::If {
+            branches: vec![(s("x"), vec![used("_host_2")])],
+            orelse: vec![],
+        };
+        assert_eq!(fresh_host_func(&[used("_host_1"), inner]), "_host_3");
     }
 
     #[test]

@@ -359,4 +359,40 @@ pub(crate) mod tests {
             Err(Error::Python(_))
         ));
     }
+
+    #[test]
+    fn parse_for_host() {
+        if no_python() {
+            return;
+        }
+        let src = "def _host_1(tab, host):\n    run(tab, 'uptime')\neach_host(hosts, _host_1, parallel=True, limit=5)\n";
+        assert_eq!(
+            parse(src).unwrap(),
+            [Block::ForHost {
+                hosts: s("hosts"),
+                func: s("_host_1"),
+                parallel: true,
+                limit: s("5"),
+                body: vec![Block::Call {
+                    func: s("run"),
+                    args: vec![
+                        Arg {
+                            name: None,
+                            value: s("tab")
+                        },
+                        Arg {
+                            name: None,
+                            value: s("'uptime'")
+                        }
+                    ],
+                    assign: None,
+                }],
+            }]
+        );
+        // Not the pair (another name, a line between): plain def and call.
+        let b = parse("def _host_1(tab, host):\n    pass\nx = 1\neach_host(h, _host_1)\n").unwrap();
+        assert!(matches!(b[0], Block::Def { .. }), "{b:?}");
+        let b = parse("def f(tab, host):\n    pass\neach_host(h, f)\n").unwrap();
+        assert!(matches!(b[0], Block::Def { .. }), "{b:?}");
+    }
 }

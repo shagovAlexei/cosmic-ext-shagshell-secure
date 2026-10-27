@@ -257,6 +257,14 @@ pub fn new_statement(kind: &str) -> Option<Block> {
         },
         "comment" => Block::Comment { text: s("") },
         "raw" => Block::Raw { code: s("pass") },
+        // Its function's name is made free by the tape (`builder::fresh_host_func`).
+        "for_host" => Block::ForHost {
+            hosts: s("hosts"),
+            func: s("_host_1"),
+            parallel: false,
+            limit: s("10"),
+            body: vec![],
+        },
         _ => return None,
     })
 }
@@ -283,6 +291,10 @@ pub enum F {
     HandlerName(usize),
     /// A comment's text, Custom Python's code.
     Text,
+    /// «For each host»: the list, `True` / `False`, how many at a time.
+    Hosts,
+    Parallel,
+    Limit,
 }
 
 /// `a, f(b, c), k='x, y'`: the arguments at the top level (brackets and quotes kept whole).
@@ -397,6 +409,11 @@ pub fn get(b: &Block, f: F) -> Option<String> {
         (Block::Comment { text }, F::Text) | (Block::Raw { code: text }, F::Text) => {
             Some(text.clone())
         }
+        (Block::ForHost { hosts, .. }, F::Hosts) => Some(hosts.clone()),
+        (Block::ForHost { parallel, .. }, F::Parallel) => {
+            Some(if *parallel { "True" } else { "False" }.into())
+        }
+        (Block::ForHost { limit, .. }, F::Limit) => Some(limit.clone()),
         _ => None,
     }
 }
@@ -481,6 +498,9 @@ pub fn set(b: &mut Block, f: F, value: &str) -> bool {
         (Block::Comment { text }, F::Text) | (Block::Raw { code: text }, F::Text) => {
             *text = value.to_string()
         }
+        (Block::ForHost { hosts, .. }, F::Hosts) => *hosts = v.to_string(),
+        (Block::ForHost { parallel, .. }, F::Parallel) => *parallel = v == "True",
+        (Block::ForHost { limit, .. }, F::Limit) => *limit = v.to_string(),
         _ => return false,
     }
     true
@@ -604,6 +624,7 @@ mod tests {
     fn statements_compile() {
         for k in [
             "if", "for", "while", "with", "try", "def", "assign", "call", "comment", "raw",
+            "for_host",
         ] {
             let b = new_statement(k).unwrap_or_else(|| panic!("{k}"));
             let code = super::super::generate(&[b]);
