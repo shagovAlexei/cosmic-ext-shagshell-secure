@@ -1,6 +1,7 @@
 mod about;
 mod app;
 mod askpass;
+mod bar_picker;
 mod builder;
 mod button_bar;
 mod command_manager;

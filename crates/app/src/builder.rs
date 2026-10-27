@@ -1109,77 +1109,19 @@ impl BuilderView {
                 .spacing(6)
                 .align_y(Alignment::Center)
                 .into(),
-            self.bar_picker(m, buttons),
+            crate::bar_picker::view(
+                &builder::bar::BAR,
+                buttons,
+                builder::bar::default_buttons(),
+                bar_label,
+                self.bar_open,
+                m(BuilderMsg::BarPicker),
+                Message::BuilderButtons,
+            ),
         ])
         .spacing(6)
         .align_y(Alignment::Center)
         .into()
-    }
-
-    /// «⋯» at the end of the bar: every button, ticked when shown, ← / → to move it (every
-    /// builder tab's bar).
-    fn bar_picker<'a>(
-        &self,
-        m: impl Fn(BuilderMsg) -> Message + Copy + 'a,
-        buttons: &[String],
-    ) -> Element<'a, Message> {
-        use crate::toolbar::tip_button;
-        use shagshell_core::builder::bar;
-        let more = tip_button(
-            "view-more-symbolic",
-            fl!("note-buttons"),
-            Some(m(BuilderMsg::BarPicker)),
-        );
-        let mut pop = widget::popover(more)
-            .position(widget::popover::Position::Bottom)
-            .on_close(m(BuilderMsg::BarPicker));
-        if self.bar_open {
-            // Shown ones in their order, then the hidden ones.
-            let hidden = bar::BUTTONS
-                .iter()
-                .filter(|b| !buttons.iter().any(|n| n == *b));
-            let shown =
-                (buttons.iter()).filter_map(|n| bar::BUTTONS.iter().find(|b| *b == n).copied());
-            let names: Vec<&'static str> = shown.chain(hidden.copied()).collect();
-            let rows = names.into_iter().map(|name| -> Element<'a, Message> {
-                let on = buttons.iter().any(|n| n == name);
-                let list = buttons.to_vec();
-                let mut check = widget::checkbox(on).label(bar_label(name));
-                if name != bar::ALWAYS {
-                    let l = list.clone();
-                    check =
-                        check.on_toggle(move |_| Message::BuilderButtons(bar::toggle(&l, name)));
-                }
-                let arrow = |icon: &'static str, tip: String, left: bool| {
-                    let l = list.clone();
-                    tip_button(
-                        icon,
-                        tip,
-                        on.then(|| Message::BuilderButtons(bar::shift(&l, name, left))),
-                    )
-                };
-                widget::row::with_children(vec![
-                    widget::container(check).width(Length::Fill).into(),
-                    arrow("go-previous-symbolic", fl!("builder-bar-left"), true),
-                    arrow("go-next-symbolic", fl!("builder-bar-right"), false),
-                ])
-                .spacing(4)
-                .align_y(Alignment::Center)
-                .into()
-            });
-            let mut col = widget::column::with_children(rows.collect::<Vec<_>>()).spacing(4);
-            col = col.push(
-                widget::button::text(fl!("builder-bar-reset"))
-                    .on_press(Message::BuilderButtons(bar::default_buttons())),
-            );
-            pop = pop.popup(
-                widget::container(col)
-                    .width(Length::Fixed(300.0))
-                    .padding(12)
-                    .class(theme::Container::Dropdown),
-            );
-        }
-        pop.into()
     }
 
     /// Run, or while it runs: Pause / Continue, Step, Stop.

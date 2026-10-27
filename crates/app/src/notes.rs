@@ -380,39 +380,6 @@ impl NoteView {
         Some(tip_button(icon, tip, on.then(|| m(msg))))
     }
 
-    /// «⋯» at the end of the bar: a list that ticks which buttons the bar shows (every note's).
-    fn picker_view<'a>(
-        &self,
-        buttons: &[String],
-        m: impl Fn(NoteMsg) -> Message,
-    ) -> Element<'a, Message> {
-        let more = tip_button(
-            "view-more-symbolic",
-            fl!("note-buttons"),
-            Some(m(NoteMsg::Picker)),
-        );
-        let mut p = widget::popover(more)
-            .position(widget::popover::Position::Bottom)
-            .on_close(m(NoteMsg::Picker));
-        if self.picker {
-            let rows = (notes::BUTTONS.iter().enumerate()).map(|(i, b)| -> Element<'a, Message> {
-                let on = buttons.iter().any(|n| n == b);
-                widget::checkbox(on)
-                    .label(button_label(b))
-                    .on_toggle(move |_| Message::NoteButton(u8::try_from(i).unwrap_or(0)))
-                    .into()
-            });
-            p = p.popup(
-                widget::container(
-                    widget::column::with_children(rows.collect::<Vec<_>>()).spacing(8),
-                )
-                .padding(12)
-                .class(cosmic::theme::Container::Dropdown),
-            );
-        }
-        p.into()
-    }
-
     /// The selection to the clipboard; cut takes it out (not in a locked note).
     pub fn copy(&self) -> Option<String> {
         crate::editor::copy(&self.editor)
@@ -466,8 +433,27 @@ impl NoteView {
                     .spacing(4)
                     .align_y(cosmic::iced::Alignment::Center)
                 }))
-                .extend(buttons.iter().filter_map(|b| self.button(b, m)))
-                .push(self.picker_view(buttons, m)),
+                // The buttons in a row of their own: «⋯» keeps its place in the tree (and stays
+                // open) when one is shown or hidden.
+                .push(
+                    widget::row::with_children(
+                        buttons
+                            .iter()
+                            .filter_map(|b| self.button(b, m))
+                            .collect::<Vec<_>>(),
+                    )
+                    .spacing(8)
+                    .align_y(cosmic::iced::Alignment::Center),
+                )
+                .push(crate::bar_picker::view(
+                    &notes::BAR,
+                    buttons,
+                    notes::default_buttons(),
+                    button_label,
+                    self.picker,
+                    m(NoteMsg::Picker),
+                    Message::NoteButtons,
+                )),
         };
         crate::editor::follow_theme(&self.editor);
         // The tab's widget id: the app's «focus the tab» then gives it the keys.
