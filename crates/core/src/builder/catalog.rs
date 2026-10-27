@@ -610,7 +610,12 @@ pub static CATALOG: &[Entry] = &[
     ),
     m(
         "blocks.run",
-        &[p("tab", Expr), p("cmd", Text), d("timeout", Number, "30")],
+        &[
+            p("tab", Expr),
+            p("cmd", Text),
+            d("timeout", Number, "30"),
+            more(d("until", Text, "None")),
+        ],
         "str",
         [
             "Runs a command: types it and Enter, waits for the prompt; its output (also into the tab's log_to file). tab None: the script's tab.",

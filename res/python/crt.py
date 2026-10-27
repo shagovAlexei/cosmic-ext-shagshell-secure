@@ -167,8 +167,9 @@ class _Session:
         _call("Session.Log", self._tab, bool(on), None if append is None else bool(append))
 
     def Connect(self, cmd):
-        """`/S "name"` — a saved session — opens a new tab."""
-        _call("Session.Connect", self._tab, cmd)
+        """`/S "name"` — a saved session — opens a new tab. ShagShell: returns the new tab's
+        id; ScriptError when no tab opened (no such session)."""
+        return _call("Session.Connect", self._tab, cmd)
 
     def Disconnect(self):
         _call("Session.Disconnect", self._tab)
@@ -350,9 +351,12 @@ def main():
     sys.argv = sys.argv[1:]
     # `import shag_blocks` (or a module of the user's) next to the script, or in the scripts folder.
     config = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
-    for d in (os.path.join(config, "shagshell", "scripts"), os.path.dirname(os.path.abspath(path))):
-        if d not in sys.path:
-            sys.path.insert(0, d)
+    # The script's own folder first; the scripts folder last (a csv.py there must not hide the
+    # standard one from scripts elsewhere).
+    sys.path.insert(0, os.path.dirname(os.path.abspath(path)))
+    scripts = os.path.join(config, "shagshell", "scripts")
+    if scripts not in sys.path:
+        sys.path.append(scripts)
     crt.Arguments = _Arguments(sys.argv[1:])
     builtins.crt = crt
     for k, v in list(globals().items()):  # BUTTON_YESNO, IDYES … as in SecureCRT

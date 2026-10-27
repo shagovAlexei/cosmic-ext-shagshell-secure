@@ -1035,6 +1035,11 @@ impl Tabs {
         self.last_opened
     }
 
+    /// Before opening: what `last_opened` says after is about this opening only.
+    pub fn forget_last_opened(&mut self) {
+        self.last_opened = None;
+    }
+
     /// A new tab running `launch` in the focused group (the first group if none).
     pub fn open(&mut self, launch: Launch, look: &Look) -> Task<Message> {
         self.last_opened = None;

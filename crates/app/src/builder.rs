@@ -361,7 +361,9 @@ impl BuilderView {
         }
     }
 
-    fn insert_selected(&mut self, mut at: Pos, mut b: Block) {
+    /// `fresh`: a new block from the palette (adapted to where it goes: the host's tab inside
+    /// «for each host»); a pasted one goes in as it is.
+    fn insert_selected(&mut self, mut at: Pos, mut b: Block, fresh: bool) {
         // A big block needs `from shag_blocks import *` at the top: put there with it (one undo).
         let big = match &b {
             Block::Call { func, .. } => {
@@ -376,28 +378,56 @@ impl BuilderView {
         if let Block::ForHost { func, .. } = &mut b {
             *func = builder::fresh_host_func(&self.doc.blocks);
         }
-        // Inside «for each host» a big block works on the host's tab.
         let in_host = (1..at.len()).any(|n| {
             matches!(
                 tape::get(&self.doc.blocks, &at[..n]),
                 Some(Block::ForHost { .. })
             )
         });
-        if in_host
+        if fresh
+            && in_host
             && let Block::Call { func, args, .. } = &mut b
-            && catalog::lookup(func)
-                .is_some_and(|e| e.params.first().is_some_and(|p| p.name == "tab"))
-            && let Some(a) = args.first_mut()
         {
-            a.value = "tab".into();
+            // `crt.Screen.Send` would type into the script's tab: the host's is `tab`.
+            for obj in ["Screen", "Session", "FileTransfer"] {
+                if let Some(rest) = func.strip_prefix(&format!("crt.{obj}.")) {
+                    *func = format!("tab.{obj}.{rest}");
+                }
+            }
+            if catalog::lookup(func)
+                .is_some_and(|e| e.params.first().is_some_and(|p| p.name == "tab"))
+            {
+                match args.first_mut() {
+                    Some(a) if a.name.is_none() => a.value = "tab".into(),
+                    _ => args.insert(
+                        0,
+                        shagshell_core::builder::Arg {
+                            name: None,
+                            value: "tab".into(),
+                        },
+                    ),
+                }
+            }
         }
-        if import && let Some(first) = at.first_mut() {
+        // After the leading comments (`# $language = "python3"`) and `from __future__`.
+        let top = (self.doc.blocks.iter())
+            .take_while(|b| match b {
+                Block::Comment { .. } | Block::Blank => true,
+                Block::Raw { code } => code.starts_with("from __future__"),
+                _ => false,
+            })
+            .count();
+        let nested = at.len() > 1;
+        if import
+            && let Some(first) = at.first_mut()
+            && (nested || first.1 >= top)
+        {
             first.1 += 1;
         }
         if self.edit(|t| {
             if import {
                 t.insert(
-                    0,
+                    top,
                     Block::Raw {
                         code: IMPORT.into(),
                     },
@@ -474,7 +504,7 @@ impl BuilderView {
                         first.is_empty().then(|| [p.as_slice(), &[(0, 0)]].concat())
                     });
                     let at = into.unwrap_or_else(|| self.after_selected());
-                    self.insert_selected(at, b);
+                    self.insert_selected(at, b, true);
                 }
             }
             BuilderMsg::Select(p) => {
@@ -559,7 +589,7 @@ impl BuilderView {
             BuilderMsg::Paste => {
                 if let Some(b) = self.clip.clone() {
                     let at = self.after_selected();
-                    self.insert_selected(at, b);
+                    self.insert_selected(at, b, false);
                 }
             }
             BuilderMsg::Undo => {
@@ -704,7 +734,7 @@ impl BuilderView {
                 match (drag, over) {
                     (Some(Drag::New(item)), Some(at)) => {
                         if let Some(b) = item.block() {
-                            self.insert_selected(at, b);
+                            self.insert_selected(at, b, true);
                         }
                     }
                     (Some(Drag::Move(from)), Some(to)) => {

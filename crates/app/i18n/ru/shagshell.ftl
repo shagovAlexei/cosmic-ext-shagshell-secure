@@ -833,3 +833,4 @@ block-log-to = Лог в файл
 block-append-file = Дописать в файл
 block-to-clipboard = В буфер обмена
 block-each-host = each_host (функция на хост)
+script-connect-failed = Вкладка для { $name } не открылась (есть ли такая сохранённая сессия?)

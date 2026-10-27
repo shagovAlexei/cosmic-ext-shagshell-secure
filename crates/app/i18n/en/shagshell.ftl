@@ -835,3 +835,4 @@ block-log-to = Log to a file
 block-append-file = Append to a file
 block-to-clipboard = To the clipboard
 block-each-host = each_host (a function per host)
+script-connect-failed = No tab opened for { $name } (is there such a saved session?)

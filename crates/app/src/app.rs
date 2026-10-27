@@ -2206,8 +2206,14 @@ impl App {
         }
         if let Some((name, reply)) = out.connect {
             // Their scripts do not run: a script that connects its own session would loop.
-            tasks.push(self.open_sessions(&[name], false));
-            reply.send(Ok(serde_json::Value::Null)); // the tab is there now
+            self.tabs.forget_last_opened();
+            tasks.push(self.open_sessions(std::slice::from_ref(&name), false));
+            // The new tab (opened by now) is the answer: a script works on it, never on the tab
+            // that happened to be in front; none opened (no such session…) is an error.
+            reply.send(match self.tabs.last_opened() {
+                Some(id) => Ok(serde_json::json!(id)),
+                None => Err(fl!("script-connect-failed", name = name)),
+            });
         }
         if out.raise
             && let Some(w) = self.core.main_window_id()
