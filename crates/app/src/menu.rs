@@ -83,6 +83,9 @@ pub enum Action {
     ScriptConsole,
     /// View → Notes: the main note's tab.
     Notes,
+    /// Script → Script Builder… (a new tape) / Open in Builder… (a `.py` as blocks).
+    ScriptBuilder,
+    OpenInBuilder,
     /// File → Open Note….
     OpenNote,
     /// Script → Scheduler….
@@ -111,7 +114,7 @@ pub enum Action {
 
 /// The functions a Button Bar button can call: the name in `buttonbars.toml` and its label.
 pub type NamedFn = (&'static str, fn() -> String);
-pub const NAMED: [NamedFn; 31] = [
+pub const NAMED: [NamedFn; 33] = [
     ("Connect", || fl!("menu-connect")),
     ("QuickConnect", || fl!("menu-quick-connect")),
     ("NewLocalShell", || fl!("menu-new-local-shell")),
@@ -128,6 +131,8 @@ pub const NAMED: [NamedFn; 31] = [
     ("ToggleRecording", || fl!("menu-script-record")),
     ("GlobalOptions", || fl!("menu-global-options")),
     ("Notes", || fl!("menu-notes")),
+    ("ScriptBuilder", || fl!("menu-script-builder")),
+    ("OpenInBuilder", || fl!("menu-script-open-builder")),
     ("ZoomIn", || fl!("menu-zoom-in")),
     ("ZoomOut", || fl!("menu-zoom-out")),
     ("ZoomReset", || fl!("menu-zoom-reset")),
@@ -167,6 +172,8 @@ impl Action {
             "ScriptConsole" => Action::ScriptConsole,
             "Scheduler" => Action::Scheduler,
             "Notes" => Action::Notes,
+            "ScriptBuilder" => Action::ScriptBuilder,
+            "OpenInBuilder" => Action::OpenInBuilder,
             "ZoomIn" => Action::ZoomIn,
             "ZoomOut" => Action::ZoomOut,
             "ZoomReset" => Action::ZoomReset,
@@ -483,6 +490,8 @@ pub fn bar(
                 Button(fl!("menu-script-rerun"), None, Action::RerunScript),
                 Button(fl!("menu-script-console"), None, Action::ScriptConsole),
                 Button(fl!("menu-script-scheduler"), None, Action::Scheduler),
+                Button(fl!("menu-script-builder"), None, Action::ScriptBuilder),
+                Button(fl!("menu-script-open-builder"), None, Action::OpenInBuilder),
                 Divider,
                 CheckBox(
                     fl!("menu-script-record"),

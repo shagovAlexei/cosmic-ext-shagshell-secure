@@ -187,6 +187,12 @@ pub enum Message {
     Credentials(crate::credentials_window::CwMsg),
     Scheduler(crate::scheduler::SchMsg),
     Note(crate::term::TabId, crate::notes::NoteMsg),
+    /// The Script Builder tab's own messages; its clock (a parse due); a `.py` picked for it.
+    Builder(crate::term::TabId, crate::builder::BuilderMsg),
+    BuilderTick,
+    BuilderPicked(Option<std::path::PathBuf>),
+    /// The pointer came up while a Script Builder block was dragged.
+    BuilderRelease,
     /// A note bar's button shown / hidden (index into `core::notes::BUTTONS`).
     NoteButton(u8),
     NoteTick,
@@ -527,6 +533,23 @@ impl Application for App {
             },
             crate::askpass::subscription(askpass_sock(&self.control_dir)),
             self.scripts.subscription(),
+            match self.tabs.builders_due() {
+                true => cosmic::iced::time::every(std::time::Duration::from_millis(250))
+                    .map(|_| Message::BuilderTick),
+                false => Subscription::none(),
+            },
+            match self.tabs.builder_dragging().is_some() {
+                true => event::listen_with(|e, _, w| {
+                    use cosmic::iced::mouse::{Button, Event as M};
+                    match e {
+                        cosmic::iced::Event::Mouse(M::ButtonReleased(Button::Left)) => {
+                            input(w, Some(Message::BuilderRelease))
+                        }
+                        _ => None,
+                    }
+                }),
+                false => Subscription::none(),
+            },
             match self.tabs.has_unsaved_notes() {
                 true => cosmic::iced::time::every(std::time::Duration::from_millis(500))
                     .map(|_| Message::NoteTick),
@@ -1520,6 +1543,32 @@ impl App {
             Message::Scheduler(m) => return self.scheduler(m),
             Message::SchedTick => return self.sched_tick(),
             Message::NoteTick => self.tabs.notes_tick(),
+            Message::Builder(id, m) => {
+                self.sessions.focused = false;
+                let out = self.tabs.on_builder(id, m);
+                return self.builder_out(id, out);
+            }
+            Message::BuilderTick => {
+                let mut tasks = vec![];
+                for (id, out) in self.tabs.builders_tick() {
+                    tasks.push(self.builder_out(id, out));
+                }
+                return Task::batch(tasks);
+            }
+            Message::BuilderRelease => {
+                if let Some(id) = self.tabs.builder_dragging() {
+                    let out = self
+                        .tabs
+                        .on_builder(id, crate::builder::BuilderMsg::Release);
+                    return self.builder_out(id, out);
+                }
+            }
+            Message::BuilderPicked(p) => {
+                if let Some(p) = p {
+                    self.remember_script_dir(&p);
+                    return self.open_builder(Some(p));
+                }
+            }
             Message::Note(id, m) => {
                 self.sessions.focused = false;
                 let (open, task) = self.tabs.on_note(id, m);
@@ -1625,6 +1674,15 @@ impl App {
                         Code::Escape => return self.tabs.on_sftp(id, SftpMsg::DialogCancel),
                         _ => {}
                     }
+                }
+                // The active Script Builder's keys (no field took them).
+                if let Some(id) = self.tabs.active_builder()
+                    && !self.sessions.focused
+                    && self.dialog().is_none()
+                    && let Some(msg) = crate::builder::key(&k, m)
+                {
+                    let out = self.tabs.on_builder(id, msg);
+                    return self.builder_out(id, out);
                 }
                 // The active SFTP tab's commander keys, unless the tree or a dialog has them.
                 if let Some(id) = self.tabs.active_sftp()
@@ -1900,6 +1958,13 @@ impl App {
             }
             Action::ScriptsRefresh => self.refresh_scripts(),
             Action::Scheduler => return self.open_scheduler(),
+            Action::ScriptBuilder => return self.open_builder(None),
+            Action::OpenInBuilder => {
+                return Task::perform(
+                    crate::builder::pick(fl!("menu-script-open-builder"), self.script_start_dir()),
+                    |p| cosmic::Action::App(Message::BuilderPicked(p)),
+                );
+            }
             Action::Notes => {
                 let russian = crate::i18n::russian();
                 return match shagshell_core::notes::ensure_default(
@@ -2661,6 +2726,64 @@ impl App {
     }
 
     /// A note tab for `path`: the one that has it is shown, else a new one.
+    /// A Script Builder tab: a new tape, or `path` as blocks (shown if already open).
+    fn open_builder(&mut self, path: Option<std::path::PathBuf>) -> Task<Message> {
+        if let Some(p) = &path {
+            if let Some(id) = self.tabs.builder_tab(p) {
+                self.tabs.show(id);
+                return Task::none();
+            }
+            // Checked first: a file that is not Python 3 says why instead of an empty tab.
+            if let Err(e) = crate::builder::BuilderView::new(Some(p.clone())) {
+                self.sessions.notice = Some(e);
+                return Task::none();
+            }
+        }
+        let mut launch = tabs::Launch::local_shell();
+        launch.title = match &path {
+            Some(p) => {
+                (p.file_name()).map_or_else(String::new, |n| n.to_string_lossy().into_owned())
+            }
+            None => fl!("builder-untitled"),
+        };
+        launch.label = launch.title.clone();
+        launch.builder = Some(path);
+        self.tabs.open(launch, &look(&self.config))
+    }
+
+    /// What a Script Builder tab asks for.
+    fn builder_out(&mut self, id: crate::term::TabId, out: crate::builder::Out) -> Task<Message> {
+        use crate::builder::{BuilderMsg, Out};
+        match out {
+            Out::None => Task::none(),
+            Out::Parse(seq, code, text) => off_ui(
+                move || shagshell_core::builder::parse(&text),
+                move |r| Message::Builder(id, BuilderMsg::Parsed(seq, code, r)),
+            ),
+            Out::Open => Task::perform(
+                crate::builder::pick(fl!("menu-script-open-builder"), self.script_start_dir()),
+                |p| cosmic::Action::App(Message::BuilderPicked(p)),
+            ),
+            Out::New => self.open_builder(None),
+            Out::SaveAs => Task::perform(
+                crate::notes::save_as(fl!("note-save-as"), self.script_start_dir()),
+                move |p| cosmic::Action::App(Message::Builder(id, BuilderMsg::SaveAs(p))),
+            ),
+            Out::Clipboard(t) => cosmic::iced::clipboard::write(t),
+            Out::Run(path, tab) => {
+                match tab.unwrap_or_else(|| self.tabs.terminal_list().first().map(|t| t.0)) {
+                    Some(tab) => self.script(crate::script::ScMsg::StartOn(tab, path, Vec::new())),
+                    None => {
+                        if let Err(e) = self.scripts.run(&path, &[], u64::MAX) {
+                            self.sessions.notice = Some(e);
+                        }
+                        Task::none()
+                    }
+                }
+            }
+        }
+    }
+
     fn open_note(&mut self, path: &std::path::Path) -> Task<Message> {
         if let Some(id) = self.tabs.note_tab(path) {
             self.tabs.show(id);
@@ -3542,6 +3665,7 @@ fn ssh_launch(
         sftp: false,
         note: None,
         console: false,
+        builder: None,
         auto_reconnect: s.reconnect.then(|| tabs::AutoReconnect {
             delay: s.reconnect_delay.unwrap_or(5),
             tries: s.reconnect_tries.unwrap_or(10),
@@ -3641,6 +3765,7 @@ fn program_launch(
         sftp: false,
         note: None,
         console: false,
+        builder: None,
         log: Some(log_spec(s)),
         auto_reconnect: None,
         logon: logon_spec(s, id),

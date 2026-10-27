@@ -33,6 +33,44 @@ pub fn literal(text: &str) -> String {
     out
 }
 
+/// A text field shows what goes between the quotes: `\r`, `\n`, `\t`, `\\` as escapes, a quote
+/// as it is.
+fn escaped(text: &str) -> String {
+    let mut out = String::new();
+    for c in text.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 || c as u32 == 0x7f => {
+                out.push_str(&format!("\\x{:02x}", c as u32))
+            }
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// What a text field typed: its escapes kept (`\r` is Enter), its quotes escaped; a broken escape
+/// (a lone `\` at the end) makes it plain text.
+fn quoted(input: &str) -> String {
+    let mut body = String::new();
+    let mut esc = false;
+    for c in input.chars() {
+        if c == '\'' && !esc {
+            body.push('\\');
+        }
+        esc = c == '\\' && !esc;
+        body.push(c);
+    }
+    let lit = format!("'{body}'");
+    match unliteral(&lit) {
+        Some(_) => lit,
+        None => literal(input),
+    }
+}
+
 /// The text of a plain `'…'` / `"…"` literal (no prefix, no concatenation); `None` otherwise.
 pub fn unliteral(value: &str) -> Option<String> {
     let mut chars = value.chars();
@@ -82,7 +120,7 @@ fn is_number(v: &str) -> bool {
 pub fn shown(ty: Ty, value: &str) -> String {
     let fits = match ty {
         Ty::Text | Ty::File | Ty::Session => {
-            return unliteral(value).unwrap_or_else(|| format!("={value}"));
+            return unliteral(value).map_or_else(|| format!("={value}"), |t| escaped(&t));
         }
         Ty::Expr => true,
         Ty::Number => is_number(value),
@@ -110,7 +148,7 @@ pub fn typed(ty: Ty, input: &str) -> Result<String, Bad> {
         };
     }
     match ty {
-        Ty::Text | Ty::File | Ty::Session => Ok(literal(input)),
+        Ty::Text | Ty::File | Ty::Session => Ok(quoted(input)),
         Ty::Number => match input.trim() {
             "" => Err(Bad::Required),
             n if is_number(n) => Ok(n.to_string()),
@@ -476,7 +514,16 @@ mod tests {
 
     #[test]
     fn typed_text_and_expression() {
-        assert_eq!(typed(Ty::Text, "show ver\\r"), Ok("'show ver\\\\r'".into()));
+        // As inside Python quotes: \r is Enter (as SecureCRT's buttons), a quote needs no escape.
+        assert_eq!(typed(Ty::Text, "show ver\\r"), Ok("'show ver\\r'".into()));
+        assert_eq!(typed(Ty::Text, "it's"), Ok("'it\\'s'".into()));
+        assert_eq!(
+            typed(Ty::Text, "C:\\"),
+            Ok("'C:\\\\'".into()),
+            "a lone backslash is kept"
+        );
+        assert_eq!(shown(Ty::Text, "'show ver\\r'"), "show ver\\r");
+        assert_eq!(shown(Ty::Text, "\"it's\""), "it's");
         assert_eq!(typed(Ty::Text, "=cmd + '\\r'"), Ok("cmd + '\\r'".into()));
         assert_eq!(typed(Ty::Text, ""), Ok("''".into()));
         assert_eq!(typed(Ty::Text, "="), Err(Bad::Required));
