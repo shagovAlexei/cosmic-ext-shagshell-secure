@@ -275,7 +275,7 @@ mod builder_tests {
         r.input(b"hunter2\r");
         r.output(b"\r\nuser@host:~$ ");
         r.input(b"uptime\r");
-        let blocks = builder::parse(&r.script("Recorded")).unwrap();
+        let blocks = builder::parse::tests::parse(&r.script("Recorded")).unwrap();
         let calls: Vec<&str> = (blocks.iter())
             .filter_map(|b| match b {
                 Block::Call { func, .. } => Some(func.as_str()),

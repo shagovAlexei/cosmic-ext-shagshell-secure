@@ -3,7 +3,7 @@
 
 pub mod catalog;
 pub mod field;
-mod parse;
+pub(crate) mod parse;
 pub mod tape;
 
 pub use parse::{Error, parse};
