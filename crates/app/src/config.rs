@@ -28,6 +28,18 @@ impl AppTheme {
     }
 }
 
+/// Where the Script Console opens: a group under the terminals, or at their right.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ConsoleAt {
+    #[default]
+    Bottom,
+    Right,
+}
+
+impl ConsoleAt {
+    pub const ALL: [ConsoleAt; 2] = [ConsoleAt::Bottom, ConsoleAt::Right];
+}
+
 /// Which side of the terminals a side pane sits on.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Side {
@@ -150,6 +162,8 @@ pub struct Config {
     pub script_debug: bool,
     /// Script Console: opens by itself when a script writes something.
     pub script_console_auto: bool,
+    /// Script Console: where it opens.
+    pub console_at: ConsoleAt,
     /// The sessions that had a tab at the last exit are opened again at the start.
     pub tabs_on_start: bool,
     /// The saved sessions (ids) with a tab open now, in the order they were opened.
@@ -323,6 +337,7 @@ impl Default for Config {
             startup_script: String::new(),
             script_debug: false,
             script_console_auto: true,
+            console_at: ConsoleAt::Bottom,
             tabs_on_start: true,
             tabs_open: Vec::new(),
             start_maximized: true,
