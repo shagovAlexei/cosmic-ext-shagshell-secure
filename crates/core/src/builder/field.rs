@@ -90,7 +90,20 @@ pub fn unliteral(value: &str) -> Option<String> {
                     'n' => out.push('\n'),
                     'r' => out.push('\r'),
                     't' => out.push('\t'),
-                    '0' => out.push('\0'),
+                    // Octal: one to three digits (`\\003` is Ctrl+C).
+                    '0'..='7' => {
+                        let mut code = e.to_digit(8)?;
+                        for _ in 0..2 {
+                            match it.clone().next().and_then(|d| d.to_digit(8)) {
+                                Some(d) => {
+                                    code = code * 8 + d;
+                                    it.next();
+                                }
+                                None => break,
+                            }
+                        }
+                        out.push(char::from_u32(code)?);
+                    }
                     'x' | 'u' | 'U' => {
                         let n = match e {
                             'x' => 2,
@@ -676,5 +689,14 @@ mod tests {
         let mut b = new_statement("comment").unwrap();
         assert!(set(&mut b, F::Text, "hi"));
         assert_eq!(get(&b, F::Text).as_deref(), Some("hi"));
+    }
+
+    #[test]
+    fn regression_octal_escapes() {
+        // A SecureCRT line sending Ctrl+C: '\003' is one character.
+        assert_eq!(unliteral("'\\003'"), Some("\u{3}".into()));
+        assert_eq!(unliteral("'\\01x'"), Some("\u{1}x".into()));
+        assert_eq!(unliteral("'\\0'"), Some("\0".into()));
+        assert_eq!(shown(Ty::Text, "'\\003'"), "\\x03");
     }
 }

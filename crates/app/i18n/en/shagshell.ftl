@@ -810,3 +810,10 @@ ty-choice = one of a list
 ty-session = session
 ty-file = file
 ty-expr = Python expression
+builder-close-body = The script is not saved: the changes will be lost.
+builder-exit-title = { $n ->
+    [one] A script is not saved
+   *[other] { $n } scripts are not saved
+}
+builder-exit-body = Exit anyway? The changes will be lost.
+builder-exit = Exit without saving

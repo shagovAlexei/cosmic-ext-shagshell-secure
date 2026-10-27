@@ -148,6 +148,30 @@ pub struct BuilderView {
     /// Where Run runs: `None` = the first terminal tab, `Some(None)` = no tab.
     target: Option<Option<TabId>>,
     error: Option<String>,
+    /// Closed with «close without saving».
+    discarded: bool,
+}
+
+impl Drop for BuilderView {
+    /// The app ends (window closed) with work not saved: it is kept in `scripts/unsaved/`.
+    fn drop(&mut self) {
+        if self.discarded || !self.unsaved() {
+            return;
+        }
+        let dir = shagshell_core::script::default_dir().join("unsaved");
+        let stem = (self.path.as_ref().and_then(|p| p.file_stem())).map_or_else(
+            || "script".to_string(),
+            |s| s.to_string_lossy().into_owned(),
+        );
+        let secs = (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH))
+            .map_or(0, |d| d.as_secs());
+        let p = dir.join(format!("{stem}-{secs}.py"));
+        if let Err(e) = std::fs::create_dir_all(&dir)
+            .and_then(|()| std::fs::write(&p, builder::generate(&self.doc.blocks)))
+        {
+            log::warn!("{}: {e}", p.display());
+        }
+    }
 }
 
 fn tr(help: [&'static str; 2]) -> &'static str {
@@ -192,6 +216,7 @@ impl BuilderView {
             targets_open: false,
             target: None,
             error: None,
+            discarded: false,
         })
     }
 
@@ -202,6 +227,11 @@ impl BuilderView {
             }
             None => fl!("builder-untitled"),
         }
+    }
+
+    /// Closed on purpose («close without saving»): nothing is kept.
+    pub fn discard(&mut self) {
+        self.discarded = true;
     }
 
     pub fn unsaved(&self) -> bool {
@@ -221,8 +251,10 @@ impl BuilderView {
         self.entered.clear();
     }
 
-    /// The tape changed: the code follows, and is checked a moment later.
+    /// The tape changed: the code follows, and is checked a moment later. A parse already
+    /// running is of older code: its answer is dropped.
     fn changed(&mut self) {
+        self.seq += 1;
         crate::editor::replace_text(&self.editor, &builder::generate(&self.doc.blocks));
         crate::editor::scroll_home(&self.editor);
         (self.editor.lock().unwrap_or_else(|e| e.into_inner())).set_changed(false);
@@ -231,6 +263,31 @@ impl BuilderView {
     }
 
     fn edit(&mut self, f: impl FnOnce(&mut Vec<Block>) -> bool) -> bool {
+        // Code typed and not parsed yet would be written over: it becomes the blocks first, or
+        // (broken) the tape waits until it is fixed.
+        if self.due.is_some_and(|(_, code)| code) || self.code_error.is_some() {
+            match builder::parse(&crate::editor::text(&self.editor)) {
+                Ok(blocks) => {
+                    if blocks != self.doc.blocks {
+                        self.doc.edit(|t| {
+                            *t = blocks;
+                            true
+                        });
+                    }
+                    self.due = None;
+                    self.code_error = None;
+                }
+                Err(builder::Error::Syntax { line, msg }) => {
+                    self.code_error = Some(fl!("builder-line", line = line, msg = msg));
+                    self.code_open = true;
+                    return false;
+                }
+                Err(builder::Error::Python(e)) => {
+                    self.error = Some(e);
+                    return false;
+                }
+            }
+        }
         let done = self.doc.edit(f);
         if done {
             self.changed();
@@ -304,8 +361,6 @@ impl BuilderView {
                 };
                 match (text.trim().is_empty() && p.default.is_some(), p.ty) {
                     (true, _) => Ok(String::new()),
-                    // Several arguments in one field: Python as typed.
-                    (false, _) if p.name.starts_with('*') => Ok(text.clone()),
                     (false, ty) => field::typed(ty, &text),
                 }
             }
@@ -356,6 +411,8 @@ impl BuilderView {
             }
             BuilderMsg::Field(p, f, t) => self.field(p, f, t),
             BuilderMsg::AddBranch(p) => {
+                // Bodies after it shift: typed-field state keyed by place is stale.
+                self.forget_typing();
                 self.edit(|t| match tape::get_mut(t, &p) {
                     Some(Block::If { branches, .. }) => {
                         branches.push(("True".into(), vec![]));
@@ -376,6 +433,7 @@ impl BuilderView {
                 });
             }
             BuilderMsg::AddHandler(p) => {
+                self.forget_typing();
                 self.edit(|t| match tape::get_mut(t, &p) {
                     Some(Block::Try { handlers, .. }) => {
                         handlers.push(shagshell_core::builder::Handler {
@@ -1264,6 +1322,9 @@ impl BuilderView {
         );
         if self.code_open {
             crate::editor::follow_theme(&self.editor);
+            // ponytail: lines wrap, so there is never a sideways scroll to keep; reset each draw
+            // (the editor scrolls itself while it has no width yet). Keep it if wrap goes off.
+            crate::editor::scroll_home(&self.editor);
             col = col.push(
                 widget::container(
                     crate::editor::text_box::text_box(&self.editor, crate::editor::metrics(FONT))

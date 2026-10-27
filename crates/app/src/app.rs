@@ -94,6 +94,8 @@ pub struct App {
     tool_edit: Option<(shagshell_core::toolbar::ToolEdit, Vec<String>)>,
     /// Help → About is shown (a dialog: the context drawer is at least 344 px wide).
     about: bool,
+    /// File → Exit asked first: Script Builder work is unsaved.
+    exit_ask: bool,
     /// The result of a check made from the About dialog, shown in it.
     about_note: Option<String>,
     /// The tabs of the last time, opened when the terminals can start (`TermTx`).
@@ -193,6 +195,8 @@ pub enum Message {
     BuilderPicked(Option<std::path::PathBuf>),
     /// The pointer came up while a Script Builder block was dragged.
     BuilderRelease,
+    /// «Unsaved scripts, exit?» answered Cancel.
+    ExitCancel,
     /// A note bar's button shown / hidden (index into `core::notes::BUTTONS`).
     NoteButton(u8),
     NoteTick,
@@ -336,6 +340,7 @@ impl Application for App {
             tool_edit: None,
             restore: Vec::new(),
             about: false,
+            exit_ask: false,
             about_note: None,
             schedule: Default::default(),
             schedule_broken: false,
@@ -644,6 +649,7 @@ impl Application for App {
             .or_else(|| self.about.then(|| about::view(self.about_note.as_deref())))
             .or_else(|| self.buttons.dialog())
             .or_else(|| (self.tool_edit.as_ref()).map(|(t, l)| toolbar::editor(t, l)))
+            .or_else(|| self.exit_ask.then(|| self.exit_dialog()))
             .or_else(|| self.tabs.dialog())
             .or_else(|| self.quick.as_ref().map(QuickConnect::view))
             .or_else(|| self.sessions.dialog())
@@ -1555,6 +1561,7 @@ impl App {
                 }
                 return Task::batch(tasks);
             }
+            Message::ExitCancel => self.exit_ask = false,
             Message::BuilderRelease => {
                 if let Some(id) = self.tabs.builder_dragging() {
                     let out = self
@@ -1822,6 +1829,9 @@ impl App {
             return task;
         }
         match action {
+            Action::Exit if !self.exit_ask && self.tabs.unsaved_builders() > 0 => {
+                self.exit_ask = true;
+            }
             Action::Exit => {
                 self.tabs.save_notes();
                 let _ = std::fs::remove_file(askpass_sock(&self.control_dir));
@@ -2726,6 +2736,20 @@ impl App {
     }
 
     /// A note tab for `path`: the one that has it is shown, else a new one.
+    /// File → Exit with Script Builder work unsaved.
+    fn exit_dialog(&self) -> Element<'_, Message> {
+        widget::dialog()
+            .icon(crate::dialog_icons::Kind::Warning.icon(48))
+            .title(fl!("builder-exit-title", n = self.tabs.unsaved_builders()))
+            .body(fl!("builder-exit-body"))
+            .primary_action(
+                widget::button::destructive(fl!("builder-exit"))
+                    .on_press(Message::Action(Action::Exit)),
+            )
+            .secondary_action(widget::button::standard(fl!("cancel")).on_press(Message::ExitCancel))
+            .into()
+    }
+
     /// A Script Builder tab: a new tape, or `path` as blocks (shown if already open).
     fn open_builder(&mut self, path: Option<std::path::PathBuf>) -> Task<Message> {
         if let Some(p) = &path {

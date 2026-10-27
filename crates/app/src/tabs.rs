@@ -867,6 +867,13 @@ impl Tabs {
             .map(|(id, _)| *id)
     }
 
+    /// Script Builder tabs with unsaved work.
+    pub fn unsaved_builders(&self) -> usize {
+        (self.tabs.values())
+            .filter(|t| matches!(&t.body, Body::Builder(v) if v.unsaved()))
+            .count()
+    }
+
     /// Some Script Builder waits to parse its code.
     pub fn builders_due(&self) -> bool {
         (self.tabs.values()).any(|t| matches!(&t.body, Body::Builder(v) if v.due()))
@@ -1935,12 +1942,11 @@ impl Tabs {
                     .unwrap_or_default();
                 self.closed_recordings.push((title, r));
             }
-            if let Some(Tab {
-                body: Body::Note(v),
-                ..
-            }) = self.tabs.get_mut(&id)
-            {
-                v.save();
+            match self.tabs.get_mut(&id).map(|t| &mut t.body) {
+                Some(Body::Note(v)) => v.save(),
+                // Closed by the user (asked when unsaved): no recovery copy.
+                Some(Body::Builder(v)) => v.discard(),
+                _ => {}
             }
             self.user_locks.remove(&id);
             self.tabs.remove(&id); // its Drop ends the program
@@ -2626,12 +2632,16 @@ impl Tabs {
         };
         let id = *self.grid.as_ref()?.get(pane)?.model.data::<TabId>(e)?;
         let name = self.tabs.get(&id)?.title();
+        let body = match self.tabs.get(&id)?.body {
+            Body::Builder(_) => fl!("builder-close-body"),
+            _ => fl!("close-tab-body"),
+        };
         let msg = |m| Message::Tabs(m);
         Some(
             widget::dialog()
                 .icon(crate::dialog_icons::Kind::Warning.icon(48))
                 .title(fl!("close-tab-title", name = name))
-                .body(fl!("close-tab-body"))
+                .body(body)
                 .primary_action(
                     widget::button::destructive(fl!("close"))
                         .on_press(msg(TabsMsg::CloseConfirmed)),

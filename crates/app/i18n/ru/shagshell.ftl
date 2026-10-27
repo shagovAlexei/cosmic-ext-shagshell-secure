@@ -811,3 +811,7 @@ ty-choice = выбор из списка
 ty-session = сессия
 ty-file = файл
 ty-expr = выражение Python
+builder-close-body = Скрипт не сохранён: изменения пропадут.
+builder-exit-title = Не сохранено скриптов: { $n }
+builder-exit-body = Всё равно выйти? Изменения пропадут.
+builder-exit = Выйти без сохранения
