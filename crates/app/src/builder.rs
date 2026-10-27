@@ -156,8 +156,11 @@ pub enum Out {
 /// A run from the tab (or the last one: its marks stay until the next edit).
 struct Run {
     id: Option<u64>,
-    /// Every block's first line in the code that runs.
+    /// The tape and its lines in the code that runs.
+    blocks: Vec<Block>,
     map: Vec<(Pos, usize)>,
+    /// The blocks light up (⚙); off: only a pause shows.
+    trace: bool,
     dbg: Option<Arc<Debugger>>,
     seen: HashSet<Pos>,
     current: Option<Pos>,
@@ -221,11 +224,20 @@ pub struct BuilderView {
     trace: bool,
     stops: bool,
     settings_open: bool,
+    /// This tab's own file for code that runs unsaved.
+    uid: u64,
 }
+
+static NEXT_UID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 impl Drop for BuilderView {
     /// The app ends (window closed) with work not saved: it is kept in `scripts/unsaved/`.
+    /// A run stopped at a breakpoint goes on: no window is left to say Continue.
     fn drop(&mut self) {
+        if let Some(d) = self.run.as_ref().and_then(|r| r.dbg.as_ref()) {
+            d.set_breaks([]);
+            d.resume(Mode::Run);
+        }
         if self.discarded || !self.unsaved() {
             return;
         }
@@ -294,6 +306,7 @@ impl BuilderView {
             trace: true,
             stops: true,
             settings_open: false,
+            uid: NEXT_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         })
     }
 
@@ -514,11 +527,13 @@ impl BuilderView {
 
     /// Blocks in the order written (↑ / ↓).
     fn order(&self) -> Vec<Pos> {
-        builder::generate_map(&self.doc.blocks)
-            .1
-            .into_iter()
-            .map(|(p, _)| p)
-            .collect()
+        let mut out: Vec<Pos> = vec![];
+        for (p, _) in builder::generate_map(&self.doc.blocks).1 {
+            if !out.contains(&p) {
+                out.push(p);
+            }
+        }
+        out
     }
 
     fn field(&mut self, pos: Pos, f: F, text: String) {
@@ -767,16 +782,18 @@ impl BuilderView {
             }
             BuilderMsg::Run if !self.ready() || self.running() => {}
             BuilderMsg::Run => {
-                let path = match (&self.path, self.unsaved()) {
-                    (Some(p), false) => p.clone(),
+                // The lines that light up are those of the generated code: a file on disk runs
+                // only when it is that code (opened files are written back in our layout).
+                let (code, map) = builder::generate_map(&self.doc.blocks);
+                let path = match &self.path {
+                    Some(p) if std::fs::read_to_string(p).is_ok_and(|t| t == code) => p.clone(),
                     _ => {
                         let dir = std::env::var_os("XDG_RUNTIME_DIR")
                             .map_or_else(std::env::temp_dir, PathBuf::from)
                             .join("shagshell");
-                        let p = dir.join(format!("builder-{}.py", std::process::id()));
-                        let code = builder::generate(&self.doc.blocks);
+                        let p = dir.join(format!("builder-{}-{}.py", std::process::id(), self.uid));
                         if let Err(e) =
-                            std::fs::create_dir_all(&dir).and_then(|()| std::fs::write(&p, code))
+                            std::fs::create_dir_all(&dir).and_then(|()| std::fs::write(&p, &code))
                         {
                             self.error = Some(format!("{}: {e}", p.display()));
                             return Out::None;
@@ -784,21 +801,19 @@ impl BuilderView {
                         p
                     }
                 };
-                let map = builder::generate_map(&self.doc.blocks).1;
+                let blocks = self.doc.blocks.clone();
                 let dbg = (self.trace || self.stops).then(|| {
-                    let lines = (self.stops)
-                        .then(|| {
-                            map.iter()
-                                .filter(|(p, _)| self.breaks.contains(p))
-                                .map(|(_, l)| *l as u64)
-                        })
-                        .into_iter()
-                        .flatten();
+                    let lines = match self.stops {
+                        true => builder::break_lines(&blocks, &map, |p| self.breaks.contains(p)),
+                        false => vec![],
+                    };
                     Arc::new(Debugger::new(lines))
                 });
                 self.run = dbg.as_ref().map(|d| Run {
                     id: None,
+                    blocks,
                     map,
+                    trace: self.trace,
                     dbg: Some(d.clone()),
                     seen: HashSet::new(),
                     current: None,
@@ -816,10 +831,9 @@ impl BuilderView {
                 if let Some(r) = self.run.as_ref().filter(|r| r.live())
                     && let Some(d) = &r.dbg
                 {
-                    let lines = (r.map.iter())
-                        .filter(|(p, _)| self.breaks.contains(p))
-                        .map(|(_, l)| *l as u64);
-                    d.set_breaks(lines);
+                    d.set_breaks(builder::break_lines(&r.blocks, &r.map, |p| {
+                        self.breaks.contains(p)
+                    }));
                 }
             }
             BuilderMsg::Started(n) => {
@@ -1736,9 +1750,9 @@ impl BuilderView {
             .map(|(_, e)| e.clone());
         let error = broken.or(bad).or(run_error);
         // Light-up of a run: where it is (paused: there), what it went through.
-        let current = run.is_some_and(|r| r.current.as_ref() == Some(&pos) && r.live());
+        let current = run.is_some_and(|r| r.trace && r.current.as_ref() == Some(&pos) && r.live());
         let paused_here = run.is_some_and(|r| r.paused.as_ref().is_some_and(|(p, _)| *p == pos));
-        let seen = run.is_some_and(|r| r.seen.contains(&pos));
+        let seen = run.is_some_and(|r| r.trace && r.seen.contains(&pos));
         // A paused run's value of what this block keeps.
         let var = match b {
             Block::Call {

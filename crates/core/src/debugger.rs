@@ -94,6 +94,11 @@ impl Debugger {
         cancel: &AtomicBool,
         notify: &dyn Fn(Event),
     ) {
+        // Continue came first: the window hears of no pause. (`notify` runs unlocked: it may
+        // answer with `resume`.)
+        if !self.state().paused {
+            return;
+        }
         notify(Event::Paused { line, vars });
         let mut st = self.state();
         while st.paused && !cancel.load(Ordering::SeqCst) {
@@ -191,17 +196,35 @@ mod tests {
         let d = Debugger::new([1]);
         let (ev, notify) = events();
         assert!(d.line(1, &notify));
-        d.resume(Mode::Run); // before: the wait returns at once
+        let d = Arc::new(d);
+        let d2 = d.clone();
+        let t = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(50));
+            d2.resume(Mode::Run);
+        });
         d.paused(
             1,
             vec![("n".into(), "3".into())],
             &AtomicBool::new(false),
             &notify,
         );
+        t.join().unwrap();
         assert!(ev.lock().unwrap().contains(&Event::Paused {
             line: 1,
             vars: vec![("n".into(), "3".into())]
         }));
+    }
+
+    #[test]
+    fn regression_continue_before_paused_tells_nothing() {
+        // Continue pressed between `line` (stop) and `paused`: the window must not show a
+        // pause that is already over.
+        let d = Debugger::new([1]);
+        let (ev, notify) = events();
+        assert!(d.line(1, &notify));
+        d.resume(Mode::Run);
+        d.paused(1, vec![], &AtomicBool::new(false), &notify);
+        assert!(!(ev.lock().unwrap().iter()).any(|e| matches!(e, Event::Paused { .. })));
     }
 
     #[test]

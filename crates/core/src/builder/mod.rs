@@ -89,11 +89,35 @@ pub enum Block {
     },
 }
 
-/// The code and every block's first line (1-based), in the order written.
+/// The code and every block's first line (1-based), in the order written; a compound block also
+/// has the lines Python stops on further down (`elif`, `except`, the `each_host(…)` call).
 pub fn generate_map(blocks: &[Block]) -> (String, Vec<(tape::Pos, usize)>) {
     let mut w = Writer::default();
     w.list(blocks, 0, &[], 0);
     (w.out, w.map)
+}
+
+/// The lines breakpoints on the blocks `on` takes stop at, in code with this `map`: a block's
+/// first line; «for each host» its `each_host(…)` call (the `def` runs once, before any host);
+/// never a comment or a blank line (Python stops on none).
+pub fn break_lines(
+    blocks: &[Block],
+    map: &[(tape::Pos, usize)],
+    on: impl Fn(&tape::Pos) -> bool,
+) -> Vec<u64> {
+    let mut out = vec![];
+    for (i, (p, l)) in map.iter().enumerate() {
+        if !on(p) || map[..i].iter().any(|(q, _)| q == p) {
+            continue;
+        }
+        let line = match tape::get(blocks, p) {
+            Some(Block::Comment { .. } | Block::Blank) | None => continue,
+            Some(Block::ForHost { .. }) => map.iter().rfind(|(q, _)| q == p).map_or(*l, |m| m.1),
+            Some(_) => *l,
+        };
+        out.push(line as u64);
+    }
+    out
 }
 
 /// The block written last at or before `line` (where a syntax error of the code is).
@@ -146,6 +170,11 @@ impl Writer {
         self.lines += 1;
     }
 
+    /// The next line written is `pos`'s too.
+    fn mark(&mut self, pos: &[(usize, usize)]) {
+        self.map.push((pos.to_vec(), self.lines + 1));
+    }
+
     /// A compound statement's body (`body`-th of the block at `at`): `pass` when it has no
     /// statement (Python needs one).
     fn body(&mut self, blocks: &[Block], level: usize, at: &[(usize, usize)], body: usize) {
@@ -188,6 +217,9 @@ impl Writer {
             Block::If { branches, orelse } => {
                 for (i, (cond, b)) in branches.iter().enumerate() {
                     let kw = if i == 0 { "if" } else { "elif" };
+                    if i > 0 {
+                        self.mark(pos);
+                    }
                     self.line(level, &format!("{kw} {cond}:"));
                     self.body(b, level + 1, pos, i);
                 }
@@ -221,6 +253,7 @@ impl Writer {
                         (Some(t), None) => format!("except {t}:"),
                         _ => "except:".to_string(),
                     };
+                    self.mark(pos);
                     self.line(level, &head);
                     self.body(&h.body, level + 1, pos, i + 1);
                 }
@@ -244,6 +277,7 @@ impl Writer {
                 self.line(level, &format!("def {func}(tab, host):"));
                 self.body(body, level + 1, pos, 0);
                 let p = if *parallel { "True" } else { "False" };
+                self.mark(pos);
                 self.line(
                     level,
                     &format!("each_host({hosts}, {func}, parallel={p}, limit={limit})"),
@@ -311,6 +345,60 @@ mod tests {
                 (vec![(0, 1), (0, 1), (1, 0)], 7),
             ]
         );
+    }
+
+    #[test]
+    fn regression_map_branch_headers() {
+        // Python stops on `elif` / `except` / the `each_host(…)` call: they are their block's,
+        // not the one written last above them (an untaken branch would light up).
+        let b = vec![
+            Block::If {
+                branches: vec![
+                    (s("a"), vec![call("f", &[])]),
+                    (s("b"), vec![call("g", &[])]),
+                ],
+                orelse: vec![],
+            },
+            Block::Try {
+                body: vec![call("h", &[])],
+                handlers: vec![Handler {
+                    ty: None,
+                    name: None,
+                    body: vec![call("k", &[])],
+                }],
+                finally: None,
+            },
+            Block::ForHost {
+                hosts: s("hosts"),
+                func: s("_host_1"),
+                parallel: false,
+                limit: s("10"),
+                body: vec![call("run", &["tab", "'x'"])],
+            },
+        ];
+        let (code, map) = generate_map(&b);
+        let line = |text: &str| code.lines().position(|l| l.trim() == text).unwrap() + 1;
+        let at = |l: usize| map.iter().find(|(_, n)| *n == l).map(|(p, _)| p.clone());
+        assert_eq!(at(line("elif b:")), Some(vec![(0, 0)]));
+        assert_eq!(at(line("except:")), Some(vec![(0, 1)]));
+        let call = "each_host(hosts, _host_1, parallel=False, limit=10)";
+        assert_eq!(at(line(call)), Some(vec![(0, 2)]));
+        // A breakpoint on «for each host» stops at the call, not at the `def` (run once).
+        let on = |p: &tape::Pos| p == &vec![(0, 2)];
+        assert_eq!(break_lines(&b, &map, on), vec![line(call) as u64]);
+        let on = |p: &tape::Pos| p == &vec![(0, 0)];
+        assert_eq!(break_lines(&b, &map, on), vec![1]);
+    }
+
+    #[test]
+    fn breakpoints_skip_comments() {
+        let b = vec![
+            Block::Comment { text: s("x") },
+            Block::Blank,
+            call("f", &[]),
+        ];
+        let map = generate_map(&b).1;
+        assert_eq!(break_lines(&b, &map, |_| true), vec![3]);
     }
 
     #[test]

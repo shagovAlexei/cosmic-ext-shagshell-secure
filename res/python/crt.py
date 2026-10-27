@@ -344,12 +344,18 @@ def __getattr__(name):  # `import crt; crt.Screen.Send(...)`
 
 def _vars(frame):
     """The frame's variables a person wants on a pause: no modules, functions, classes, dunders."""
+    import reprlib
     import types
+    short = reprlib.Repr(maxstring=110, maxother=110, maxlong=110)
+    skip = (types.ModuleType, types.FunctionType, types.BuiltinFunctionType, type)
     out = []
     for k, v in frame.f_locals.items():
-        if k.startswith("__") or k == "crt" or isinstance(v, (types.ModuleType, types.FunctionType, type)):
+        if k.startswith("__") or k == "crt" or isinstance(v, skip):
             continue
-        r = repr(v)
+        try:  # a value's own __repr__ failing must not fail the script
+            r = short.repr(v)
+        except Exception:
+            r = "<?>"
         out.append([k, r if len(r) <= 120 else r[:117] + "..."])
     return out
 
