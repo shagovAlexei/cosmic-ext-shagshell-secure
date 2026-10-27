@@ -176,6 +176,9 @@ pub fn typed(ty: Ty, input: &str) -> Result<String, Bad> {
 
 /// The Python text a call / property of `e` starts with: `crt.Screen.Send`, `tab.Activate`.
 fn func_of(e: &Entry) -> String {
+    if let Some(f) = e.path.strip_prefix("blocks.") {
+        return f.to_string();
+    }
     match e.path.strip_prefix("Tab.") {
         Some(m) => format!("tab.{m}"),
         None => format!("crt.{}", e.path),

@@ -1,6 +1,7 @@
 //! The program's own files, built into the binary and written under `~/.config/shagshell/scripts`
-//! at start (one place for everything; no `/usr/share`). `.lib/` is ours and rewritten when it
-//! differs; examples are written only when missing, so the user's edits stay.
+//! at start (one place for everything; no `/usr/share`). `.lib/` and `shag_blocks.py` are ours and
+//! rewritten when they differ; examples and templates are written only when missing, so the user's
+//! edits stay.
 
 use std::path::Path;
 
@@ -10,6 +11,25 @@ pub const LIB: &[(&str, &str)] = &[
     (
         "shag_parse.py",
         include_str!("../../../res/python/shag_parse.py"),
+    ),
+];
+
+/// `scripts/shag_blocks.py`: the Script Builder's big blocks, next to the scripts (ours: rewritten).
+pub const BLOCKS: &str = include_str!("../../../res/python/shag_blocks.py");
+
+/// `scripts/templates/`: the Script Builder's ready templates (written when missing).
+pub const TEMPLATES: &[(&str, &str)] = &[
+    (
+        "01_output_to_clipboard.py",
+        include_str!("../../../res/builder-templates/01_output_to_clipboard.py"),
+    ),
+    (
+        "02_hosts_to_file.py",
+        include_str!("../../../res/builder-templates/02_hosts_to_file.py"),
+    ),
+    (
+        "03_parallel_logs.py",
+        include_str!("../../../res/builder-templates/03_parallel_logs.py"),
     ),
 ];
 
@@ -97,12 +117,18 @@ pub fn install(scripts: &Path) -> std::io::Result<()> {
             std::fs::write(p, text)?;
         }
     }
-    let ex = scripts.join("examples");
-    std::fs::create_dir_all(&ex)?;
-    for (name, text) in EXAMPLES {
-        let p = ex.join(name);
-        if !p.exists() {
-            std::fs::write(p, text)?;
+    let blocks = scripts.join("shag_blocks.py");
+    if std::fs::read_to_string(&blocks).ok().as_deref() != Some(BLOCKS) {
+        std::fs::write(blocks, BLOCKS)?;
+    }
+    for (dir, files) in [("examples", EXAMPLES), ("templates", TEMPLATES)] {
+        let d = scripts.join(dir);
+        std::fs::create_dir_all(&d)?;
+        for (name, text) in files {
+            let p = d.join(name);
+            if !p.exists() {
+                std::fs::write(p, text)?;
+            }
         }
     }
     Ok(())
@@ -128,6 +154,27 @@ mod tests {
                 *text
             );
         }
+    }
+
+    #[test]
+    fn install_writes_blocks_and_templates() {
+        let d = tempfile::tempdir().unwrap();
+        install(d.path()).unwrap();
+        for (n, text) in TEMPLATES {
+            assert_eq!(
+                std::fs::read_to_string(d.path().join("templates").join(n)).unwrap(),
+                *text
+            );
+        }
+        let blocks = d.path().join("shag_blocks.py");
+        assert_eq!(std::fs::read_to_string(&blocks).unwrap(), BLOCKS);
+        std::fs::write(&blocks, "old").unwrap();
+        install(d.path()).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&blocks).unwrap(),
+            BLOCKS,
+            "ours: rewritten"
+        );
     }
 
     #[test]

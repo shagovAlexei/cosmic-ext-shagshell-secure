@@ -597,6 +597,79 @@ pub static CATALOG: &[Entry] = &[
         ],
         "crt.FileTransfer.Download('/etc/hostname')",
     ),
+    // blocks: `res/python/shag_blocks.py` (`from shag_blocks import *`)
+    m(
+        "blocks.prompt",
+        &[d("tab", Expr, "None"), d("timeout", Number, "60")],
+        "str",
+        [
+            "The prompt the tab shows, once the login is over.",
+            "Приглашение, которое показывает вкладка, когда вход закончен.",
+        ],
+        "p = prompt(tab)",
+    ),
+    m(
+        "blocks.run",
+        &[p("tab", Expr), p("cmd", Text), d("timeout", Number, "30")],
+        "str",
+        [
+            "Runs a command: types it and Enter, waits for the prompt; its output (also into the tab's log_to file). tab None: the script's tab.",
+            "Выполняет команду: печатает её и Enter, ждёт приглашения; возвращает вывод (и пишет в файл log_to вкладки). tab None — вкладка скрипта.",
+        ],
+        "out = run(tab, 'show version')",
+    ),
+    m(
+        "blocks.read_list",
+        &[p("path", File)],
+        "list",
+        [
+            "The lines of a file, without empty ones and # comments.",
+            "Строки файла без пустых и комментариев #.",
+        ],
+        "hosts = read_list('~/hosts.txt')",
+    ),
+    m(
+        "blocks.log_to",
+        &[p("tab", Expr), p("path", File)],
+        "str",
+        [
+            "From now on run writes this tab's commands and output to path (%S tab title, %Y %M %D date, %h %m %s time).",
+            "Дальше run пишет команды и вывод этой вкладки в path (%S заголовок вкладки, %Y %M %D дата, %h %m %s время).",
+        ],
+        "log_to(tab, '~/logs/%S_%Y%M%D.log')",
+    ),
+    m(
+        "blocks.append_file",
+        &[p("path", File), p("text", Expr)],
+        "",
+        [
+            "Adds text and a line end at the end of a file.",
+            "Дописывает text и перевод строки в конец файла.",
+        ],
+        "append_file('~/report.txt', out)",
+    ),
+    m(
+        "blocks.to_clipboard",
+        &[p("text", Expr)],
+        "",
+        ["Puts text on the clipboard.", "Кладёт text в буфер обмена."],
+        "to_clipboard(out)",
+    ),
+    m(
+        "blocks.each_host",
+        &[
+            p("hosts", Expr),
+            p("func", Expr),
+            d("parallel", Bool, "False"),
+            d("limit", Number, "10"),
+        ],
+        "list",
+        [
+            "For every saved session in hosts: connect, func(tab, host), disconnect; the failed ones as (host, error).",
+            "Для каждой сохранённой сессии из hosts: подключиться, func(tab, host), отключиться; возвращает неудачные (хост, ошибка).",
+        ],
+        "each_host(hosts, check)",
+    ),
 ];
 
 /// The groups whose members are reached through any object holding them (`tab.Screen.Send`).
@@ -615,6 +688,9 @@ pub fn lookup(func: &str) -> Option<&'static Entry> {
     let find = |path: &str| CATALOG.iter().find(|e| e.path == path);
     if let Some(e) = func.strip_prefix("crt.").and_then(find) {
         return Some(e);
+    }
+    if !func.contains('.') {
+        return find(&format!("blocks.{func}"));
     }
     let (recv, last) = func.rsplit_once('.')?;
     let group = recv.rsplit('.').next().unwrap_or(recv);
@@ -655,6 +731,10 @@ for cls, g in [("_Crt", ""), ("_Screen", "Screen"), ("_Session", "Session"), ("_
             ps = list(inspect.signature(v).parameters.values())[1:]
             pre = {inspect.Parameter.VAR_POSITIONAL: "*", inspect.Parameter.VAR_KEYWORD: "**"}
             out[path] = [pre.get(p.kind, "") + p.name for p in ps]
+import shag_blocks
+for n in shag_blocks.__all__:
+    ps = list(inspect.signature(getattr(shag_blocks, n)).parameters.values())
+    out["blocks." + n] = [p.name for p in ps]
 print(json.dumps(out))
 "#;
         let o = Command::new("python3")
@@ -714,5 +794,7 @@ print(json.dumps(out))
         assert!(lookup("x.Sleep").is_none());
         assert!(lookup("os.path.join").is_none());
         assert!(lookup("foo").is_none());
+        assert_eq!(lookup("run").unwrap().path, "blocks.run");
+        assert!(lookup("x.run").is_none());
     }
 }
