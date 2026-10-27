@@ -274,6 +274,16 @@ impl BuilderView {
             Some(p) => load(p)?,
             None => vec![],
         };
+        Self::with(path, blocks)
+    }
+
+    /// The blocks of `code` (a recording) as a new script: no file, nothing saved yet.
+    pub fn from_code(code: &str) -> Result<Self, String> {
+        let blocks = builder::parse(code).map_err(|e| e.to_string())?;
+        Ok(Self::with(None, blocks)?.untitled())
+    }
+
+    fn with(path: Option<PathBuf>, blocks: Vec<Block>) -> Result<Self, String> {
         let editor = crate::editor::from_text(&builder::generate(&blocks), "py", FONT)
             .map_err(|e| e.to_string())?;
         Ok(Self {

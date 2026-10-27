@@ -2371,6 +2371,16 @@ impl App {
         let text = rec.script(&format!(
             "Recorded by ShagShell Secure from «{title}», {when}"
         ));
+        // Opened as blocks, saved from the builder tab; the file dialog only when it can't be
+        // (no python3 to parse it).
+        match crate::builder::BuilderView::from_code(&text) {
+            Ok(v) => {
+                let task = self.open_builder(None);
+                self.tabs.replace_builder(v);
+                return task;
+            }
+            Err(e) => log::warn!("recording as blocks: {e}"),
+        }
         Task::perform(
             crate::script::save_script(fl!("rec-save-title"), self.script_start_dir()),
             move |p| cosmic::Action::App(Message::RecordSaved(text.clone(), p)),

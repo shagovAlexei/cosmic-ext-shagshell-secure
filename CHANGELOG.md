@@ -2,6 +2,9 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.91.0 — 2026-10-27
+- feat: Script → Stop Recording opens the recording in a Script Builder tab as blocks (unsaved, saved from the tab); a password step is its own «Dialog.Prompt → password» block; the save dialog only when it can't be parsed
+
 ## 0.90.0 — 2026-10-27
 - feat: the Script Console opens in a group under the terminals; Global Options → Interface → «Where the script console opens» (Bottom / Right)
 
