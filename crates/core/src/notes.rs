@@ -120,15 +120,11 @@ pub fn default_buttons() -> Vec<String> {
         .to_vec()
 }
 
-/// `name` shown or hidden; the list stays in `BUTTONS` order, unknown names dropped.
-pub fn toggle(list: &[String], name: &str) -> Vec<String> {
-    let on = |b: &str| (b == name) != list.iter().any(|l| l == b);
-    BUTTONS
-        .iter()
-        .filter(|b| on(b))
-        .map(|b| b.to_string())
-        .collect()
-}
+/// The bar: shown / hidden and moved in the note tab's «⋯».
+pub const BAR: crate::bar::Bar = crate::bar::Bar {
+    all: &BUTTONS,
+    keep: None,
+};
 
 #[cfg(test)]
 mod tests {
@@ -235,14 +231,8 @@ mod tests {
     }
 
     #[test]
-    fn buttons_toggle_in_bar_order() {
+    fn default_buttons_are_known() {
         let d = default_buttons();
-        assert!(d.iter().all(|b| BUTTONS.contains(&b.as_str())));
-        let l = toggle(&d, "Lock");
-        assert_eq!(l.last().map(String::as_str), Some("Lock"));
-        assert_eq!(toggle(&l, "Lock"), d);
-        let l = toggle(&["Open".into(), "Gone".into()], "Save");
-        assert_eq!(l, vec!["Save".to_string(), "Open".to_string()]);
-        assert!(toggle(&["Save".into()], "Save").is_empty());
+        assert_eq!(BAR.clean(&d), d);
     }
 }

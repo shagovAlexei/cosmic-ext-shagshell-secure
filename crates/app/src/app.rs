@@ -197,8 +197,8 @@ pub enum Message {
     BuilderRelease,
     /// «Unsaved scripts, exit?» answered Cancel.
     ExitCancel,
-    /// A note bar's button shown / hidden (index into `core::notes::BUTTONS`).
-    NoteButton(u8),
+    /// A note bar's buttons now (its «⋯»).
+    NoteButtons(Vec<String>),
     /// The Script Builder bar's buttons now (its «⋯»).
     BuilderButtons(Vec<String>),
     NoteTick,
@@ -287,8 +287,8 @@ impl Application for App {
         let hl_broken = hl_error.is_some();
         let mut tabs = Tabs::default();
         tabs.set_sftp_prefs(&config);
-        tabs.note_buttons = config.note_buttons.clone();
-        tabs.builder_buttons = shagshell_core::builder::bar::clean(&config.builder_buttons);
+        tabs.note_buttons = shagshell_core::notes::BAR.clean(&config.note_buttons);
+        tabs.builder_buttons = shagshell_core::builder::bar::BAR.clean(&config.builder_buttons);
         tabs.set_note_font(&config.note_font_family, config.note_font_px());
         tabs.set_log_prefs(&config);
         let scripts = crate::script::Scripts::new(tabs.taps.clone(), control_dir.clone());
@@ -1111,9 +1111,10 @@ impl App {
                     self.refresh_scripts();
                 }
                 self.tabs.set_sftp_prefs(&self.config);
-                self.tabs.note_buttons = self.config.note_buttons.clone();
+                self.tabs.note_buttons =
+                    shagshell_core::notes::BAR.clean(&self.config.note_buttons);
                 self.tabs.builder_buttons =
-                    shagshell_core::builder::bar::clean(&self.config.builder_buttons);
+                    shagshell_core::builder::bar::BAR.clean(&self.config.builder_buttons);
                 let px = self.config.note_font_px();
                 self.tabs
                     .set_note_font(&self.config.note_font_family.clone(), px);
@@ -1163,18 +1164,16 @@ impl App {
                     Err(e) => log::warn!("xdg-open: {e}"),
                 }
             }
-            Message::NoteButton(i) => {
-                if let Some(name) = shagshell_core::notes::BUTTONS.get(usize::from(i)) {
-                    self.config.note_buttons =
-                        shagshell_core::notes::toggle(&self.config.note_buttons, name);
-                    self.tabs.note_buttons = self.config.note_buttons.clone();
-                    self.save_config();
-                }
+            Message::NoteButtons(list) => {
+                self.config.note_buttons = list;
+                self.tabs.note_buttons =
+                    shagshell_core::notes::BAR.clean(&self.config.note_buttons);
+                self.save_config();
             }
             Message::BuilderButtons(list) => {
                 self.config.builder_buttons = list;
                 self.tabs.builder_buttons =
-                    shagshell_core::builder::bar::clean(&self.config.builder_buttons);
+                    shagshell_core::builder::bar::BAR.clean(&self.config.builder_buttons);
                 self.save_config();
             }
             Message::CloseAbout => {
