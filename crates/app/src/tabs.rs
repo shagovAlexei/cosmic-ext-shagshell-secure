@@ -469,6 +469,8 @@ pub struct Tabs {
     lock_ask: Option<LockAsk>,
     /// Config: the buttons a note's bar shows.
     pub note_buttons: Vec<String>,
+    /// The Script Builder bar (`Config.builder_buttons`, made sound).
+    pub builder_buttons: Vec<String>,
     /// Config: the notes' font family ("" = the system's monospace) and size.
     note_font: (String, f32),
     /// `crt.Session.Lock`: tab → the script run that locked it.
@@ -1719,7 +1721,11 @@ impl Tabs {
             Some(Tab {
                 body: Body::Builder(v),
                 ..
-            }) => v.view(id.unwrap_or_default(), &self.terminal_list()),
+            }) => v.view(
+                id.unwrap_or_default(),
+                &self.terminal_list(),
+                &self.builder_buttons,
+            ),
             Some(
                 tab @ Tab {
                     body: Body::Note(v),

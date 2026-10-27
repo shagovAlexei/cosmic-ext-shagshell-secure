@@ -739,6 +739,10 @@ note-undo = Отменить
 note-redo = Вернуть
 note-cut = Вырезать
 note-buttons = Кнопки панели
+builder-bar-left = Левее
+builder-bar-right = Правее
+builder-bar-reset = Как было
+builder-bar-target = Вкладка для запуска
 
 # Конструктор скриптов (spec 36)
 menu-script-builder = Конструктор скриптов…

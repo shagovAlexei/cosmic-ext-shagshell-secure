@@ -224,6 +224,8 @@ pub struct Config {
     pub note_font_size: u16,
     /// The buttons a note's bar shows (`core::notes::BUTTONS`), ticked in a note tab's menu.
     pub note_buttons: Vec<String>,
+    /// The Script Builder bar's buttons, in order (`core::builder::bar`), set in its «⋯».
+    pub builder_buttons: Vec<String>,
     /// Ctrl+Tab goes back to the tab used before (SecureCRT's option), not the next one.
     pub ctrl_tab_recent: bool,
     /// No tab bar while there is one tab (in one group).
@@ -367,6 +369,7 @@ impl Default for Config {
             cursor_blink: false,
             tabs_bottom: false,
             note_buttons: shagshell_core::notes::default_buttons(),
+            builder_buttons: shagshell_core::builder::bar::default_buttons(),
             note_font_family: String::new(),
             note_font_size: 14,
             strip_left: false,
