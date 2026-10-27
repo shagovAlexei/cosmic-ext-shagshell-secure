@@ -81,6 +81,38 @@ pub fn open(path: &Path, size: f32) -> std::io::Result<Mutex<ViEditor<'static, '
     Ok(Mutex::new(editor))
 }
 
+/// An editor holding `text`, highlighted as a file with extension `ext` (the Script Builder's
+/// code).
+pub fn from_text(
+    text: &str,
+    ext: &str,
+    size: f32,
+) -> std::io::Result<Mutex<ViEditor<'static, 'static>>> {
+    let mut buffer = Buffer::new_empty(metrics(size));
+    buffer.set_size(Some(0.0), Some(0.0));
+    let mut syntax = SyntaxEditor::new(Arc::new(buffer), &SYNTAX_SYSTEM, theme_name())
+        .ok_or_else(|| std::io::Error::other("no syntax theme"))?;
+    syntax.syntax_by_extension(ext);
+    let mut editor = ViEditor::new(syntax);
+    {
+        let mut fs = font_system().write().unwrap_or_else(|e| e.into_inner());
+        let mut e = editor.borrow_with(fs.raw());
+        e.set_passthrough(true);
+        e.set_auto_indent(true);
+        e.with_buffer_mut(|b| {
+            b.set_wrap(Wrap::WordOrGlyph);
+            b.set_text(
+                text,
+                &monospace_attrs(),
+                cosmic_text::Shaping::Advanced,
+                None,
+            );
+        });
+        e.set_changed(false);
+    }
+    Ok(Mutex::new(editor))
+}
+
 /// The whole text, line endings kept.
 pub fn text(editor: &Mutex<ViEditor<'static, 'static>>) -> String {
     let e = editor.lock().unwrap_or_else(|e| e.into_inner());
@@ -211,6 +243,18 @@ pub fn replace_text(editor: &Ed, text: &str) {
         e.insert_string(text, None);
         e.finish_change();
         e.set_cursor(cosmic_text::Cursor::new(0, 0));
+    });
+}
+
+/// Back to the start of the text: an editor made while hidden (no width) scrolled sideways to
+/// its cursor and would hide the first letters.
+pub fn scroll_home(editor: &Ed) {
+    with(editor, |e| {
+        e.with_buffer_mut(|b| {
+            let mut s = b.scroll();
+            s.horizontal = 0.0;
+            b.set_scroll(s);
+        });
     });
 }
 

@@ -736,3 +736,84 @@ note-undo = Undo
 note-redo = Redo
 note-cut = Cut
 note-buttons = Bar Buttons
+
+# Script Builder (spec 36)
+menu-script-builder = Script Builder…
+menu-script-open-builder = Open in Script Builder…
+builder-untitled = New script
+builder-new = New script
+builder-open = Open a script…
+builder-run = Run
+builder-on = on: { $tab }
+builder-no-tab = no tab
+builder-search = Find a command…
+builder-frequent = Frequent
+builder-other = Statements
+builder-help-none = Click a command or a block: what it does shows here. Double click or drag a command to add it.
+builder-more = More ▸
+builder-less = Less ▴
+builder-default = , default { $value }
+builder-returns = Returns: { $ty }
+builder-empty = Empty: double click a command on the left, or drag it here.
+builder-empty-body = (empty: drag a block here)
+builder-save-to = → save to
+builder-variable = variable
+builder-function = function
+builder-if = if
+builder-elif = else if
+builder-else = else
+builder-for = for each
+builder-in = in
+builder-while = while
+builder-with = with
+builder-try = try
+builder-except = on error
+builder-as = as
+builder-finally = at the end
+builder-def = function
+builder-add-elif = + else if
+builder-add-else = + else
+builder-add-except = + on error
+builder-add-finally = + at the end
+builder-raw-multi = Several lines: edit them in the code below.
+builder-required = Fill this in
+builder-not-number = Not a number (start with = for an expression)
+builder-line = line { $line }: { $msg }
+builder-code = Code
+builder-copy-all = Copy all
+stmt-assign = Variable
+stmt-assign-help = Keeps a value under a name: x = 5, hosts = ['r1', 'r2'].
+stmt-if = If
+stmt-if-help = Runs the blocks inside only when the condition is true; else if / else for the other cases.
+stmt-for = For each
+stmt-for-help = Runs the blocks inside once for every item: every line of a list, every host.
+stmt-while = While
+stmt-while-help = Runs the blocks inside again and again while the condition is true.
+stmt-with = With (a file)
+stmt-with-help = Opens a file for the blocks inside and closes it after: open('out.txt', 'w') as f.
+stmt-try = Try
+stmt-try-help = Runs the blocks inside; on an error the «on error» blocks run instead of stopping the script.
+stmt-def = Function
+stmt-def-help = Your own command made of the blocks inside; call it with «Call a function».
+stmt-call = Call a function
+stmt-call-help = Calls a function that is not a crt command: your own, or Python's (print, len…).
+stmt-comment = Comment
+stmt-comment-help = A note for people; the script ignores it.
+stmt-blank = Empty line
+stmt-blank-help = Space between blocks.
+stmt-raw = Custom Python
+stmt-raw-help = Any Python line for what no block does (import, return, x += 1…).
+ty-text = text
+ty-number = number
+ty-bool = yes / no
+ty-choice = one of a list
+ty-session = session
+ty-file = file
+ty-expr = Python expression
+builder-close-body = The script is not saved: the changes will be lost.
+builder-exit-title = { $n ->
+    [one] A script is not saved
+   *[other] { $n } scripts are not saved
+}
+builder-exit-body = Exit anyway? The changes will be lost.
+builder-exit = Exit without saving

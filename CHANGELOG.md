@@ -2,6 +2,9 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.87.0 — 2026-10-27
+- feat: Script → Script Builder… / Open in Script Builder…: a tab with a palette of every crt command and statement (search, help on hover and below), a tape of blocks with their fields (text, number, yes / no, a list; `=` for an expression), double click or drag to add, drag to move into if / for / try…, Delete / Ctrl+C / Ctrl+V / Ctrl+Z, the code below edited both ways, Save / Save As / Open, Run on a chosen terminal tab
+
 ## 0.86.1 — 2026-10-27
 - fix: everything of ours lives under `~/.config/shagshell`: `crt.py` / `shag_parse.py` are built into the binary and written to `scripts/.lib/` at start, the examples to `scripts/examples/` (only missing files, edits stay); nothing is installed to `/usr/share/shagshell` any more (an older copy there was what scripts picked up)
 

@@ -2,7 +2,9 @@
 //! `generate` writes the code; expressions are kept as Python text (as `ast.unparse` wrote them).
 
 pub mod catalog;
+pub mod field;
 mod parse;
+pub mod tape;
 
 pub use parse::{Error, parse};
 
@@ -78,34 +80,66 @@ pub enum Block {
     },
 }
 
+/// The code and every block's first line (1-based), in the order written.
+pub fn generate_map(blocks: &[Block]) -> (String, Vec<(tape::Pos, usize)>) {
+    let mut w = Writer::default();
+    w.list(blocks, 0, &[], 0);
+    (w.out, w.map)
+}
+
+/// The block written last at or before `line` (where a syntax error of the code is).
+pub fn at_line(map: &[(tape::Pos, usize)], line: usize) -> Option<&tape::Pos> {
+    map.iter()
+        .take_while(|(_, l)| *l <= line)
+        .last()
+        .map(|(p, _)| p)
+}
+
 /// The Python code of the blocks.
 pub fn generate(blocks: &[Block]) -> String {
-    let mut out = String::new();
-    write(&mut out, blocks, 0);
-    out
+    generate_map(blocks).0
 }
 
-fn line(out: &mut String, level: usize, text: &str) {
-    if !text.is_empty() {
-        out.push_str(&"    ".repeat(level));
-        out.push_str(text);
+#[derive(Default)]
+struct Writer {
+    out: String,
+    map: Vec<(tape::Pos, usize)>,
+    lines: usize,
+}
+
+impl Writer {
+    fn line(&mut self, level: usize, text: &str) {
+        if !text.is_empty() {
+            self.out.push_str(&"    ".repeat(level));
+            self.out.push_str(text);
+        }
+        self.out.push('\n');
+        self.lines += 1;
     }
-    out.push('\n');
-}
 
-/// A compound statement's body: `pass` when it has no statement (Python needs one).
-fn body(out: &mut String, blocks: &[Block], level: usize) {
-    write(out, blocks, level);
-    if blocks
-        .iter()
-        .all(|b| matches!(b, Block::Comment { .. } | Block::Blank))
-    {
-        line(out, level, "pass");
+    /// A compound statement's body (`body`-th of the block at `at`): `pass` when it has no
+    /// statement (Python needs one).
+    fn body(&mut self, blocks: &[Block], level: usize, at: &[(usize, usize)], body: usize) {
+        self.list(blocks, level, at, body);
+        if blocks
+            .iter()
+            .all(|b| matches!(b, Block::Comment { .. } | Block::Blank))
+        {
+            self.line(level, "pass");
+        }
     }
-}
 
-fn write(out: &mut String, blocks: &[Block], level: usize) {
-    for b in blocks {
+    /// The blocks of the `body`-th list of the block at `at` (the top list: `at` empty, body 0).
+    fn list(&mut self, blocks: &[Block], level: usize, at: &[(usize, usize)], body: usize) {
+        for (i, b) in blocks.iter().enumerate() {
+            let mut pos = at.to_vec();
+            pos.push((body, i));
+            self.map.push((pos.clone(), self.lines + 1));
+            self.block(b, level, &pos);
+        }
+    }
+
+    fn block(&mut self, b: &Block, level: usize, pos: &[(usize, usize)]) {
         match b {
             Block::Call { func, args, assign } => {
                 let args: Vec<String> = args
@@ -119,71 +153,64 @@ fn write(out: &mut String, blocks: &[Block], level: usize) {
                     .as_ref()
                     .map(|t| format!("{t} = "))
                     .unwrap_or_default();
-                line(out, level, &format!("{to}{func}({})", args.join(", ")));
+                self.line(level, &format!("{to}{func}({})", args.join(", ")));
             }
-            Block::Assign { target, value } => line(out, level, &format!("{target} = {value}")),
+            Block::Assign { target, value } => self.line(level, &format!("{target} = {value}")),
             Block::If { branches, orelse } => {
                 for (i, (cond, b)) in branches.iter().enumerate() {
                     let kw = if i == 0 { "if" } else { "elif" };
-                    line(out, level, &format!("{kw} {cond}:"));
-                    body(out, b, level + 1);
+                    self.line(level, &format!("{kw} {cond}:"));
+                    self.body(b, level + 1, pos, i);
                 }
                 if !orelse.is_empty() {
-                    line(out, level, "else:");
-                    body(out, orelse, level + 1);
+                    self.line(level, "else:");
+                    self.body(orelse, level + 1, pos, branches.len());
                 }
             }
-            Block::For {
-                target,
-                iter,
-                body: b,
-            } => {
-                line(out, level, &format!("for {target} in {iter}:"));
-                body(out, b, level + 1);
+            Block::For { target, iter, body } => {
+                self.line(level, &format!("for {target} in {iter}:"));
+                self.body(body, level + 1, pos, 0);
             }
-            Block::While { cond, body: b } => {
-                line(out, level, &format!("while {cond}:"));
-                body(out, b, level + 1);
+            Block::While { cond, body } => {
+                self.line(level, &format!("while {cond}:"));
+                self.body(body, level + 1, pos, 0);
             }
-            Block::With { items, body: b } => {
-                line(out, level, &format!("with {items}:"));
-                body(out, b, level + 1);
+            Block::With { items, body } => {
+                self.line(level, &format!("with {items}:"));
+                self.body(body, level + 1, pos, 0);
             }
             Block::Try {
-                body: b,
+                body,
                 handlers,
                 finally,
             } => {
-                line(out, level, "try:");
-                body(out, b, level + 1);
-                for h in handlers {
+                self.line(level, "try:");
+                self.body(body, level + 1, pos, 0);
+                for (i, h) in handlers.iter().enumerate() {
                     let head = match (&h.ty, &h.name) {
                         (Some(t), Some(n)) => format!("except {t} as {n}:"),
                         (Some(t), None) => format!("except {t}:"),
                         _ => "except:".to_string(),
                     };
-                    line(out, level, &head);
-                    body(out, &h.body, level + 1);
+                    self.line(level, &head);
+                    self.body(&h.body, level + 1, pos, i + 1);
                 }
                 if finally.is_some() || handlers.is_empty() {
-                    line(out, level, "finally:");
-                    body(out, finally.as_deref().unwrap_or_default(), level + 1);
+                    self.line(level, "finally:");
+                    let f = finally.as_deref().unwrap_or_default();
+                    self.body(f, level + 1, pos, handlers.len() + 1);
                 }
             }
-            Block::Def {
-                name,
-                params,
-                body: b,
-            } => {
-                line(out, level, &format!("def {name}({params}):"));
-                body(out, b, level + 1);
+            Block::Def { name, params, body } => {
+                self.line(level, &format!("def {name}({params}):"));
+                self.body(body, level + 1, pos, 0);
             }
-            Block::Comment { text } if text.is_empty() => line(out, level, "#"),
-            Block::Comment { text } => line(out, level, &format!("# {text}")),
-            Block::Blank => line(out, level, ""),
+            Block::Comment { text } if text.is_empty() => self.line(level, "#"),
+            Block::Comment { text } => self.line(level, &format!("# {text}")),
+            Block::Blank => self.line(level, ""),
             // ponytail: re-indents every line of Raw, a multi-line string literal inside a nested
             // Raw gets the indent too; keep Raw's own line offsets if that bites
-            Block::Raw { code } => code.lines().for_each(|l| line(out, level, l)),
+            Block::Raw { code } => code.lines().for_each(|l| self.line(level, l)),
         }
     }
 }
@@ -209,6 +236,50 @@ mod tests {
             args: args.iter().map(|a| arg(a)).collect(),
             assign: None,
         }
+    }
+
+    #[test]
+    fn map_nested_lines() {
+        let b = [
+            Block::Comment { text: s("a") },
+            Block::For {
+                target: s("x"),
+                iter: s("y"),
+                body: vec![
+                    call("f", &[]),
+                    Block::If {
+                        branches: vec![(s("c"), vec![call("g", &[])])],
+                        orelse: vec![call("h", &[])],
+                    },
+                ],
+            },
+        ];
+        let (code, map) = generate_map(&b);
+        assert_eq!(code, generate(&b));
+        assert_eq!(
+            map,
+            [
+                (vec![(0, 0)], 1),
+                (vec![(0, 1)], 2),
+                (vec![(0, 1), (0, 0)], 3),
+                (vec![(0, 1), (0, 1)], 4),
+                (vec![(0, 1), (0, 1), (0, 0)], 5),
+                (vec![(0, 1), (0, 1), (1, 0)], 7),
+            ]
+        );
+    }
+
+    #[test]
+    fn at_line_picks_last_started() {
+        let map = vec![
+            (vec![(0, 0)], 1),
+            (vec![(0, 1)], 2),
+            (vec![(0, 1), (0, 0)], 3),
+        ];
+        assert_eq!(at_line(&map, 3), Some(&vec![(0, 1), (0, 0)]));
+        assert_eq!(at_line(&map, 2), Some(&vec![(0, 1)]));
+        assert_eq!(at_line(&map, 9), Some(&vec![(0, 1), (0, 0)]));
+        assert_eq!(at_line(&map, 0), None);
     }
 
     #[test]

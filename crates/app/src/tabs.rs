@@ -121,6 +121,8 @@ pub struct Launch {
     pub note: Option<std::path::PathBuf>,
     /// The Script Console: a tab drawn by the app, not a program.
     pub console: bool,
+    /// The Script Builder: a new tape (`Some(None)`) or this `.py` as blocks.
+    pub builder: Option<Option<std::path::PathBuf>>,
     /// Logged from the start (the session says so).
     pub log: Option<LogSpec>,
     /// Connects again by itself when the connection drops.
@@ -149,6 +151,7 @@ impl Launch {
             sftp: false,
             note: None,
             console: false,
+            builder: None,
             log: None,
             auto_reconnect: None,
             logon: None,
@@ -175,6 +178,7 @@ impl Launch {
             sftp: true,
             note: None,
             console: false,
+            builder: None,
             session: None,
             ..self.clone()
         })
@@ -197,6 +201,8 @@ pub enum Body {
     Sftp(Box<SftpView>),
     /// A text / markdown file.
     Note(Box<crate::notes::NoteView>),
+    /// The Script Builder.
+    Builder(Box<crate::builder::BuilderView>),
     /// The Script Console (the app draws it: `Scripts::console_view`).
     Console,
 }
@@ -247,6 +253,7 @@ impl Tab {
         use shagshell_core::tab_icon::{Glyph, State, state, svg};
         let glyph = match (&self.body, &self.launch.protocol) {
             (Body::Note(_), _) => Glyph::Note,
+            (Body::Builder(_), _) => Glyph::Console,
             (Body::Console, _) => Glyph::Console,
             (Body::Sftp(_), _) => Glyph::Sftp,
             (_, _) if !self.launch.icon.is_empty() => {
@@ -262,7 +269,7 @@ impl Tab {
             .is_some_and(|t| t.lock().unwrap_or_else(|e| e.into_inner()).locked());
         let st = match &self.body {
             Body::Note(v) if v.locked => State::Locked,
-            Body::Note(_) | Body::Console => State::Plain,
+            Body::Note(_) | Body::Builder(_) | Body::Console => State::Plain,
             Body::Sftp(v) => state(
                 v.connected || v.connecting(),
                 v.connected,
@@ -282,13 +289,15 @@ impl Tab {
             Body::Sftp(v) => v.connected,
             // Never «live»: closing it asks nothing, Reconnect does nothing.
             Body::Note(_) | Body::Console => false,
+            // Unsaved: closing asks.
+            Body::Builder(v) => v.unsaved(),
         }
     }
 
     fn terminal(&self) -> Option<&Mutex<Terminal>> {
         match &self.body {
             Body::Terminal(t) => Some(t),
-            Body::Sftp(_) | Body::Note(_) | Body::Console => None,
+            Body::Sftp(_) | Body::Note(_) | Body::Builder(_) | Body::Console => None,
         }
     }
 }
@@ -604,6 +613,12 @@ impl Tabs {
     }
 
     /// The tab that shows this file, if any.
+    pub fn builder_tab(&self, path: &std::path::Path) -> Option<TabId> {
+        (self.tabs.iter())
+            .find(|(_, t)| matches!(&t.body, Body::Builder(v) if v.path.as_deref() == Some(path)))
+            .map(|(id, _)| *id)
+    }
+
     pub fn note_tab(&self, path: &std::path::Path) -> Option<TabId> {
         (self.tabs.iter())
             .find(|(_, t)| matches!(&t.body, Body::Note(v) if v.path == path))
@@ -725,7 +740,7 @@ impl Tabs {
     /// What the status bar says about the active tab.
     pub fn status(&self) -> Option<crate::status_bar::Status> {
         let tab = self.tabs.get(&self.active_id()?)?;
-        if matches!(tab.body, Body::Note(_) | Body::Console) {
+        if matches!(tab.body, Body::Note(_) | Body::Builder(_) | Body::Console) {
             return None;
         }
         let mut s = crate::status_bar::Status {
@@ -826,7 +841,76 @@ impl Tabs {
 
     /// Some tab is connected: the status bar's clock runs.
     pub fn any_live(&self) -> bool {
-        self.tabs.values().any(Tab::live)
+        (self.tabs.values()).any(|t| t.live() && !matches!(t.body, Body::Builder(_)))
+    }
+
+    /// The terminal tabs, by title (where the Script Builder runs its script).
+    pub fn terminal_list(&self) -> Vec<(TabId, String)> {
+        let mut l: Vec<(TabId, String)> = (self.tabs.iter())
+            .filter(|(_, t)| matches!(t.body, Body::Terminal(_)))
+            .map(|(id, t)| (*id, t.title()))
+            .collect();
+        l.sort_by_key(|(id, _)| *id);
+        l
+    }
+
+    /// The active tab, if it is a Script Builder (its keys are routed to it).
+    pub fn active_builder(&self) -> Option<TabId> {
+        let id = self.active_id()?;
+        matches!(self.tabs.get(&id)?.body, Body::Builder(_)).then_some(id)
+    }
+
+    /// A Script Builder holds a block being dragged (the pointer's release is wanted).
+    pub fn builder_dragging(&self) -> Option<TabId> {
+        (self.tabs.iter())
+            .find(|(_, t)| matches!(&t.body, Body::Builder(v) if v.drag.is_some()))
+            .map(|(id, _)| *id)
+    }
+
+    /// Script Builder tabs with unsaved work.
+    pub fn unsaved_builders(&self) -> usize {
+        (self.tabs.values())
+            .filter(|t| matches!(&t.body, Body::Builder(v) if v.unsaved()))
+            .count()
+    }
+
+    /// Some Script Builder waits to parse its code.
+    pub fn builders_due(&self) -> bool {
+        (self.tabs.values()).any(|t| matches!(&t.body, Body::Builder(v) if v.due()))
+    }
+
+    /// The parses that are due now.
+    pub fn builders_tick(&mut self) -> Vec<(TabId, crate::builder::Out)> {
+        (self.tabs.iter_mut())
+            .filter_map(|(id, t)| match &mut t.body {
+                Body::Builder(v) => v.tick().map(|o| (*id, o)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// A Script Builder's message; its title follows (name, «•» when unsaved).
+    pub fn on_builder(
+        &mut self,
+        id: TabId,
+        msg: crate::builder::BuilderMsg,
+    ) -> crate::builder::Out {
+        let Some(tab) = self.tabs.get_mut(&id) else {
+            return crate::builder::Out::None;
+        };
+        let Body::Builder(v) = &mut tab.body else {
+            return crate::builder::Out::None;
+        };
+        let out = v.update(msg);
+        let label = match v.unsaved() {
+            true => format!("{} •", v.name()),
+            false => v.name(),
+        };
+        if tab.launch.label != label {
+            tab.launch.label = label;
+            self.retitle(id);
+        }
+        out
     }
 
     /// The active tab, if it is an SFTP one (its keys are routed to it).
@@ -869,7 +953,7 @@ impl Tabs {
         self.tabs.get(&id).is_some_and(|t| match t.body {
             Body::Terminal(_) => t.alive,
             Body::Sftp(_) => true,
-            Body::Note(_) | Body::Console => false,
+            Body::Note(_) | Body::Builder(_) | Body::Console => false,
         })
     }
 
@@ -989,6 +1073,11 @@ impl Tabs {
     fn spawn(&self, id: TabId, launch: &Launch, look: &Look) -> Option<Body> {
         if launch.console {
             return Some(Body::Console);
+        }
+        if let Some(path) = &launch.builder {
+            return crate::builder::BuilderView::new(path.clone())
+                .ok()
+                .map(|v| Body::Builder(Box::new(v)));
         }
         if let Some(path) = &launch.note {
             return crate::notes::NoteView::open(path).ok().map(|mut v| {
@@ -1227,7 +1316,7 @@ impl Tabs {
                 tab.stopped = true;
             }
             Body::Sftp(v) => v.disconnect(),
-            Body::Note(_) | Body::Console => {}
+            Body::Note(_) | Body::Builder(_) | Body::Console => {}
             // Already down, maybe waiting to reconnect by itself: that wait ends.
             Body::Terminal(_) => tab.stopped = true,
         }
@@ -1600,6 +1689,10 @@ impl Tabs {
                 body: Body::Sftp(v),
                 ..
             }) => v.view(),
+            Some(Tab {
+                body: Body::Builder(v),
+                ..
+            }) => v.view(id.unwrap_or_default(), &self.terminal_list()),
             Some(
                 tab @ Tab {
                     body: Body::Note(v),
@@ -1849,12 +1942,11 @@ impl Tabs {
                     .unwrap_or_default();
                 self.closed_recordings.push((title, r));
             }
-            if let Some(Tab {
-                body: Body::Note(v),
-                ..
-            }) = self.tabs.get_mut(&id)
-            {
-                v.save();
+            match self.tabs.get_mut(&id).map(|t| &mut t.body) {
+                Some(Body::Note(v)) => v.save(),
+                // Closed by the user (asked when unsaved): no recovery copy.
+                Some(Body::Builder(v)) => v.discard(),
+                _ => {}
             }
             self.user_locks.remove(&id);
             self.tabs.remove(&id); // its Drop ends the program
@@ -1877,6 +1969,11 @@ impl Tabs {
 
     pub fn focus_active(&self) -> Task<Message> {
         match self.active_id().and_then(|id| self.tabs.get(&id)) {
+            // Its fields take the focus by a click; focusing the tab would take it from them.
+            Some(Tab {
+                body: Body::Builder(_),
+                ..
+            }) => Task::none(),
             Some(t) => focus(t.widget_id.clone()),
             None => Task::none(),
         }
@@ -2535,12 +2632,16 @@ impl Tabs {
         };
         let id = *self.grid.as_ref()?.get(pane)?.model.data::<TabId>(e)?;
         let name = self.tabs.get(&id)?.title();
+        let body = match self.tabs.get(&id)?.body {
+            Body::Builder(_) => fl!("builder-close-body"),
+            _ => fl!("close-tab-body"),
+        };
         let msg = |m| Message::Tabs(m);
         Some(
             widget::dialog()
                 .icon(crate::dialog_icons::Kind::Warning.icon(48))
                 .title(fl!("close-tab-title", name = name))
-                .body(fl!("close-tab-body"))
+                .body(body)
                 .primary_action(
                     widget::button::destructive(fl!("close"))
                         .on_press(msg(TabsMsg::CloseConfirmed)),
