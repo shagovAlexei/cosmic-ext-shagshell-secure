@@ -835,6 +835,8 @@ builder-limit = at most
 builder-host-hint = (inside: tab = the host's tab, host = its name)
 builder-big = Big blocks
 builder-from-template = From a template ▾
+builder-group-templates = Templates
+builder-group-examples = Examples
 builder-no-templates = No templates in ~/.config/shagshell/scripts/templates
 builder-save-template = Save as template…
 block-prompt = Wait for the prompt
