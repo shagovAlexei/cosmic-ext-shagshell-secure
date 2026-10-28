@@ -1,4 +1,4 @@
-//! Options → Global Options, in the context drawer. Each change is written at once.
+//! Tools → Global Options, in the context drawer. Each change is written at once.
 
 use crate::app::Message;
 use crate::config::{AppTheme, Config, ConsoleAt, ExistsRule, LANGUAGES, Side};
