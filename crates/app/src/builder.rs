@@ -1207,7 +1207,7 @@ impl BuilderView {
         pop.into()
     }
 
-    /// «From a template ▾»: a button and, open, the list of templates and examples.
+    /// «From a template ▾»: a button and, open, the list: «Templates», then «Examples».
     fn templates_view<'a>(
         &self,
         m: impl Fn(BuilderMsg) -> Message + Copy + 'a,
@@ -1220,17 +1220,29 @@ impl BuilderView {
         if let Some(files) = &self.templates {
             let rows: Vec<Element<'a, Message>> = match files.is_empty() {
                 true => vec![widget::text::caption(fl!("builder-no-templates")).into()],
-                false => (files.iter())
-                    .map(|p| {
+                false => {
+                    let mut rows = Vec::new();
+                    let mut last = None;
+                    for p in files {
+                        let dir = p.parent().and_then(|d| d.file_name());
+                        if dir != last {
+                            last = dir;
+                            let head = match dir.is_some_and(|d| d == "templates") {
+                                true => fl!("builder-group-templates"),
+                                false => fl!("builder-group-examples"),
+                            };
+                            rows.push(widget::text::heading(head).into());
+                        }
                         let name = (p.file_stem())
                             .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
-                        let dir = (p.parent().and_then(|d| d.file_name()))
-                            .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
-                        widget::button::text(format!("{dir} · {name}"))
-                            .on_press(m(BuilderMsg::Template(p.clone())))
-                            .into()
-                    })
-                    .collect(),
+                        rows.push(
+                            widget::button::text(name)
+                                .on_press(m(BuilderMsg::Template(p.clone())))
+                                .into(),
+                        );
+                    }
+                    rows
+                }
             };
             pop = pop.popup(
                 widget::container(widget::scrollable(
