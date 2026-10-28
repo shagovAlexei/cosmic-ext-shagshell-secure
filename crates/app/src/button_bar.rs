@@ -10,7 +10,7 @@ use cosmic::widget::{self, menu};
 use shagshell_core::buttonbar::{self, Bar, BarError, Bars, Button, Kind, Target};
 
 /// Menu functions a button may call: the name stored in the file, and its label.
-pub use crate::menu::NAMED as FUNCTIONS;
+pub use crate::menu::FUNCTIONS;
 
 #[derive(Clone, Debug)]
 pub enum BbMsg {
@@ -117,10 +117,7 @@ impl ButtonBar {
 
     /// A function's label in the current language (the name itself if unknown).
     pub fn function_label_of(name: &str) -> String {
-        FUNCTIONS
-            .iter()
-            .find(|(n, _)| *n == name)
-            .map_or_else(|| name.to_string(), |(_, l)| l())
+        crate::menu::function_label(name)
     }
 
     /// The language may change.
@@ -151,7 +148,10 @@ impl ButtonBar {
                     }),
             )
             .collect();
-        self.functions = FUNCTIONS.iter().map(|(_, label)| label()).collect();
+        self.functions = FUNCTIONS
+            .iter()
+            .map(|n| crate::menu::function_choice(n))
+            .collect();
     }
 
     /// Bars brought in by an import (names that are not here yet): added and saved. `Some`: why
@@ -287,13 +287,13 @@ impl ButtonBar {
                 b.target = Target::Current;
                 // The old text means something else for another kind.
                 b.arg = match b.kind {
-                    Kind::Menu => FUNCTIONS[0].0.to_string(),
+                    Kind::Menu => FUNCTIONS[0].to_string(),
                     _ => String::new(),
                 };
                 b.args.clear();
             }),
             BbMsg::FunctionSel(i) => self.map(|b| {
-                if let Some((name, _)) = FUNCTIONS.get(i) {
+                if let Some(name) = FUNCTIONS.get(i) {
                     b.arg = (*name).to_string();
                 }
             }),
@@ -474,7 +474,7 @@ impl ButtonBar {
                 );
                 col = match button.kind {
                     Kind::Menu => {
-                        let at = FUNCTIONS.iter().position(|(n, _)| *n == button.arg);
+                        let at = FUNCTIONS.iter().position(|n| *n == button.arg);
                         col.push(
                             widget::column::with_children(vec![
                                 widget::text::caption(fl!("bb-function")).into(),

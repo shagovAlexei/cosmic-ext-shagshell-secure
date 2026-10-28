@@ -9,7 +9,9 @@ use cosmic::iced::keyboard::key::Named;
 use cosmic::widget::menu::key_bind::Modifier;
 use cosmic::widget::menu::{self, ItemHeight, ItemWidth, KeyBind};
 use shagshell_core::menu::{Item as MenuItem, Menu};
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Action {
@@ -117,87 +119,41 @@ pub enum Action {
     Pending,
 }
 
-/// The functions a Button Bar button can call: the name in `buttonbars.toml` and its label.
-pub type NamedFn = (&'static str, fn() -> String);
-pub const NAMED: [NamedFn; 34] = [
-    ("Connect", || fl!("menu-connect")),
-    ("QuickConnect", || fl!("menu-quick-connect")),
-    ("NewLocalShell", || fl!("menu-new-local-shell")),
-    ("Reconnect", || fl!("menu-reconnect")),
-    ("Disconnect", || fl!("menu-disconnect")),
-    ("CloseTab", || fl!("menu-close-tab")),
-    ("ConnectSftp", || fl!("menu-connect-sftp")),
-    ("SessionOptions", || fl!("menu-session-options")),
-    ("SplitRight", || fl!("menu-split-right")),
-    ("SplitDown", || fl!("menu-split-down")),
-    ("ToggleSessionManager", || fl!("menu-session-manager")),
-    ("ToggleCommandWindow", || fl!("menu-command-window")),
-    ("ToggleCommandManager", || fl!("menu-command-manager")),
-    ("ToggleRecording", || fl!("menu-script-record")),
-    ("GlobalOptions", || fl!("menu-global-options")),
-    ("Notes", || fl!("menu-notes")),
-    ("ScriptBuilder", || fl!("menu-script-builder")),
-    ("OpenInBuilder", || fl!("menu-script-open-builder")),
-    ("ZoomIn", || fl!("menu-zoom-in")),
-    ("ZoomOut", || fl!("menu-zoom-out")),
-    ("ZoomReset", || fl!("menu-zoom-reset")),
-    ("FullScreen", || fl!("menu-full-screen")),
-    ("Copy", || fl!("menu-copy")),
-    ("Paste", || fl!("menu-paste")),
-    ("NextTab", || fl!("menu-next-tab")),
-    ("PrevTab", || fl!("menu-prev-tab")),
-    ("Find", || fl!("menu-find")),
-    ("ConnectBar", || fl!("menu-connect-bar")),
-    ("RunScript", || fl!("menu-script-run")),
-    ("CancelScript", || fl!("menu-script-cancel")),
-    ("RerunScript", || fl!("menu-script-rerun")),
-    ("ToggleMenuBar", || fl!("menu-menu-bar")),
-    ("AlwaysOnTop", || fl!("menu-on-top")),
-    ("CustomizeMenu", || fl!("menu-customize")),
-];
+/// Every function a key, a Button Bar button or the menu can call, by its name (`buttonbars.toml`,
+/// `keymap.toml`, `Config.menus`): the stock menu's (`core::menu::STOCK`, in menu order; not the
+/// script submenus). `entry` is the one table of names.
+pub static FUNCTIONS: std::sync::LazyLock<Vec<&'static str>> = std::sync::LazyLock::new(|| {
+    (shagshell_core::menu::STOCK.iter())
+        .flat_map(|(_, items)| items.iter().copied())
+        .filter(|c| Action::named(c).is_some())
+        .collect()
+});
+
+/// A function's label in the current language (the name itself if unknown).
+pub fn function_label(name: &str) -> String {
+    entry(name).map_or_else(|| name.to_string(), |e| e.1)
+}
+
+/// A function as a list offers it: «label — menu» (File's / View's Connect Bar share a label).
+pub fn function_choice(name: &str) -> String {
+    let menu = (shagshell_core::menu::STOCK.iter())
+        .find(|(_, items)| items.contains(&name))
+        .map(|(id, _)| {
+            title(&Menu {
+                id: (*id).into(),
+                ..Default::default()
+            })
+        });
+    match menu {
+        Some(m) => format!("{} — {m}", function_label(name)),
+        None => function_label(name),
+    }
+}
 
 impl Action {
-    /// A function by the name `NAMED` gives it.
+    /// A function by its name (`FUNCTIONS`).
     pub fn named(name: &str) -> Option<Action> {
-        Some(match name {
-            "Connect" => Action::Connect,
-            "QuickConnect" => Action::QuickConnect,
-            "NewLocalShell" => Action::NewLocalShell,
-            "Reconnect" => Action::Reconnect,
-            "Disconnect" => Action::Disconnect,
-            "CloseTab" => Action::CloseTab,
-            "ConnectSftp" => Action::ConnectSftp,
-            "SessionOptions" => Action::SessionOptions,
-            "SplitRight" => Action::SplitRight,
-            "SplitDown" => Action::SplitDown,
-            "ToggleSessionManager" => Action::ToggleSessionManager,
-            "ToggleCommandWindow" => Action::ToggleCommandWindow,
-            "ToggleCommandManager" => Action::ToggleCommandManager,
-            "ToggleRecording" => Action::ToggleRecording,
-            "GlobalOptions" => Action::GlobalOptions,
-            "ScriptConsole" => Action::ScriptConsole,
-            "Scheduler" => Action::Scheduler,
-            "Notes" => Action::Notes,
-            "ScriptBuilder" => Action::ScriptBuilder,
-            "OpenInBuilder" => Action::OpenInBuilder,
-            "ZoomIn" => Action::ZoomIn,
-            "ZoomOut" => Action::ZoomOut,
-            "ZoomReset" => Action::ZoomReset,
-            "FullScreen" => Action::FullScreen,
-            "Copy" => Action::Copy,
-            "Paste" => Action::Paste,
-            "NextTab" => Action::NextTab,
-            "PrevTab" => Action::PrevTab,
-            "Find" => Action::Find,
-            "ConnectBar" => Action::ConnectBar,
-            "RunScript" => Action::RunScript,
-            "CancelScript" => Action::CancelScript,
-            "RerunScript" => Action::RerunScript,
-            "ToggleMenuBar" => Action::ToggleMenuBar,
-            "AlwaysOnTop" => Action::AlwaysOnTop,
-            "CustomizeMenu" => Action::CustomizeMenu,
-            _ => return None,
-        })
+        entry(name).map(|e| e.0).filter(|a| *a != Action::Pending)
     }
 }
 
@@ -443,12 +399,29 @@ pub fn label(it: &MenuItem) -> String {
     }
 }
 
+/// `core::menu::merged(menus)`, made again only when `menus` changes: the bar is drawn on every
+/// frame.
+fn drawn(menus: &[Menu]) -> Rc<Vec<Menu>> {
+    thread_local! {
+        static CACHE: RefCell<(Vec<Menu>, Rc<Vec<Menu>>)> =
+            RefCell::new((Vec::new(), Rc::new(shagshell_core::menu::merged(&[]))));
+    }
+    CACHE.with_borrow_mut(|(saved, out)| {
+        if saved.as_slice() != menus {
+            *saved = menus.to_vec();
+            *out = Rc::new(shagshell_core::menu::merged(menus));
+        }
+        out.clone()
+    })
+}
+
 /// The n-th program / script item of the user's (hidden ones counted), as `Action::OwnItem`.
 pub fn own_item(menus: &[Menu], n: u16) -> Option<MenuItem> {
-    (shagshell_core::menu::merged(menus).into_iter())
-        .flat_map(|m| m.items)
-        .filter(MenuItem::is_own)
+    (drawn(menus).iter())
+        .flat_map(|m| &m.items)
+        .filter(|i| i.is_own())
         .nth(usize::from(n))
+        .cloned()
 }
 
 /// What the menus' check marks and greyed items depend on.
@@ -537,7 +510,7 @@ pub fn bar(s: &State, menus: &[Menu]) -> Element<'static, Message> {
     };
     let mut own = 0u16;
     let mut roots = Vec::new();
-    for m in shagshell_core::menu::merged(menus) {
+    for m in drawn(menus).iter() {
         let mut items = Vec::new();
         for it in &m.items {
             let n = own;
@@ -579,7 +552,7 @@ pub fn bar(s: &State, menus: &[Menu]) -> Element<'static, Message> {
             items.pop();
         }
         if !items.is_empty() {
-            roots.push((title(&m), items));
+            roots.push((title(m), items));
         }
     }
     let binds = key_binds();
@@ -621,14 +594,29 @@ mod tests {
     }
 
     #[test]
+    fn every_builtin_key_has_its_function() {
+        for (id, _) in shagshell_core::keymap::BUILTIN {
+            assert!(Action::named(id).is_some(), "{id}");
+        }
+    }
+
+    #[test]
+    fn menu_cache_follows_the_saved_menu() {
+        let stock = drawn(&[]);
+        assert_eq!(*stock, shagshell_core::menu::default_menus());
+        assert!(Rc::ptr_eq(&stock, &drawn(&[])), "made once");
+        let mut saved = shagshell_core::menu::default_menus();
+        saved[0].shown = false;
+        assert!(!drawn(&saved)[0].shown);
+        assert!(drawn(&[])[0].shown);
+    }
+
+    #[test]
     fn regression_script_functions_can_be_bound() {
         // Run / Cancel / the last script again were in the Script menu only: no key, Button Bar
         // button or toolbar button could call them.
-        for (name, _) in NAMED {
-            assert!(Action::named(name).is_some(), "{name}");
-        }
         for name in ["RunScript", "CancelScript", "RerunScript"] {
-            assert!(NAMED.iter().any(|(n, _)| *n == name), "{name} in NAMED");
+            assert!(FUNCTIONS.contains(&name), "{name} in FUNCTIONS");
             assert!(
                 crate::toolbar::TOOLS.iter().any(|t| t.0 == name),
                 "{name} on the toolbar"
