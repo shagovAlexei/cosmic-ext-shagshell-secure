@@ -131,12 +131,98 @@ pub fn abort(ppid: u32, sock: &Path) -> bool {
         .is_ok_and(|s| s.success())
 }
 
+/// OpenSSH asking for a key's passphrase in its own words, for the session's key (`identity`,
+/// absolute) or, without one, for an existing `~/.ssh/id_*`. A server's keyboard-interactive
+/// question reaches askpass too, worded as it likes: it never gets the saved passphrase.
+pub fn passphrase_asked_by_ssh(prompt: &str, identity: Option<&Path>, home: &Path) -> bool {
+    let Some(key) = (prompt.trim_end())
+        .strip_prefix("Enter passphrase for key '")
+        .and_then(|r| r.strip_suffix("':"))
+        .map(Path::new)
+    else {
+        return false;
+    };
+    match identity {
+        Some(i) => key == i,
+        None => {
+            key.parent() == Some(&home.join(".ssh"))
+                && (key.file_name().and_then(|n| n.to_str())).is_some_and(|n| n.starts_with("id_"))
+                && key.is_file()
+        }
+    }
+}
+
+/// `name`'s value in a `/proc/<pid>/environ` (NUL-separated `NAME=value`).
+pub fn env_var(env: &[u8], name: &str) -> Option<String> {
+    env.split(|&b| b == 0).find_map(|v| {
+        let rest = v.strip_prefix(name.as_bytes())?.strip_prefix(b"=")?;
+        Some(String::from_utf8_lossy(rest).into_owned())
+    })
+}
+
+/// The pid of the process at the other end of a local socket (`SO_PEERCRED`).
+pub fn peer_pid(s: &std::os::unix::net::UnixStream) -> Option<u32> {
+    use std::os::fd::AsRawFd;
+    let mut c = libc::ucred {
+        pid: 0,
+        uid: 0,
+        gid: 0,
+    };
+    let mut len = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
+    // SAFETY: `c` and `len` are ours, `len` is `c`'s size; the fd is open while `s` lives.
+    let r = unsafe {
+        libc::getsockopt(
+            s.as_raw_fd(),
+            libc::SOL_SOCKET,
+            libc::SO_PEERCRED,
+            (&raw mut c).cast(),
+            &mut len,
+        )
+    };
+    (r == 0 && c.pid > 0).then(|| c.pid.unsigned_abs())
+}
+
+/// The key an ssh was started with (`-i path` in its `/proc/<pid>/cmdline`, before `--`).
+pub fn identity_in(cmdline: &[u8]) -> Option<PathBuf> {
+    use std::os::unix::ffi::OsStrExt;
+    let args: Vec<&[u8]> = cmdline.split(|&b| b == 0).collect();
+    let end = args.iter().position(|a| *a == b"--").unwrap_or(args.len());
+    let at = args[..end].iter().position(|a| *a == b"-i")?;
+    let p = args.get(at + 1).filter(|_| at + 1 < end)?;
+    Some(PathBuf::from(std::ffi::OsStr::from_bytes(p)))
+}
+
+/// The request with what the helper said about itself replaced by what the processes say:
+/// `peer` is the helper (from the socket), its parent the ssh, whose environment the tab set.
+/// None: not a helper started by an ssh with our environment.
+pub fn checked(req: Request, peer: u32, sock: &Path) -> Option<Request> {
+    let ssh = parent_of(peer)?;
+    let env = std::fs::read(format!("/proc/{ssh}/environ")).ok()?;
+    let ours = env_var(&env, "SHAGSHELL_ASKPASS_SOCK").is_some_and(|s| Path::new(&s) == sock);
+    ours.then(|| Request {
+        prompt: req.prompt,
+        session: env_var(&env, "SHAGSHELL_SESSION"),
+        credential: env_var(&env, "SHAGSHELL_CREDENTIAL"),
+        tab: env_var(&env, "SHAGSHELL_TAB").and_then(|t| t.parse().ok()),
+        ppid: ssh,
+    })
+}
+
 /// Whose saved secret answers this prompt, if any: a password of a session with a credential set
 /// is the set's; others the session's. `direct`: asked by the ssh a tab started (see `direct`) —
-/// a ProxyJump ssh talks to another host and gets none.
-pub fn owner(req: &Request, kind: Kind, direct: bool) -> Option<crate::keyring::Owner> {
+/// a ProxyJump ssh talks to another host and gets none. `ssh_key`: a passphrase prompt is
+/// OpenSSH's own for the session's key (`passphrase_asked_by_ssh`).
+pub fn owner(
+    req: &Request,
+    kind: Kind,
+    direct: bool,
+    ssh_key: bool,
+) -> Option<crate::keyring::Owner> {
     use crate::keyring::Owner;
     if !direct || !matches!(kind, Kind::Password | Kind::Passphrase) {
+        return None;
+    }
+    if kind == Kind::Passphrase && !ssh_key {
         return None;
     }
     match (&req.credential, &req.session) {
@@ -334,6 +420,60 @@ mod tests {
     }
 
     #[test]
+    fn regression_server_question_gets_no_passphrase() {
+        // A server's keyboard-interactive question reaches askpass too: «Enter passphrase:»
+        // from a hacked router got the session's saved key passphrase.
+        let home = Path::new("/home/u");
+        let key = Path::new("/home/u/keys/r1");
+        let ok = |p: &str, id: Option<&Path>| passphrase_asked_by_ssh(p, id, home);
+        assert!(ok(
+            "Enter passphrase for key '/home/u/keys/r1': ",
+            Some(key)
+        ));
+        assert!(!ok("Enter passphrase: ", Some(key)));
+        assert!(!ok(
+            "Enter passphrase for key '/home/u/.ssh/id_rsa': ",
+            Some(key)
+        ));
+        assert!(!ok("Your passphrase please: ", None));
+        // No key of the session's own: one of ~/.ssh/id_*, that exists.
+        let d = tempfile::tempdir().unwrap();
+        std::fs::create_dir(d.path().join(".ssh")).unwrap();
+        std::fs::write(d.path().join(".ssh/id_ed25519"), "k").unwrap();
+        let p = format!(
+            "Enter passphrase for key '{}/.ssh/id_ed25519': ",
+            d.path().display()
+        );
+        assert!(passphrase_asked_by_ssh(&p, None, d.path()));
+        let p = format!(
+            "Enter passphrase for key '{}/.ssh/id_rsa': ",
+            d.path().display()
+        );
+        assert!(!passphrase_asked_by_ssh(&p, None, d.path()), "no such file");
+    }
+
+    #[test]
+    fn regression_request_facts_come_from_the_processes() {
+        // The helper said who it was (ppid, session): any program could ask for any session's
+        // password. Now they are read from the ssh's environment.
+        let env = b"A=1\0SHAGSHELL_SESSION=lab/r1\0SHAGSHELL_TAB=7\0SHAGSHELL_ASKPASS_SOCK=/s\0";
+        assert_eq!(env_var(env, "SHAGSHELL_SESSION").as_deref(), Some("lab/r1"));
+        assert_eq!(env_var(env, "SHAGSHELL_TAB").as_deref(), Some("7"));
+        assert_eq!(env_var(env, "SHAGSHELL_CREDENTIAL"), None);
+        assert_eq!(env_var(env, "SHAGSHELL"), None, "a prefix is not a name");
+        let cmd = b"ssh\0-p\x0022\0-i\0/home/u/k\0--\0h\0";
+        assert_eq!(identity_in(cmd), Some(PathBuf::from("/home/u/k")));
+        assert_eq!(
+            identity_in(b"ssh\0--\0-i\0x\0"),
+            None,
+            "after -- is the host"
+        );
+        // A socket pair: the peer is this process.
+        let (a, _b) = std::os::unix::net::UnixStream::pair().unwrap();
+        assert_eq!(peer_pid(&a), Some(std::process::id()));
+    }
+
+    #[test]
     fn owner_of_a_prompt() {
         use crate::keyring::Owner;
         let mut req = Request {
@@ -344,17 +484,18 @@ mod tests {
             ppid: 1,
         };
         let s = Some(Owner::Session("lab/r1".into()));
-        assert_eq!(owner(&req, Kind::Password, true), s);
-        assert_eq!(owner(&req, Kind::Password, false), None); // ProxyJump
-        assert_eq!(owner(&req, Kind::HostKey, true), None);
+        assert_eq!(owner(&req, Kind::Password, true, false), s);
+        assert_eq!(owner(&req, Kind::Password, false, false), None); // ProxyJump
+        assert_eq!(owner(&req, Kind::HostKey, true, false), None);
         req.credential = Some("adm".into());
         assert_eq!(
-            owner(&req, Kind::Password, true),
+            owner(&req, Kind::Password, true, false),
             Some(Owner::Credential("adm".into()))
         );
-        assert_eq!(owner(&req, Kind::Passphrase, true), s); // the key is the session's
+        assert_eq!(owner(&req, Kind::Passphrase, true, true), s); // the key is the session's
+        assert_eq!(owner(&req, Kind::Passphrase, true, false), None); // a server's question
         req.session = None;
-        assert_eq!(owner(&req, Kind::Passphrase, true), None);
+        assert_eq!(owner(&req, Kind::Passphrase, true, true), None);
     }
 
     #[test]
