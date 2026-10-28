@@ -349,7 +349,18 @@ impl Asks {
 /// `askpass::owner` for this prompt, the ssh checked to be a tab's own.
 fn owner_of(inc: &Incoming, kind: Kind) -> Option<Owner> {
     let direct = askpass::direct(inc.req.ppid);
-    askpass::owner(&inc.req, kind, direct)
+    let ssh_key = kind == Kind::Passphrase && {
+        let cmdline = std::fs::read(format!("/proc/{}/cmdline", inc.req.ppid)).unwrap_or_default();
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_default();
+        askpass::passphrase_asked_by_ssh(
+            &inc.req.prompt,
+            askpass::identity_in(&cmdline).as_deref(),
+            &home,
+        )
+    };
+    askpass::owner(&inc.req, kind, direct, ssh_key)
 }
 
 /// The socket: one thread accepting, one per helper waiting for its answer.
@@ -363,7 +374,10 @@ pub fn subscription(sock: PathBuf) -> Subscription<Message> {
             }
             let _ = std::fs::remove_file(&sock); // ours by name: a dead run's with our pid
             match std::os::unix::net::UnixListener::bind(&sock) {
-                Ok(l) => drop(std::thread::spawn(move || listen(l, tx))),
+                Ok(l) => {
+                    let s = sock.clone();
+                    drop(std::thread::spawn(move || listen(l, s, tx)))
+                }
                 Err(e) => log::error!("askpass socket {}: {e}", sock.display()),
             }
             while let Some(inc) = rx.recv().await {
@@ -376,11 +390,22 @@ pub fn subscription(sock: PathBuf) -> Subscription<Message> {
     })
 }
 
-fn listen(l: std::os::unix::net::UnixListener, tx: tokio::sync::mpsc::UnboundedSender<Incoming>) {
+fn listen(
+    l: std::os::unix::net::UnixListener,
+    sock: PathBuf,
+    tx: tokio::sync::mpsc::UnboundedSender<Incoming>,
+) {
     for stream in l.incoming().flatten() {
         let tx = tx.clone();
+        let sock = sock.clone();
         std::thread::spawn(move || {
             let Ok(req) = askpass::read_request(&mut BufReader::new(&stream)) else {
+                return;
+            };
+            // Who asks is read from the processes, never taken from the request.
+            let checked = askpass::peer_pid(&stream).and_then(|p| askpass::checked(req, p, &sock));
+            let Some(req) = checked else {
+                let _ = askpass::write_reply(&mut &stream, &Reply::Cancel);
                 return;
             };
             let (reply_tx, reply_rx) = mpsc::channel();

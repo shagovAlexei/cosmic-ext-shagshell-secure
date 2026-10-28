@@ -2,6 +2,9 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.97.2 — 2026-10-29
+- fix (security): a saved key passphrase answers only OpenSSH's own «Enter passphrase for key '<the session's key>'», never a server's keyboard-interactive question; who asks on the askpass socket is read from the processes (SO_PEERCRED, the ssh's environment), not taken from the request
+
 ## 0.97.1 — 2026-10-29
 - fix: the menu bar keeps its arranged menu between redraws (made again only when the saved menu changes); one table of function names (`menu::entry`) for the menu, keys and Button Bar — every menu function can now be bound to a key or a button; lists show «label — menu»
 
