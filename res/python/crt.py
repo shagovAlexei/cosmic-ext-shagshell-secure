@@ -233,6 +233,8 @@ class _Dialog:
 
     def Prompt(self, message, title="", default="", bPassword=False):
         r = _call("Dialog.Prompt", 0, str(message), str(title), str(default), bool(bPassword))
+        if bPassword and r:
+            _secrets.add(r)
         return "" if r is None else r
 
 
@@ -342,6 +344,10 @@ def __getattr__(name):  # `import crt; crt.Screen.Send(...)`
     return getattr(crt, name)
 
 
+# The answers of password prompts: never shown in the Script Builder's variables.
+_secrets = set()
+
+
 def _vars(frame):
     """The frame's variables a person wants on a pause: no modules, functions, classes, dunders."""
     import reprlib
@@ -356,6 +362,8 @@ def _vars(frame):
             r = short.repr(v)
         except Exception:
             r = "<?>"
+        if isinstance(v, str) and any(x in v for x in _secrets):
+            r = "'***'"  # a password asked with Prompt(..., True), or text holding it
         out.append([k, r if len(r) <= 120 else r[:117] + "..."])
     return out
 

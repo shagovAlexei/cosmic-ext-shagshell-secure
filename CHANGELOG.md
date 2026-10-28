@@ -2,6 +2,9 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.97.3 — 2026-10-29
+- fix (security): Script → Record keeps no step the terminal did not echo (a password whatever the prompt's language: «Passwort:», «Contraseña:», stars); a password asked with `Dialog.Prompt(…, True)` is shown as *** in the debug console and the Script Builder's variables wherever it goes later (`Screen.Send(password + "\r")`)
+
 ## 0.97.2 — 2026-10-29
 - fix (security): a saved key passphrase answers only OpenSSH's own «Enter passphrase for key '<the session's key>'», never a server's keyboard-interactive question; who asks on the askpass socket is read from the processes (SO_PEERCRED, the ssh's environment), not taken from the request
 
