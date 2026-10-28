@@ -8,6 +8,7 @@ use cosmic::iced::keyboard::Key;
 use cosmic::iced::keyboard::key::Named;
 use cosmic::widget::menu::key_bind::Modifier;
 use cosmic::widget::menu::{self, ItemHeight, ItemWidth, KeyBind};
+use shagshell_core::menu::{Item as MenuItem, Menu};
 use std::collections::HashMap;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -68,6 +69,10 @@ pub enum Action {
     UploadKey,
     /// Tools → Keymap Editor….
     KeyMap,
+    /// Tools → Customize Menu….
+    CustomizeMenu,
+    /// A program / script item of the user's own in the menu: the n-th (`menu::own_item`).
+    OwnItem(u16),
     /// A key of the user's own (`keymap.toml`): the n-th binding.
     Bound(u16),
     /// Transfer → Zmodem / Ymodem / Xmodem: send or receive, or stop.
@@ -114,7 +119,7 @@ pub enum Action {
 
 /// The functions a Button Bar button can call: the name in `buttonbars.toml` and its label.
 pub type NamedFn = (&'static str, fn() -> String);
-pub const NAMED: [NamedFn; 33] = [
+pub const NAMED: [NamedFn; 34] = [
     ("Connect", || fl!("menu-connect")),
     ("QuickConnect", || fl!("menu-quick-connect")),
     ("NewLocalShell", || fl!("menu-new-local-shell")),
@@ -148,6 +153,7 @@ pub const NAMED: [NamedFn; 33] = [
     ("RerunScript", || fl!("menu-script-rerun")),
     ("ToggleMenuBar", || fl!("menu-menu-bar")),
     ("AlwaysOnTop", || fl!("menu-on-top")),
+    ("CustomizeMenu", || fl!("menu-customize")),
 ];
 
 impl Action {
@@ -189,6 +195,7 @@ impl Action {
             "RerunScript" => Action::RerunScript,
             "ToggleMenuBar" => Action::ToggleMenuBar,
             "AlwaysOnTop" => Action::AlwaysOnTop,
+            "CustomizeMenu" => Action::CustomizeMenu,
             _ => return None,
         })
     }
@@ -284,6 +291,7 @@ fn icon_of(a: Action) -> Option<cosmic::widget::icon::Handle> {
         Action::Credentials => "system-users-symbolic",
         Action::CreateKey | Action::UploadKey => "dialog-password-symbolic",
         Action::KeyMap => "input-keyboard-symbolic",
+        Action::CustomizeMenu => "open-menu-symbolic",
         Action::SplitRight => "view-dual-symbolic",
         Action::SplitDown => "view-paged-symbolic",
         Action::NextTab => "go-next-symbolic",
@@ -318,29 +326,155 @@ fn with_icons(items: Vec<menu::Item<Action, String>>) -> Vec<menu::Item<Action, 
         .collect()
 }
 
-/// `(tabs, live, splittable)`: any tab open; the active one connected; its group has
-/// more than one tab (`Tabs::menu_state`). `scripting`: a script runs.
-pub fn bar(
-    (session_manager, command_window, button_bar, command_manager, connect_bar): (
-        bool,
-        bool,
-        bool,
-        bool,
-        bool,
-    ),
-    (tabs, live, split, logging, recording): (bool, bool, bool, bool, bool),
-    (folder, recent): (&[String], &[String]),
-    scripting: bool,
-    full_screen: bool,
-) -> Element<'static, Message> {
-    use menu::Item::{Button, ButtonDisabled, CheckBox, Divider};
-    let on = |yes: bool, label: String, a| match yes {
-        true => Button(label, None, a),
-        false => ButtonDisabled(label, None, a),
-    };
-    let tab = |label: String, a| on(tabs, label, a);
+/// A stock item's function and label (`core::menu::STOCK` names; the submenus `ScriptsList` /
+/// `RecentScripts` are drawn by `bar` itself).
+pub fn entry(cmd: &str) -> Option<(Action, String)> {
+    use shagshell_core::zmodem::Proto;
+    Some(match cmd {
+        "Connect" => (Action::Connect, fl!("menu-connect")),
+        "QuickConnect" => (Action::QuickConnect, fl!("menu-quick-connect")),
+        "ConnectBar" => (Action::ConnectBar, fl!("menu-connect-bar")),
+        "NewLocalShell" => (Action::NewLocalShell, fl!("menu-new-local-shell")),
+        "OpenNote" => (Action::OpenNote, fl!("menu-note-open")),
+        "Reconnect" => (Action::Reconnect, fl!("menu-reconnect")),
+        "Disconnect" => (Action::Disconnect, fl!("menu-disconnect")),
+        "ToggleLog" => (Action::ToggleLog, fl!("menu-log-session")),
+        "CloseTab" => (Action::CloseTab, fl!("menu-close-tab")),
+        "ImportSshConfig" => (Action::ImportSshConfig, fl!("menu-import-ssh-config")),
+        "ImportSecureCrt" => (Action::ImportSecureCrt, fl!("menu-import-securecrt")),
+        "Exit" => (Action::Exit, fl!("menu-exit")),
+        "Copy" => (Action::Copy, fl!("menu-copy")),
+        "Paste" => (Action::Paste, fl!("menu-paste")),
+        "SelectAll" => (Action::SelectAll, fl!("menu-select-all")),
+        "Find" => (Action::Find, fl!("menu-find")),
+        "ToggleSessionManager" => (Action::ToggleSessionManager, fl!("menu-session-manager")),
+        "ToggleCommandWindow" => (Action::ToggleCommandWindow, fl!("menu-command-window")),
+        "ToggleCommandManager" => (Action::ToggleCommandManager, fl!("menu-command-manager")),
+        "ToggleButtonBar" => (Action::ToggleButtonBar, fl!("menu-button-bar")),
+        "ToggleConnectBar" => (Action::ToggleConnectBar, fl!("menu-connect-bar")),
+        "ToggleMenuBar" => (Action::ToggleMenuBar, fl!("menu-menu-bar")),
+        "Notes" => (Action::Notes, fl!("menu-notes")),
+        "ZoomIn" => (Action::ZoomIn, fl!("menu-zoom-in")),
+        "ZoomOut" => (Action::ZoomOut, fl!("menu-zoom-out")),
+        "ZoomReset" => (Action::ZoomReset, fl!("menu-zoom-reset")),
+        "FullScreen" => (Action::FullScreen, fl!("menu-full-screen")),
+        "SessionOptions" => (Action::SessionOptions, fl!("menu-session-options")),
+        "EditDefault" => (Action::EditDefault, fl!("menu-edit-default")),
+        "ConnectSftp" => (Action::ConnectSftp, fl!("menu-connect-sftp")),
+        "SendZmodem" => (
+            Action::Transfer(Proto::Zmodem, true),
+            fl!("menu-send-zmodem"),
+        ),
+        "SendYmodem" => (
+            Action::Transfer(Proto::Ymodem, true),
+            fl!("menu-send-ymodem"),
+        ),
+        "SendXmodem" => (
+            Action::Transfer(Proto::Xmodem, true),
+            fl!("menu-send-xmodem"),
+        ),
+        "ReceiveYmodem" => (
+            Action::Transfer(Proto::Ymodem, false),
+            fl!("menu-receive-ymodem"),
+        ),
+        "ReceiveXmodem" => (
+            Action::Transfer(Proto::Xmodem, false),
+            fl!("menu-receive-xmodem"),
+        ),
+        "CancelTransfer" => (Action::CancelTransfer, fl!("menu-cancel-transfer")),
+        "RunScript" => (Action::RunScript, fl!("menu-script-run")),
+        "CancelScript" => (Action::CancelScript, fl!("menu-script-cancel")),
+        "RerunScript" => (Action::RerunScript, fl!("menu-script-rerun")),
+        "ScriptConsole" => (Action::ScriptConsole, fl!("menu-script-console")),
+        "Scheduler" => (Action::Scheduler, fl!("menu-script-scheduler")),
+        "ScriptBuilder" => (Action::ScriptBuilder, fl!("menu-script-builder")),
+        "OpenInBuilder" => (Action::OpenInBuilder, fl!("menu-script-open-builder")),
+        "ToggleRecording" => (Action::ToggleRecording, fl!("menu-script-record")),
+        "ScriptsList" => (Action::Pending, fl!("menu-script-folder")),
+        "RecentScripts" => (Action::Pending, fl!("menu-script-recent")),
+        "ScriptsFolder" => (Action::ScriptsFolder, fl!("menu-script-choose-folder")),
+        "ScriptsRefresh" => (Action::ScriptsRefresh, fl!("menu-script-refresh")),
+        "GlobalOptions" => (Action::GlobalOptions, fl!("menu-global-options")),
+        "Credentials" => (Action::Credentials, fl!("menu-credentials")),
+        "CreateKey" => (Action::CreateKey, fl!("menu-create-key")),
+        "UploadKey" => (Action::UploadKey, fl!("menu-upload-key")),
+        "KeyMap" => (Action::KeyMap, fl!("menu-keymap")),
+        "CustomizeMenu" => (Action::CustomizeMenu, fl!("menu-customize")),
+        "SplitRight" => (Action::SplitRight, fl!("menu-split-right")),
+        "SplitDown" => (Action::SplitDown, fl!("menu-split-down")),
+        "NextTab" => (Action::NextTab, fl!("menu-next-tab")),
+        "PrevTab" => (Action::PrevTab, fl!("menu-prev-tab")),
+        "DetachTab" => (Action::DetachTab, fl!("menu-tab-window")),
+        "ReattachAll" => (Action::ReattachAll, fl!("menu-reattach-all")),
+        "AlwaysOnTop" => (Action::AlwaysOnTop, fl!("menu-on-top")),
+        "CheckUpdates" => (Action::CheckUpdates, fl!("menu-check-updates")),
+        "Donate" => (Action::Donate, fl!("menu-donate")),
+        "About" => (Action::About, fl!("menu-about")),
+        _ => return None,
+    })
+}
+
+/// A menu's name on the bar: the user's, or the stock one.
+pub fn title(m: &Menu) -> String {
+    if !m.title.is_empty() {
+        return m.title.clone();
+    }
+    match m.id.as_str() {
+        "File" => fl!("menu-file"),
+        "Edit" => fl!("menu-edit"),
+        "View" => fl!("menu-view"),
+        "Options" => fl!("menu-options"),
+        "Transfer" => fl!("menu-transfer"),
+        "Script" => fl!("menu-script"),
+        "Tools" => fl!("menu-tools"),
+        "Window" => fl!("menu-window"),
+        "Help" => fl!("menu-help"),
+        _ => fl!("me-new-menu"),
+    }
+}
+
+/// An item's label: the user's, the function's, or a program's command.
+pub fn label(it: &MenuItem) -> String {
+    match () {
+        _ if !it.label.is_empty() => it.label.clone(),
+        _ if it.is_sep() => "────────".into(),
+        _ if it.cmd.is_empty() => fl!("me-new-program"),
+        _ => entry(&it.cmd).map_or_else(|| it.cmd.clone(), |e| e.1),
+    }
+}
+
+/// The n-th program / script item of the user's (hidden ones counted), as `Action::OwnItem`.
+pub fn own_item(menus: &[Menu], n: u16) -> Option<MenuItem> {
+    (shagshell_core::menu::merged(menus).into_iter())
+        .flat_map(|m| m.items)
+        .filter(MenuItem::is_own)
+        .nth(usize::from(n))
+}
+
+/// What the menus' check marks and greyed items depend on.
+pub struct State<'a> {
+    pub session_manager: bool,
+    pub command_window: bool,
+    pub button_bar: bool,
+    pub command_manager: bool,
+    pub connect_bar: bool,
+    /// `Tabs::menu_state`: any tab open; the active one connected; its group has more than one
+    /// tab; logging; recording.
+    pub tabs: (bool, bool, bool, bool, bool),
+    /// Script → Scripts / Recent.
+    pub folder: &'a [String],
+    pub recent: &'a [String],
+    pub scripting: bool,
+    pub full_screen: bool,
+}
+
+/// The menu bar, as `menus` (`Config.menus`, through `core::menu::merged`) arranges it.
+pub fn bar(s: &State, menus: &[Menu]) -> Element<'static, Message> {
+    use menu::Item::{Button, ButtonDisabled, CheckBox, Divider, Folder};
+    use shagshell_core::zmodem::Proto;
+    let (tabs, live, split, logging, recording) = s.tabs;
     // File transfer in a terminal needs a terminal tab and lrzsz.
-    let xfer = |label: String, a: Action| {
+    let xfer = |a: Action| {
         let tool = match a {
             Action::Transfer(Proto::Zmodem, true) => "sz",
             Action::Transfer(Proto::Ymodem, true) => "sb",
@@ -349,9 +483,41 @@ pub fn bar(
             Action::Transfer(Proto::Xmodem, false) => "rx",
             _ => "sz",
         };
-        on(tabs && has_tool(tool), label, a)
+        tabs && has_tool(tool)
     };
-    use shagshell_core::zmodem::Proto;
+    let enabled = |a: Action| match a {
+        Action::Reconnect
+        | Action::CloseTab
+        | Action::Copy
+        | Action::Paste
+        | Action::SelectAll
+        | Action::Find
+        | Action::ZoomIn
+        | Action::ZoomOut
+        | Action::ZoomReset
+        | Action::NextTab
+        | Action::PrevTab
+        | Action::DetachTab
+        | Action::ConnectSftp => tabs,
+        Action::Disconnect => live,
+        Action::SplitRight | Action::SplitDown => split,
+        Action::CancelScript => s.scripting,
+        Action::Transfer(..) | Action::CancelTransfer => xfer(a),
+        _ => true,
+    };
+    let checked = |a: Action| match a {
+        Action::ToggleSessionManager => Some(s.session_manager),
+        Action::ToggleCommandWindow => Some(s.command_window),
+        Action::ToggleCommandManager => Some(s.command_manager),
+        Action::ToggleButtonBar => Some(s.button_bar),
+        Action::ToggleConnectBar => Some(s.connect_bar),
+        // Seen only while the menu is there: this hides it, its key brings it back.
+        Action::ToggleMenuBar => Some(true),
+        Action::FullScreen => Some(s.full_screen),
+        Action::ToggleLog => Some(logging),
+        Action::ToggleRecording => Some(recording),
+        _ => None,
+    };
     // A submenu of scripts: their entries are numbered from `first` in the app's list.
     let list = |title: String, names: &[String], first: usize| {
         let items: Vec<_> = match names.is_empty() {
@@ -367,189 +533,55 @@ pub fn bar(
                 })
                 .collect(),
         };
-        menu::Item::Folder(title, items)
+        Folder(title, items)
     };
-    let roots = [
-        (
-            fl!("menu-file"),
-            vec![
-                Button(fl!("menu-connect"), None, Action::Connect),
-                Button(fl!("menu-quick-connect"), None, Action::QuickConnect),
-                Button(fl!("menu-connect-bar"), None, Action::ConnectBar),
-                Button(fl!("menu-new-local-shell"), None, Action::NewLocalShell),
-                Button(fl!("menu-note-open"), None, Action::OpenNote),
-                tab(fl!("menu-reconnect"), Action::Reconnect),
-                on(live, fl!("menu-disconnect"), Action::Disconnect),
-                CheckBox(fl!("menu-log-session"), None, logging, Action::ToggleLog),
-                tab(fl!("menu-close-tab"), Action::CloseTab),
-                Divider,
-                Button(fl!("menu-import-ssh-config"), None, Action::ImportSshConfig),
-                Button(fl!("menu-import-securecrt"), None, Action::ImportSecureCrt),
-                Divider,
-                Button(fl!("menu-exit"), None, Action::Exit),
-            ],
-        ),
-        (
-            fl!("menu-edit"),
-            vec![
-                tab(fl!("menu-copy"), Action::Copy),
-                tab(fl!("menu-paste"), Action::Paste),
-                tab(fl!("menu-select-all"), Action::SelectAll),
-                tab(fl!("menu-find"), Action::Find),
-            ],
-        ),
-        (
-            fl!("menu-view"),
-            vec![
-                CheckBox(
-                    fl!("menu-session-manager"),
-                    None,
-                    session_manager,
-                    Action::ToggleSessionManager,
-                ),
-                CheckBox(
-                    fl!("menu-command-window"),
-                    None,
-                    command_window,
-                    Action::ToggleCommandWindow,
-                ),
-                CheckBox(
-                    fl!("menu-command-manager"),
-                    None,
-                    command_manager,
-                    Action::ToggleCommandManager,
-                ),
-                CheckBox(
-                    fl!("menu-button-bar"),
-                    None,
-                    button_bar,
-                    Action::ToggleButtonBar,
-                ),
-                CheckBox(
-                    fl!("menu-connect-bar"),
-                    None,
-                    connect_bar,
-                    Action::ToggleConnectBar,
-                ),
-                // Seen only while the menu is there: this hides it, its key brings it back.
-                CheckBox(fl!("menu-menu-bar"), None, true, Action::ToggleMenuBar),
-                Button(fl!("menu-notes"), None, Action::Notes),
-                Divider,
-                tab(fl!("menu-zoom-in"), Action::ZoomIn),
-                tab(fl!("menu-zoom-out"), Action::ZoomOut),
-                tab(fl!("menu-zoom-reset"), Action::ZoomReset),
-                CheckBox(
-                    fl!("menu-full-screen"),
-                    None,
-                    full_screen,
-                    Action::FullScreen,
-                ),
-            ],
-        ),
-        (
-            fl!("menu-options"),
-            vec![
-                Button(fl!("menu-session-options"), None, Action::SessionOptions),
-                Button(fl!("menu-edit-default"), None, Action::EditDefault),
-            ],
-        ),
-        (
-            fl!("menu-transfer"),
-            vec![
-                tab(fl!("menu-connect-sftp"), Action::ConnectSftp),
-                Divider,
-                xfer(
-                    fl!("menu-send-zmodem"),
-                    Action::Transfer(Proto::Zmodem, true),
-                ),
-                xfer(
-                    fl!("menu-send-ymodem"),
-                    Action::Transfer(Proto::Ymodem, true),
-                ),
-                xfer(
-                    fl!("menu-send-xmodem"),
-                    Action::Transfer(Proto::Xmodem, true),
-                ),
-                xfer(
-                    fl!("menu-receive-ymodem"),
-                    Action::Transfer(Proto::Ymodem, false),
-                ),
-                xfer(
-                    fl!("menu-receive-xmodem"),
-                    Action::Transfer(Proto::Xmodem, false),
-                ),
-                xfer(fl!("menu-cancel-transfer"), Action::CancelTransfer),
-            ],
-        ),
-        (
-            fl!("menu-script"),
-            vec![
-                Button(fl!("menu-script-run"), None, Action::RunScript),
-                on(scripting, fl!("menu-script-cancel"), Action::CancelScript),
-                Button(fl!("menu-script-rerun"), None, Action::RerunScript),
-                Button(fl!("menu-script-console"), None, Action::ScriptConsole),
-                Button(fl!("menu-script-scheduler"), None, Action::Scheduler),
-                Button(fl!("menu-script-builder"), None, Action::ScriptBuilder),
-                Button(fl!("menu-script-open-builder"), None, Action::OpenInBuilder),
-                Divider,
-                CheckBox(
-                    fl!("menu-script-record"),
-                    None,
-                    recording,
-                    Action::ToggleRecording,
-                ),
-                Divider,
-                list(fl!("menu-script-folder"), folder, 0),
-                list(fl!("menu-script-recent"), recent, folder.len()),
-                Divider,
-                Button(
-                    fl!("menu-script-choose-folder"),
-                    None,
-                    Action::ScriptsFolder,
-                ),
-                Button(fl!("menu-script-refresh"), None, Action::ScriptsRefresh),
-            ],
-        ),
-        (
-            fl!("menu-tools"),
-            vec![
-                Button(fl!("menu-global-options"), None, Action::GlobalOptions),
-                Divider,
-                Button(fl!("menu-credentials"), None, Action::Credentials),
-                Button(fl!("menu-create-key"), None, Action::CreateKey),
-                Button(fl!("menu-upload-key"), None, Action::UploadKey),
-                Button(fl!("menu-keymap"), None, Action::KeyMap),
-            ],
-        ),
-        (
-            fl!("menu-window"),
-            vec![
-                on(split, fl!("menu-split-right"), Action::SplitRight),
-                on(split, fl!("menu-split-down"), Action::SplitDown),
-                Divider,
-                tab(fl!("menu-next-tab"), Action::NextTab),
-                tab(fl!("menu-prev-tab"), Action::PrevTab),
-                Divider,
-                tab(fl!("menu-tab-window"), Action::DetachTab),
-                Button(fl!("menu-reattach-all"), None, Action::ReattachAll),
-                Divider,
-                Button(fl!("menu-on-top"), None, Action::AlwaysOnTop),
-            ],
-        ),
-        (fl!("menu-help"), {
-            let mut help = vec![Button(
-                fl!("menu-check-updates"),
-                None,
-                Action::CheckUpdates,
-            )];
-            if crate::updates::DONATE_URL.is_some() {
-                help.push(Button(fl!("menu-donate"), None, Action::Donate));
+    let mut own = 0u16;
+    let mut roots = Vec::new();
+    for m in shagshell_core::menu::merged(menus) {
+        let mut items = Vec::new();
+        for it in &m.items {
+            let n = own;
+            if it.is_own() {
+                own = own.saturating_add(1);
             }
-            help.push(Divider);
-            help.push(Button(fl!("menu-about"), None, Action::About));
-            help
-        }),
-    ];
+            if !it.shown || !m.shown {
+                continue;
+            }
+            let found = (!it.is_own() && !it.is_sep())
+                .then(|| entry(&it.cmd))
+                .flatten();
+            let text = match (&found, it.label.is_empty()) {
+                (Some((_, l)), true) => l.clone(),
+                _ => label(it),
+            };
+            let item = match it.cmd.as_str() {
+                _ if it.is_sep() => match items.last() {
+                    None | Some(Divider) => continue,
+                    _ => Divider,
+                },
+                _ if it.is_own() && it.cmd.is_empty() => continue,
+                _ if it.is_own() => Button(text, None, Action::OwnItem(n)),
+                "ScriptsList" => list(text, s.folder, 0),
+                "RecentScripts" => list(text, s.recent, s.folder.len()),
+                "Donate" if crate::updates::DONATE_URL.is_none() => continue,
+                _ => {
+                    let Some((a, _)) = found else { continue };
+                    match (checked(a), enabled(a)) {
+                        (Some(on), _) => CheckBox(text, None, on, a),
+                        (None, true) => Button(text, None, a),
+                        (None, false) => ButtonDisabled(text, None, a),
+                    }
+                }
+            };
+            items.push(item);
+        }
+        if matches!(items.last(), Some(Divider)) {
+            items.pop();
+        }
+        if !items.is_empty() {
+            roots.push((title(&m), items));
+        }
+    }
     let binds = key_binds();
     let roots = roots
         .into_iter()
@@ -578,6 +610,15 @@ pub fn has_tool(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_stock_menu_name_is_drawn() {
+        for (_, items) in shagshell_core::menu::STOCK {
+            for cmd in items.iter().filter(|c| **c != shagshell_core::toolbar::SEP) {
+                assert!(entry(cmd).is_some(), "{cmd}");
+            }
+        }
+    }
 
     #[test]
     fn regression_script_functions_can_be_bound() {

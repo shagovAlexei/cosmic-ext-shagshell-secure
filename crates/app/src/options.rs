@@ -8,10 +8,12 @@ use cosmic::widget::{self, settings};
 use shagshell_core::highlight::{Colour, Rule, Rules};
 
 /// `separate`: passwords in a keyring of their own (`None`: not known yet / being changed).
+/// `reset_ask`: «Reset the menu» pressed, Yes / No shown.
 pub fn view<'a>(
     config: &'a Config,
     separate: Option<bool>,
     hl: &'a Rules,
+    reset_ask: bool,
 ) -> ContextDrawer<'a, Message> {
     let set = |f: fn(&mut Config, bool)| {
         let c = config.clone();
@@ -425,6 +427,33 @@ pub fn view<'a>(
             widget::button::standard(fl!("options-open"))
                 .on_press(Message::Toolbar(crate::toolbar::TbMsg::Open)),
         ));
+    // The menu (Tools → Customize Menu…): back to the stock one, asked once inline.
+    let menu = settings::section()
+        .title(fl!("options-menu"))
+        .add(settings::flex_item(
+            fl!("options-menu-edit"),
+            widget::button::standard(fl!("options-open"))
+                .on_press(Message::Action(crate::menu::Action::CustomizeMenu)),
+        ));
+    let menu = match reset_ask {
+        false => menu.add(settings::flex_item(
+            fl!("options-menu-reset"),
+            widget::button::standard(fl!("toolbar-reset"))
+                .on_press_maybe((!config.menus.is_empty()).then_some(Message::MenuResetAsk(true))),
+        )),
+        true => menu.add(settings::flex_item(
+            fl!("options-menu-reset-ask"),
+            widget::row::with_children(vec![
+                widget::button::destructive(fl!("yes"))
+                    .on_press(Message::MenuReset)
+                    .into(),
+                widget::button::standard(fl!("no"))
+                    .on_press(Message::MenuResetAsk(false))
+                    .into(),
+            ])
+            .spacing(8),
+        )),
+    };
     // Notes: a font of their own (the editor's, not the terminal's).
     let notes = settings::section()
         .title(fl!("options-notes"))
@@ -445,6 +474,7 @@ pub fn view<'a>(
     let content = widget::column::with_children(vec![
         interface.into(),
         toolbar.into(),
+        menu.into(),
         terminal.into(),
         notes.into(),
         colours.into(),

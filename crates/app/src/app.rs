@@ -92,6 +92,8 @@ pub struct App {
     connect_pick: Option<usize>,
     /// The toolbar's editor (and its function names for the dropdown), while open.
     tool_edit: Option<(shagshell_core::toolbar::ToolEdit, Vec<String>)>,
+    menu_edit: Option<crate::menu_editor::Editor>,
+    menu_reset_ask: bool,
     /// Help → About is shown (a dialog: the context drawer is at least 344 px wide).
     about: bool,
     /// File → Exit asked first: Script Builder work is unsaved.
@@ -225,6 +227,11 @@ pub enum Message {
     Find(crate::find_bar::FindMsg),
     /// A toolbar button, the toolbar's editor.
     Toolbar(crate::toolbar::TbMsg),
+    /// Tools → Customize Menu…'s dialog.
+    MenuEdit(crate::menu_editor::MeMsg),
+    /// Global Options → Menu: «Reset» pressed (Yes / No shown) / answered No.
+    MenuResetAsk(bool),
+    MenuReset,
     /// Esc taken by a text field of the main window.
     FieldEscape,
     /// A field of the main window was clicked: focused by id, which takes the keys from the
@@ -341,6 +348,8 @@ impl Application for App {
             last_script: None,
             peek: None,
             tool_edit: None,
+            menu_edit: None,
+            menu_reset_ask: false,
             restore: Vec::new(),
             about: false,
             exit_ask: false,
@@ -604,7 +613,12 @@ impl Application for App {
 
     fn context_drawer(&self) -> Option<cosmic::app::context_drawer::ContextDrawer<'_, Message>> {
         match self.drawer? {
-            Drawer::Options => Some(options::view(&self.config, self.separate, &self.hl)),
+            Drawer::Options => Some(options::view(
+                &self.config,
+                self.separate,
+                &self.hl,
+                self.menu_reset_ask,
+            )),
         }
     }
 
@@ -652,6 +666,11 @@ impl Application for App {
             .or_else(|| self.about.then(|| about::view(self.about_note.as_deref())))
             .or_else(|| self.buttons.dialog())
             .or_else(|| (self.tool_edit.as_ref()).map(|(t, l)| toolbar::editor(t, l)))
+            .or_else(|| {
+                self.menu_edit
+                    .as_ref()
+                    .map(crate::menu_editor::Editor::view)
+            })
             .or_else(|| self.exit_ask.then(|| self.exit_dialog()))
             .or_else(|| self.tabs.dialog())
             .or_else(|| self.quick.as_ref().map(QuickConnect::view))
@@ -664,22 +683,23 @@ impl Application for App {
         if self.config.menu_bar_hidden {
             return Vec::new();
         }
-        vec![menu::bar(
-            (
-                self.config.session_manager_visible,
-                self.config.command_window_visible,
-                self.config.button_bar_visible,
-                self.config.command_manager_visible,
-                self.config.connect_bar_visible,
-            ),
-            self.tabs.menu_state(),
-            (
-                &self.script_labels(&self.script_files),
-                &self.script_labels(&self.recent_files()),
-            ),
-            self.scripts.running(),
-            self.full_screen,
-        )]
+        let (folder, recent) = (
+            self.script_labels(&self.script_files),
+            self.script_labels(&self.recent_files()),
+        );
+        let state = menu::State {
+            session_manager: self.config.session_manager_visible,
+            command_window: self.config.command_window_visible,
+            button_bar: self.config.button_bar_visible,
+            command_manager: self.config.command_manager_visible,
+            connect_bar: self.config.connect_bar_visible,
+            tabs: self.tabs.menu_state(),
+            folder: &folder,
+            recent: &recent,
+            scripting: self.scripts.running(),
+            full_screen: self.full_screen,
+        };
+        vec![menu::bar(&state, &self.config.menus)]
     }
 
     fn view(&self) -> Element<'_, Message> {
@@ -807,14 +827,7 @@ impl App {
                 };
                 match toolbar::function(&b.cmd) {
                     Some(t) => return self.update(Message::Action(t.2)),
-                    None if b.is_script() => {
-                        let Some(args) = shlex::split(&b.params) else {
-                            self.sessions.notice = Some(fl!("script-bad-args"));
-                            return Task::none();
-                        };
-                        return self.script(crate::script::ScMsg::Start(b.cmd.into(), args));
-                    }
-                    None => self.launch_app(&format!("{} {}", b.cmd, b.params)),
+                    None => return self.run_program(&b.cmd, &b.params),
                 }
             }
             TbMsg::Open => {
@@ -846,6 +859,39 @@ impl App {
             TbMsg::Cancel => self.tool_edit = None,
         }
         Task::none()
+    }
+
+    /// A toolbar button's / menu item's own program: a `.py` runs as Script → Run… on the active
+    /// tab (`params` its arguments), anything else is launched.
+    fn run_program(&mut self, cmd: &str, params: &str) -> Task<Message> {
+        if cmd.ends_with(".py") {
+            let Some(args) = shlex::split(params) else {
+                self.sessions.notice = Some(fl!("script-bad-args"));
+                return Task::none();
+            };
+            return self.script(crate::script::ScMsg::Start(cmd.into(), args));
+        }
+        self.launch_app(&format!("{cmd} {params}"));
+        Task::none()
+    }
+
+    /// Tools → Customize Menu…: edits, OK (stored), Cancel.
+    fn menu_edit(&mut self, m: crate::menu_editor::MeMsg) {
+        use crate::menu_editor::MeMsg;
+        match m {
+            MeMsg::Ok => {
+                if let Some(e) = self.menu_edit.take() {
+                    self.config.menus = e.edit.ok();
+                    self.save_config();
+                }
+            }
+            MeMsg::Cancel => self.menu_edit = None,
+            m => {
+                if let Some(e) = &mut self.menu_edit {
+                    e.update(m);
+                }
+            }
+        }
     }
 
     /// Edit → Find: its bar opened / typed in / stepped / closed; the active terminal searches.
@@ -1239,6 +1285,9 @@ impl App {
             Message::Sessions(SmMsg::Key(TreeKey::Clear)) if self.update.is_some() => {
                 return self.updates(crate::updates::UpMsg::Later);
             }
+            Message::Sessions(SmMsg::Key(TreeKey::Clear)) if self.menu_edit.is_some() => {
+                self.menu_edit = None;
+            }
             Message::Sessions(SmMsg::Key(TreeKey::Clear)) if self.keys.is_some() => {
                 return self.key_dialog(crate::keygen::KgMsg::Close);
             }
@@ -1280,6 +1329,13 @@ impl App {
             }
             Message::Find(m) => return self.find(m),
             Message::Toolbar(m) => return self.toolbar(m),
+            Message::MenuEdit(m) => self.menu_edit(m),
+            Message::MenuResetAsk(on) => self.menu_reset_ask = on,
+            Message::MenuReset => {
+                self.menu_reset_ask = false;
+                self.config.menus = Vec::new();
+                self.save_config();
+            }
             Message::FieldEscape if !self.connect_list.is_empty() => {
                 self.connect_list.clear();
                 self.connect_pick = None;
@@ -1615,6 +1671,12 @@ impl App {
                     Slot::Tool => self.toolbar(crate::toolbar::TbMsg::Edit(
                         shagshell_core::toolbar::ToolMsg::Cmd(s),
                     )),
+                    Slot::Menu => {
+                        self.menu_edit(crate::menu_editor::MeMsg::Edit(
+                            shagshell_core::menu::MenuMsg::Cmd(s),
+                        ));
+                        Task::none()
+                    }
                     Slot::Sched => self.scheduler(crate::scheduler::SchMsg::Script(s)),
                     Slot::Pre => self
                         .session_options(SoMsg::Field(crate::session_options::Field::PreScript, s)),
@@ -2070,6 +2132,14 @@ impl App {
             Action::ToggleRecording => {
                 if let Some((title, rec)) = self.tabs.toggle_recording() {
                     return self.save_recording(&title, rec);
+                }
+            }
+            Action::CustomizeMenu => {
+                self.menu_edit = Some(crate::menu_editor::Editor::new(&self.config.menus));
+            }
+            Action::OwnItem(n) => {
+                if let Some(it) = menu::own_item(&self.config.menus, n) {
+                    return self.run_program(&it.cmd, &it.params);
                 }
             }
             Action::Donate => {
@@ -3650,6 +3720,7 @@ impl App {
 
     fn set_drawer(&mut self, d: Option<Drawer>) {
         self.core.window.show_context = d.is_some();
+        self.menu_reset_ask = false;
         self.drawer = d;
     }
 

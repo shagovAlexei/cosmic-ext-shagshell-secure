@@ -2,6 +2,9 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.97.0 — 2026-10-28
+- feat: Tools → Customize Menu…: menus and items moved, renamed, hidden, items moved between menus, own menus, programs / scripts and dividers added; Global Options → Menu → Reset brings the stock menu back (spec 37)
+
 ## 0.96.0 — 2026-10-28
 - feat: Script Builder «From a template ▾» lists «Templates» and «Examples» under their own headings
 

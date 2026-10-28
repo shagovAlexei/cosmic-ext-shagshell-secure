@@ -1391,6 +1391,8 @@ pub enum Slot {
     Key,
     /// The toolbar editor: a button's script.
     Tool,
+    /// Tools → Customize Menu…: an item's script.
+    Menu,
 }
 
 /// A script's field with a «Browse…» button beside it.

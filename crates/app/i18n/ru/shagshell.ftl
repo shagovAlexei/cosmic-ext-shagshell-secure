@@ -855,3 +855,22 @@ builder-stops = Останавливаться на точках и шагах
 builder-variables = Переменные
 builder-no-variables = (пока нет)
 builder-break = Точка остановки: запуск встанет здесь
+
+# Сервис → Настройка меню… (спека 37)
+menu-customize = Настройка меню…
+me-title = Настройка меню
+me-menus = Меню
+me-items = Пункты
+me-add-menu = Добавить меню
+me-new-menu = Новое меню
+me-new-program = (программа)
+me-delete = Удалить
+me-move-to = В меню
+me-add-function = Добавить функцию
+me-add-program = Программа
+me-add-sep = Разделитель
+me-label = Подпись
+options-menu = Меню
+options-menu-reset = Сбросить меню по умолчанию
+options-menu-reset-ask = Сбросить меню? Свои пункты и меню удалятся.
+options-menu-edit = Меню и пункты: порядок, названия, скрытие, свои программы
