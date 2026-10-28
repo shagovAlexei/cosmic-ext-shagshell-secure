@@ -857,3 +857,22 @@ builder-stops = Stop at breakpoints, steps
 builder-variables = Variables
 builder-no-variables = (none yet)
 builder-break = Breakpoint: the run stops here
+
+# Tools → Customize Menu… (spec 37)
+menu-customize = Customize Menu…
+me-title = Customize Menu
+me-menus = Menus
+me-items = Items
+me-add-menu = Add menu
+me-new-menu = New menu
+me-new-program = (program)
+me-delete = Delete
+me-move-to = To menu
+me-add-function = Add function
+me-add-program = Program
+me-add-sep = Divider
+me-label = Label
+options-menu = Menu
+options-menu-reset = Reset the menu to default
+options-menu-reset-ask = Reset the menu? Your items and menus are removed.
+options-menu-edit = Menus and items: order, names, hidden, your own programs

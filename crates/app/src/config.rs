@@ -228,6 +228,8 @@ pub struct Config {
     pub note_buttons: Vec<String>,
     /// The Script Builder bar's buttons, in order (`core::builder::bar`), set in its «⋯».
     pub builder_buttons: Vec<String>,
+    /// The main menu as the user arranged it (Tools → Customize Menu…); empty: the stock one.
+    pub menus: Vec<shagshell_core::menu::Menu>,
     /// Ctrl+Tab goes back to the tab used before (SecureCRT's option), not the next one.
     pub ctrl_tab_recent: bool,
     /// No tab bar while there is one tab (in one group).
@@ -372,6 +374,7 @@ impl Default for Config {
             tabs_bottom: false,
             note_buttons: shagshell_core::notes::default_buttons(),
             builder_buttons: shagshell_core::builder::bar::default_buttons(),
+            menus: Vec::new(),
             note_font_family: String::new(),
             notes_right: false,
             note_font_size: 14,
