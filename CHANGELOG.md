@@ -2,6 +2,9 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.97.1 — 2026-10-29
+- fix: the menu bar keeps its arranged menu between redraws (made again only when the saved menu changes); one table of function names (`menu::entry`) for the menu, keys and Button Bar — every menu function can now be bound to a key or a button; lists show «label — menu»
+
 ## 0.97.0 — 2026-10-28
 - feat: Tools → Customize Menu…: menus and items moved, renamed, hidden, items moved between menus, own menus, programs / scripts and dividers added; Global Options → Menu → Reset brings the stock menu back (spec 37)
 

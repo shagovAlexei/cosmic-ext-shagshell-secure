@@ -7,8 +7,7 @@ use crate::menu::{entry, label, title};
 use cosmic::iced::widget::{column, row};
 use cosmic::iced::{Alignment, Length};
 use cosmic::{Element, theme, widget};
-use shagshell_core::menu::{Menu, MenuEdit, MenuMsg, STOCK};
-use shagshell_core::toolbar::SEP;
+use shagshell_core::menu::{Menu, MenuEdit, MenuMsg};
 
 #[derive(Clone, Debug)]
 pub enum MeMsg {
@@ -23,7 +22,7 @@ pub enum MeMsg {
 
 pub struct Editor {
     pub edit: MenuEdit,
-    /// Every stock function: (name, label), and the labels for the dropdown.
+    /// Every function (`menu::FUNCTIONS`) and its labels for the dropdown.
     functions: Vec<&'static str>,
     function_labels: Vec<String>,
     /// The menus' names, for «В меню ▾» (kept in step with `edit`).
@@ -32,19 +31,10 @@ pub struct Editor {
 
 impl Editor {
     pub fn new(saved: &[Menu]) -> Self {
-        // «Label — Menu»: two functions may share a label (File's / View's Connect Bar).
-        let (functions, function_labels) = (STOCK.iter())
-            .flat_map(|(id, items)| items.iter().map(move |c| (*id, *c)))
-            .filter(|(_, c)| *c != SEP)
-            .map(|(id, c)| {
-                let menu = title(&Menu {
-                    id: id.into(),
-                    ..Default::default()
-                });
-                let name = entry(c).map_or_else(|| c.to_string(), |e| e.1);
-                (c, format!("{name} — {menu}"))
-            })
-            .unzip();
+        let functions = crate::menu::FUNCTIONS.clone();
+        let function_labels = (functions.iter())
+            .map(|c| crate::menu::function_choice(c))
+            .collect();
         let mut e = Self {
             edit: MenuEdit::new(saved),
             functions,

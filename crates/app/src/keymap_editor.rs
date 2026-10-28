@@ -188,7 +188,10 @@ impl Editor {
                 .map(|k| widget::icon::from_name(kind_icon(*k)).handle())
                 .collect(),
             targets: vec![fl!("cw-current"), fl!("cw-all")],
-            functions: FUNCTIONS.iter().map(|(_, l)| l()).collect(),
+            functions: FUNCTIONS
+                .iter()
+                .map(|n| crate::menu::function_choice(n))
+                .collect(),
         }
     }
 
@@ -296,13 +299,13 @@ impl Editor {
                 b.kind = Kind::ALL.get(i).copied().unwrap_or_default();
                 b.target = Target::Current;
                 b.arg = match b.kind {
-                    Kind::Menu => FUNCTIONS[0].0.to_string(),
+                    Kind::Menu => FUNCTIONS[0].to_string(),
                     _ => String::new(),
                 };
                 b.args.clear();
             }),
             KmMsg::FunctionSel(i) => self.map(|b| {
-                if let Some((name, _)) = FUNCTIONS.get(i) {
+                if let Some(name) = FUNCTIONS.get(i) {
                     b.arg = (*name).to_string();
                 }
             }),
@@ -509,7 +512,7 @@ impl Editor {
             ));
         col = match b.kind {
             Kind::Menu => {
-                let at = FUNCTIONS.iter().position(|(n, _)| *n == b.arg);
+                let at = FUNCTIONS.iter().position(|n| *n == b.arg);
                 col.push(field(
                     fl!("bb-function"),
                     widget::dropdown(&self.functions, at, move |i| m(KmMsg::FunctionSel(i))).into(),
