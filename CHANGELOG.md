@@ -2,6 +2,9 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.95.1 — 2026-10-28
+- fix: a note's lock button is «Read only» / «Allow editing», not «Lock Session…»
+
 ## 0.95.0 — 2026-10-28
 - feat: Global Options moved to the top of the Tools menu (out of Options)
 
