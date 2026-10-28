@@ -2,6 +2,9 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.97.4 — 2026-10-29
+- fix (security): the update runs `/usr/bin/pkexec /usr/bin/apt-get`, `/usr/bin/curl`, `/usr/bin/sha256sum` (not whatever PATH finds first); CI actions pinned by commit (Dependabot proposes updates); a pruned release keeps its tag, so any version can be built again
+
 ## 0.97.3 — 2026-10-29
 - fix (security): Script → Record keeps no step the terminal did not echo (a password whatever the prompt's language: «Passwort:», «Contraseña:», stars); a password asked with `Dialog.Prompt(…, True)` is shown as *** in the debug console and the Script Builder's variables wherever it goes later (`Screen.Send(password + "\r")`)
 

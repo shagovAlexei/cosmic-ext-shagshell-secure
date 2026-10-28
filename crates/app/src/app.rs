@@ -2506,8 +2506,8 @@ impl App {
                 self.sessions.notice = Some(fl!("up-verified"));
                 return off_ui(
                     move || {
-                        let out = std::process::Command::new("pkexec")
-                            .args(["apt-get", "install", "-y", "--"])
+                        let out = std::process::Command::new("/usr/bin/pkexec")
+                            .args(["/usr/bin/apt-get", "install", "-y", "--"])
                             .arg(&deb)
                             .output()
                             .map_err(|e| format!("pkexec: {e}"))?;
