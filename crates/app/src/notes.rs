@@ -369,8 +369,8 @@ impl NoteView {
             "Lock" => (
                 "system-lock-screen-symbolic",
                 match self.locked {
-                    true => fl!("menu-unlock"),
-                    false => fl!("menu-lock"),
+                    true => fl!("note-unlock"),
+                    false => fl!("note-lock"),
                 },
                 NoteMsg::Lock,
                 true,
@@ -493,7 +493,7 @@ fn button_label(name: &str) -> String {
         "LineNumbers" => fl!("note-numbers"),
         "Rename" => fl!("note-rename"),
         "Open" => fl!("note-open"),
-        "Lock" => fl!("menu-lock"),
+        "Lock" => fl!("note-lock"),
         other => other.to_string(),
     }
 }
