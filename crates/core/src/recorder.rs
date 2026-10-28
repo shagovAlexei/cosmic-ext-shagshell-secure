@@ -9,6 +9,8 @@ use crate::logfile::Cleaner;
 /// A prompt longer than this is waited for by its last `TAIL` characters.
 const LONG: usize = 80;
 const TAIL: usize = 40;
+/// How much output after a step is kept to look for its echo.
+const AFTER: usize = 4096;
 
 #[derive(Debug, PartialEq, Eq)]
 struct Step {
@@ -18,6 +20,8 @@ struct Step {
     text: String,
     /// Typed after a password / passphrase prompt: not kept.
     secret: bool,
+    /// The output from its first key on (its echo, if any), at most `AFTER` bytes.
+    after: String,
     /// The step ended with Enter (or Ctrl+C / Ctrl+D, which are in `text`).
     enter: bool,
 }
@@ -29,6 +33,17 @@ pub struct Recorder {
     /// The step being typed, and the prompt it started at.
     typing: String,
     prompt: Option<String>,
+    /// The output since the first key of the step being typed.
+    after: String,
+}
+
+fn keep(to: &mut String, text: &str) {
+    for c in text.chars() {
+        if to.len() >= AFTER {
+            break;
+        }
+        to.push(c);
+    }
 }
 
 impl Recorder {
@@ -40,6 +55,12 @@ impl Recorder {
     pub fn output(&mut self, bytes: &[u8]) {
         let mut sink = Vec::new();
         self.clean.feed(bytes, &mut sink);
+        let text = String::from_utf8_lossy(&sink);
+        if self.prompt.is_some() {
+            keep(&mut self.after, &text);
+        } else if let Some(s) = self.steps.last_mut() {
+            keep(&mut s.after, &text);
+        }
     }
 
     /// What the user typed or pasted.
@@ -50,7 +71,13 @@ impl Recorder {
             .replace("\x1b[201~", "");
         for c in text.chars() {
             if self.prompt.is_none() {
-                self.prompt = Some(self.clean.partial().trim().to_string());
+                let line = self.clean.partial();
+                // The line the last step's answer left (the new prompt) is part of that answer.
+                if let Some(s) = self.steps.last_mut() {
+                    keep(&mut s.after, &line);
+                }
+                self.prompt = Some(line.trim().to_string());
+                self.after.clear();
             }
             match c {
                 '\r' | '\n' => self.end(Some('\r')),
@@ -74,6 +101,7 @@ impl Recorder {
             prompt,
             text: if secret { String::new() } else { text },
             secret,
+            after: std::mem::take(&mut self.after),
         });
     }
 
@@ -85,6 +113,17 @@ impl Recorder {
     pub fn script(mut self, header: &str) -> String {
         if !self.typing.is_empty() {
             self.end(None);
+        }
+        // The line not ended yet holds the last echo.
+        let partial = self.clean.partial();
+        if let Some(s) = self.steps.last_mut() {
+            keep(&mut s.after, &partial);
+        }
+        for s in &mut self.steps {
+            if !s.secret && unechoed(s) {
+                s.secret = true;
+                s.text.clear();
+            }
         }
         let mut out = format!(
             "# $language = \"Python\"\n# $interface = \"1.0\"\n# {header}\n\ncrt.Screen.Synchronous = True\n"
@@ -108,6 +147,14 @@ impl Recorder {
         }
         out
     }
+}
+
+/// Typed, answered, and the answer doesn't show what was typed: not echoed, as a password
+/// isn't (whatever language the prompt is in). No answer at all: can't tell, kept.
+fn unechoed(s: &Step) -> bool {
+    let typed: String = s.text.chars().filter(|c| !c.is_control()).collect();
+    let seen = s.after.replacen(&s.prompt, "", 1);
+    !typed.is_empty() && !seen.trim().is_empty() && !seen.contains(&typed)
 }
 
 /// A prompt that asks for a secret, by its words (the echo of the line is not known here).
@@ -175,6 +222,46 @@ mod tests {
             body(r),
             "\ncrt.Screen.WaitForString(\"user@host:~$\")\ncrt.Screen.Send(\"ls\\r\")\n\ncrt.Screen.WaitForString(\"user@host:~$\")\ncrt.Screen.Send(\"pwd\\r\")\n"
         );
+    }
+
+    #[test]
+    fn regression_unechoed_step_is_secret_whatever_the_prompt_says() {
+        // «Passwort:» / «Contraseña:» are not in the word list: the password was kept in the .py.
+        for prompt in ["Passwort: ", "Contraseña: ", "Token: "] {
+            let mut r = Recorder::new();
+            r.output(prompt.as_bytes());
+            r.input(b"geheim7\r");
+            r.output(b"\r\nrouter> ");
+            let s = body(r);
+            assert!(!s.contains("geheim7"), "{prompt}: {s}");
+            assert!(s.contains("crt.Dialog.Prompt("), "{prompt}");
+        }
+        // Not the last step: the next prompt (no newline yet) is the answer.
+        let mut r = Recorder::new();
+        r.output(b"Passwort: ");
+        r.input(b"geheim7\r");
+        r.output(b"\r\nrouter> ");
+        r.input(b"uptime\r");
+        r.output(b"uptime\r\nup 3 days\r\nrouter> ");
+        let s = body(r);
+        assert!(!s.contains("geheim7"), "{s}");
+        assert!(s.contains("Send(\"uptime\\r\")"), "{s}");
+        // Echoed as stars (MikroTik, Windows): not the text either.
+        let mut r = Recorder::new();
+        r.output(b"Kennwort: ");
+        r.input(b"abc12\r");
+        r.output(b"*****\r\n> ");
+        assert!(!body(r).contains("abc12"));
+    }
+
+    #[test]
+    fn a_pasted_line_echoed_late_is_kept() {
+        // The echo comes after the Enter, in one chunk with the answer.
+        let mut r = Recorder::new();
+        r.output(b"router> ");
+        r.input(b"show version\r");
+        r.output(b"show version\r\nRouterOS 7.16\r\nrouter> ");
+        assert!(body(r).contains("Send(\"show version\\r\")"));
     }
 
     #[test]

@@ -389,6 +389,7 @@ impl Scripts {
             debug: self.debug.clone(),
             cancel: cancel.clone(),
             dbg,
+            secrets: Mutex::new(Vec::new()),
         });
         let tx = self.tx.clone();
         std::thread::spawn(move || {
@@ -1152,6 +1153,8 @@ struct RunHost {
     cancel: Arc<AtomicBool>,
     /// A Script Builder run's.
     dbg: Option<Arc<shagshell_core::debugger::Debugger>>,
+    /// The answers of this run's password prompts (`Host::secrets`).
+    secrets: Mutex<Vec<String>>,
 }
 
 impl RunHost {
@@ -1171,6 +1174,10 @@ impl Host for RunHost {
 
     fn trace(&self, line: String) {
         self.sink.push(script::Kind::Debug, line);
+    }
+
+    fn secrets(&self) -> Option<&Mutex<Vec<String>>> {
+        Some(&self.secrets)
     }
 
     fn debugger(&self) -> Option<&shagshell_core::debugger::Debugger> {

@@ -377,6 +377,10 @@ pub trait Host: Send + Sync {
         false
     }
     fn trace(&self, _line: String) {}
+    /// This run's password answers (every connection of it), hidden in `trace`.
+    fn secrets(&self) -> Option<&Mutex<Vec<String>>> {
+        None
+    }
     /// A Script Builder run's debugger (trace mode).
     fn debugger(&self) -> Option<&crate::debugger::Debugger> {
         None
@@ -449,14 +453,25 @@ impl Console {
 
 /// A `crt` call and its result as one debug line: `→ Screen.Send("ls\r")  ← null`. Long text is
 /// cut; what a password prompt returned and what `Prompt(bPassword)` shows is not printed.
-pub fn trace_line(call: &str, args: &[Value], result: &Result<Value, String>) -> String {
-    fn show(v: &Value) -> String {
-        let s = v.to_string();
+/// `secrets`: the answers of this run's password prompts, hidden wherever they come back.
+pub fn trace_line(
+    call: &str,
+    args: &[Value],
+    result: &Result<Value, String>,
+    secrets: &[String],
+) -> String {
+    let show = |v: &Value| -> String {
+        let mut s = v.to_string();
+        for x in secrets.iter().filter(|x| !x.is_empty()) {
+            // As the JSON text writes it (quotes, backslashes escaped).
+            let esc = Value::from(x.as_str()).to_string();
+            s = s.replace(&esc[1..esc.len() - 1], "***");
+        }
         match s.char_indices().nth(80) {
             Some((i, _)) => format!("{}…", &s[..i]),
             None => s,
         }
-    }
+    };
     let secret = call == "Dialog.Prompt" && args.get(3).and_then(Value::as_bool) == Some(true);
     // A password prompt's default text may be one too.
     let args = (args.iter().enumerate())
@@ -492,13 +507,22 @@ pub fn serve<S: io::Read + io::Write>(
         };
         let id = req["id"].clone();
         let result = handle(&req, host, cancel);
+        let args: &[Value] = req["args"].as_array().map_or(&[], |a| a.as_slice());
+        let call = req["call"].as_str().unwrap_or("?");
+        if call == "Dialog.Prompt"
+            && args.get(3).and_then(Value::as_bool) == Some(true)
+            && let Ok(Value::String(answer)) = &result
+            && let Some(keep) = host.secrets()
+        {
+            keep.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(answer.clone());
+        }
         if host.debug() {
-            let args: &[Value] = req["args"].as_array().map_or(&[], |a| a.as_slice());
-            host.trace(trace_line(
-                req["call"].as_str().unwrap_or("?"),
-                args,
-                &result,
-            ));
+            let secrets = (host.secrets())
+                .map(|k| k.lock().unwrap_or_else(|e| e.into_inner()).clone())
+                .unwrap_or_default();
+            host.trace(trace_line(call, args, &result, &secrets));
         }
         let reply = match result {
             Ok(v) => json!({"id": id, "ok": v}),
@@ -742,20 +766,50 @@ mod tests {
     fn trace_shows_the_call_cuts_long_text_and_hides_passwords() {
         let ok = Ok(json!(true));
         assert_eq!(
-            trace_line("Screen.WaitForString", &[json!("login:"), json!(10)], &ok),
+            trace_line(
+                "Screen.WaitForString",
+                &[json!("login:"), json!(10)],
+                &ok,
+                &[]
+            ),
             "→ Screen.WaitForString(\"login:\", 10)  ← true"
         );
-        let long = trace_line("Screen.Send", &[json!("x".repeat(200))], &Ok(Value::Null));
+        let long = trace_line(
+            "Screen.Send",
+            &[json!("x".repeat(200))],
+            &Ok(Value::Null),
+            &[],
+        );
         assert!(long.contains('…') && long.len() < 140);
         let secret = trace_line(
             "Dialog.Prompt",
             &[json!("pw?"), json!(""), json!("old-secret"), json!(true)],
             &Ok(json!("hunter2")),
+            &[],
         );
         assert!(secret.ends_with("← \"***\"") && !secret.contains("hunter2"));
         assert!(!secret.contains("old-secret"));
-        let err = trace_line("Screen.Send", &[json!("a")], &Err("no such tab".into()));
+        let err = trace_line(
+            "Screen.Send",
+            &[json!("a")],
+            &Err("no such tab".into()),
+            &[],
+        );
         assert!(err.ends_with("← error: no such tab"));
+    }
+
+    #[test]
+    fn regression_trace_hides_a_prompted_password_sent_later() {
+        // `password = Prompt(…, True)` was hidden, `Screen.Send(password + "\r")` showed it.
+        let secrets = vec!["hun\"ter2".to_string()];
+        let line = trace_line(
+            "Screen.Send",
+            &[json!("hun\"ter2\r")],
+            &Ok(Value::Null),
+            &secrets,
+        );
+        assert!(!line.contains("ter2"), "{line}");
+        assert!(line.contains("***"), "{line}");
     }
 
     #[test]
