@@ -451,7 +451,6 @@ pub fn bar(
             vec![
                 Button(fl!("menu-session-options"), None, Action::SessionOptions),
                 Button(fl!("menu-edit-default"), None, Action::EditDefault),
-                Button(fl!("menu-global-options"), None, Action::GlobalOptions),
             ],
         ),
         (
@@ -514,6 +513,8 @@ pub fn bar(
         (
             fl!("menu-tools"),
             vec![
+                Button(fl!("menu-global-options"), None, Action::GlobalOptions),
+                Divider,
                 Button(fl!("menu-credentials"), None, Action::Credentials),
                 Button(fl!("menu-create-key"), None, Action::CreateKey),
                 Button(fl!("menu-upload-key"), None, Action::UploadKey),

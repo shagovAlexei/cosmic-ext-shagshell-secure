@@ -25,7 +25,7 @@ sudo apt install ./shagshell_*.deb
 
 Doing it by hand from the [releases page](https://github.com/shagovAlexei/cosmic-ext-shagshell-secure/releases/latest)? Save **both** files (the `.deb` and `SHA256SUMS`) in the same folder and run `sha256sum -c SHA256SUMS` there; `No such file` means `SHA256SUMS` is not in the current folder.
 
-The app checks for a newer release at startup (Options → Global Options → Updates to turn it off).
+The app checks for a newer release at startup (Tools → Global Options → Updates to turn it off).
 
 ## Support the project
 
