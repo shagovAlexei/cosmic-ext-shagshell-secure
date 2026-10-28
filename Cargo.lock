@@ -4530,7 +4530,7 @@ dependencies = [
 
 [[package]]
 name = "shagshell"
-version = "0.97.4"
+version = "0.97.5"
 dependencies = [
  "alacritty_terminal",
  "ashpd 0.12.3",
@@ -4539,6 +4539,7 @@ dependencies = [
  "i18n-embed",
  "i18n-embed-fl",
  "indexmap",
+ "jiff",
  "libcosmic",
  "log",
  "polling",
@@ -4556,7 +4557,7 @@ dependencies = [
 
 [[package]]
 name = "shagshell-core"
-version = "0.97.4"
+version = "0.97.5"
 dependencies = [
  "jiff",
  "libc",

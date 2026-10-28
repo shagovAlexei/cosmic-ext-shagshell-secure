@@ -344,7 +344,7 @@ where
     ) -> layout::Node {
         let limits = limits.width(Length::Fill).height(Length::Fill);
 
-        let mut terminal = self.terminal.lock().unwrap();
+        let mut terminal = self.terminal.lock().unwrap_or_else(|e| e.into_inner());
 
         //TODO: set size?
 
@@ -400,7 +400,7 @@ where
         }
 
         if let Some(p) = cursor_position.position_in(layout.bounds()) {
-            let terminal = self.terminal.lock().unwrap();
+            let terminal = self.terminal.lock().unwrap_or_else(|e| e.into_inner());
             let buffer_size = terminal.with_buffer(|buffer| buffer.size());
 
             let x = p.x - self.padding.left;
@@ -470,7 +470,7 @@ where
 
         if view_w <= 0 || view_h <= 0 {
             // Pane too small for content, but still fill background
-            let terminal = self.terminal.lock().unwrap();
+            let terminal = self.terminal.lock().unwrap_or_else(|e| e.into_inner());
             let meta = &terminal.metadata_set[terminal.default_attrs().metadata];
             renderer.fill_quad(
                 Quad {
@@ -496,7 +496,7 @@ where
             return;
         }
 
-        let mut terminal = self.terminal.lock().unwrap();
+        let mut terminal = self.terminal.lock().unwrap_or_else(|e| e.into_inner());
 
         // Ensure terminal is the right size
         terminal.resize(view_w as u32, view_h as u32);
@@ -948,7 +948,7 @@ where
             shell.capture_event();
         }
         let scrollbar_rect = state.scrollbar_rect.get();
-        let mut terminal = self.terminal.lock().unwrap();
+        let mut terminal = self.terminal.lock().unwrap_or_else(|e| e.into_inner());
         let buffer_size = terminal.with_buffer(|buffer| buffer.size());
 
         let is_app_cursor = terminal.term.lock().mode().contains(TermMode::APP_CURSOR);

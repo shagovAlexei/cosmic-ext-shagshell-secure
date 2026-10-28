@@ -2346,7 +2346,12 @@ impl Tabs {
                     self.retitle(id);
                 }
             }
-            Outcome::Copy(text) => return cosmic::iced::clipboard::write(text),
+            // A program's OSC 52 (vim, tmux…): said, so a server can't fill it unseen.
+            Outcome::Copy(text) => {
+                *self.notice.lock().unwrap_or_else(|e| e.into_inner()) =
+                    Some(fl!("term-osc52", chars = text.chars().count()));
+                return cosmic::iced::clipboard::write(text);
+            }
             Outcome::Title(title) => {
                 tab.program_title = title;
                 self.retitle(id);
