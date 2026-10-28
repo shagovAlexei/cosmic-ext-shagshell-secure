@@ -1,7 +1,10 @@
-# The workflows' actions are pinned by commit; this proposes the newer ones as PRs.
+# The workflows' actions are pinned by commit; this proposes the newer ones as PRs, once a
+# release is two weeks old (a hijacked one is usually found and pulled by then).
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: monthly
+    cooldown:
+      default-days: 14
