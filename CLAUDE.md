@@ -145,4 +145,4 @@ brainstorm → spec `.claude/docs/specs/NN-<topic>.md` → plan `.claude/docs/pl
 
 ## Versions
 
-Root `Cargo.toml` `version`: a feature bumps minor, a fix bumps patch.  Every PR adds its entry to `CHANGELOG.md` (releases beyond the last 5 are pruned from GitHub). Tag `vX.Y.Z` on `main` after the merge.
+Root `Cargo.toml` `version`: a feature bumps minor, a fix bumps patch.  Every PR adds its entry to `CHANGELOG.md` (releases beyond the last 5 are pruned from GitHub; their tags stay, so `git checkout vX.Y.Z && just deb` rebuilds any version). Workflow actions are pinned by commit SHA (Dependabot proposes newer ones). Tag `vX.Y.Z` on `main` after the merge.

@@ -48,7 +48,7 @@ pub fn status(current: &str, json: &str) -> Status {
 /// (a `file://` one is how the window is tried out).
 pub fn check(current: &str) -> Status {
     let url = std::env::var("SHAGSHELL_UPDATE_URL").unwrap_or_else(|_| LATEST_API.into());
-    let out = match Command::new("curl")
+    let out = match Command::new("/usr/bin/curl")
         .args(["-sSL", "-m", "10", "--", &url])
         .output()
     {
@@ -88,7 +88,7 @@ pub fn deb_name(sums: &str) -> Option<String> {
 
 /// `sha256sum -c SHA256SUMS` in `dir`: Ok only when every listed file matches.
 pub fn verify(dir: &std::path::Path) -> Result<(), String> {
-    let out = Command::new("sha256sum")
+    let out = Command::new("/usr/bin/sha256sum")
         .args(["-c", "--strict", "SHA256SUMS"])
         .current_dir(dir)
         .output()
@@ -113,7 +113,7 @@ pub fn download(tag: &str, dir: &std::path::Path) -> Result<std::path::PathBuf, 
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let get = |name: &str| -> Result<(), String> {
         let url = format!("{REPO}/releases/download/{tag}/{name}");
-        let out = Command::new("curl")
+        let out = Command::new("/usr/bin/curl")
             .args(["-fsSL", "-m", "300", "-o"])
             .arg(dir.join(name))
             .args(["--", &url])

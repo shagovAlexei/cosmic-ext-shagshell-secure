@@ -1,7 +1,7 @@
 name: release
 
 # Push a tag `vX.Y.Z` (matching `version` in Cargo.toml) → a GitHub release with the .deb;
-# only the last 5 releases (and their tags) are kept.
+# only the last 5 releases are kept (every tag stays).
 # A PR changing this file builds the .deb only (an artifact, no release).
 # A push to main builds it too, with no release: that run keeps the build cache. A tag can only
 # read caches of its own ref and of main, so without it every release built all from scratch.
@@ -21,7 +21,7 @@ jobs:
     # newer (Ubuntu 24.04, Pop!_OS 24.04, Mint 21 / 22, Debian 12…). Built on 24.04 it needed 2.39.
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install system dependencies
         run: |
@@ -31,13 +31,15 @@ jobs:
             libgbm-dev libegl1-mesa-dev libssl-dev pkg-config \
             dpkg-dev
 
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           # Only main's cache: a tag's would be read by nothing else (670 MB each).
           save-if: ${{ github.ref == 'refs/heads/main' }}
       # `just` is not packaged in 22.04.
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
           tool: just
 
@@ -70,11 +72,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Newest first; everything after the fifth goes, with its tag.
+          # Newest first; everything after the fifth goes. Its tag stays: any version can be
+          # built again (`git checkout vX.Y.Z && just deb`) to go back to it.
           gh release list --limit 100 --json tagName --jq '.[5:][].tagName' |
-            while read -r tag; do gh release delete "$tag" --cleanup-tag --yes; done
+            while read -r tag; do gh release delete "$tag" --yes; done
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: github.event_name == 'pull_request'
         with:
           name: packages
