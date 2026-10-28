@@ -273,7 +273,7 @@ impl Terminal {
         let mut buffer = Buffer::new_empty(metrics);
 
         let (cell_width, cell_height) = {
-            let mut font_system = font_system().write().unwrap();
+            let mut font_system = font_system().write().unwrap_or_else(|e| e.into_inner());
             let font_system = font_system.raw();
             buffer.set_wrap(Wrap::None);
 
@@ -769,7 +769,7 @@ impl Terminal {
     pub fn update_cell_size(&mut self) {
         let default_attrs = self.default_attrs.clone();
         let (cell_width, cell_height) = {
-            let mut font_system = font_system().write().unwrap();
+            let mut font_system = font_system().write().unwrap_or_else(|e| e.into_inner());
             self.with_buffer_mut(|buffer| {
                 buffer.set_wrap(Wrap::None);
 
@@ -1053,7 +1053,7 @@ impl Terminal {
 
             // Shape and trim shape run cache
             {
-                let mut font_system = font_system().write().unwrap();
+                let mut font_system = font_system().write().unwrap_or_else(|e| e.into_inner());
                 buffer.shape_until_scroll(font_system.raw(), true);
                 font_system.raw().shape_run_cache.trim(1024);
             }

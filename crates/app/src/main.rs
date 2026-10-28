@@ -79,6 +79,7 @@ fn main() -> cosmic::iced::Result {
         [flag, file, rest @ ..] if flag == "--script" => Some((file.into(), rest.to_vec())),
         _ => None,
     };
+    crash_log();
     simple_logger::SimpleLogger::new()
         .with_level(log::LevelFilter::Warn)
         .env()
@@ -128,4 +129,36 @@ fn pick_renderer() -> bool {
         log::error!("re-exec with ICED_BACKEND=tiny-skia: {e}");
     }
     false
+}
+
+/// A panic is written to `~/.local/state/shagshell/crash.log` (what, where, the stack) before the
+/// usual message: started from the menu, stderr goes nowhere and «it closed» says nothing.
+fn crash_log() {
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        if let Some(path) = script::state_path("crash.log") {
+            if let Some(d) = path.parent() {
+                let _ = std::fs::create_dir_all(d);
+            }
+            if let Ok(mut f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .mode(0o600)
+                .open(&path)
+            {
+                let thread = std::thread::current();
+                let _ = writeln!(
+                    f,
+                    "--- {} · shagshell {} · thread {}\n{info}\n{}",
+                    jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S"),
+                    env!("CARGO_PKG_VERSION"),
+                    thread.name().unwrap_or("?"),
+                    std::backtrace::Backtrace::force_capture(),
+                );
+            }
+        }
+        default(info);
+    }));
 }

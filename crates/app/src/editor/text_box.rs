@@ -318,10 +318,15 @@ where
     ) -> layout::Node {
         let limits = limits.width(Length::Fill).height(Length::Fill);
 
-        let mut editor = self.editor.lock().unwrap();
+        let mut editor = self.editor.lock().unwrap_or_else(|e| e.into_inner());
         //TODO: set size?
         editor
-            .borrow_with(font_system().write().unwrap().raw())
+            .borrow_with(
+                font_system()
+                    .write()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .raw(),
+            )
             .shape_as_needed(true);
 
         editor.with_buffer(|buffer| {
@@ -368,7 +373,7 @@ where
         if let Some(p) = cursor_position.position_in(layout.bounds()) {
             let editor_offset_x = state.editor_offset_x.get();
             let scale_factor = state.scale_factor.get();
-            let editor = self.editor.lock().unwrap();
+            let editor = self.editor.lock().unwrap_or_else(|e| e.into_inner());
             let buffer_size = editor.with_buffer(|buffer| buffer.size());
 
             let x_logical = p.x - self.padding.left;
@@ -401,7 +406,7 @@ where
 
         let state = tree.state.downcast_ref::<State>();
 
-        let mut editor = self.editor.lock().unwrap();
+        let mut editor = self.editor.lock().unwrap_or_else(|e| e.into_inner());
 
         let cosmic_theme = theme.cosmic();
         let scrollbar_size = cosmic_theme.spacing.space_xxs as i32;
@@ -445,7 +450,7 @@ where
         }
 
         // Lock font system (used throughout)
-        let mut font_system = font_system().write().unwrap();
+        let mut font_system = font_system().write().unwrap_or_else(|e| e.into_inner());
 
         // Calculate line number information
         let (line_number_chars, editor_offset_x) = if self.line_numbers {
@@ -460,7 +465,8 @@ where
             // Calculate line number width
             let mut line_number_width = 0.0;
             {
-                let mut line_number_cache = LINE_NUMBER_CACHE.lock().unwrap();
+                let mut line_number_cache =
+                    LINE_NUMBER_CACHE.lock().unwrap_or_else(|e| e.into_inner());
                 if let Some(layout_line) = line_number_cache
                     .get(
                         font_system.raw(),
@@ -501,7 +507,7 @@ where
         // Shape and layout as needed
         editor.shape_as_needed(font_system.raw(), true);
 
-        let mut handle_opt = state.handle_opt.lock().unwrap();
+        let mut handle_opt = state.handle_opt.lock().unwrap_or_else(|e| e.into_inner());
         let image_canvas = Canvas {
             w: editor_offset_x,
             h: image_h,
@@ -510,7 +516,7 @@ where
             // Draw to pixel buffer
             let mut pixels_u8 = vec![0; image_canvas.w as usize * image_canvas.h as usize * 4];
             {
-                let mut swash_cache = SWASH_CACHE.lock().unwrap();
+                let mut swash_cache = SWASH_CACHE.lock().unwrap_or_else(|e| e.into_inner());
 
                 let pixels = unsafe {
                     std::slice::from_raw_parts_mut(
@@ -552,7 +558,8 @@ where
                     // Draw line numbers
                     //TODO: move to cosmic-text?
                     editor.with_buffer(|buffer| {
-                        let mut line_number_cache = LINE_NUMBER_CACHE.lock().unwrap();
+                        let mut line_number_cache =
+                            LINE_NUMBER_CACHE.lock().unwrap_or_else(|e| e.into_inner());
                         let mut last_line_number = 0;
                         for run in buffer.layout_runs() {
                             let line_number = run.line_i.saturating_add(1);
@@ -979,7 +986,7 @@ where
         let editor_offset_x = state.editor_offset_x.get();
         let scale_factor = state.scale_factor.get();
         let scrollbar_v_rect = state.scrollbar_v_rect.get();
-        let mut editor = self.editor.lock().unwrap();
+        let mut editor = self.editor.lock().unwrap_or_else(|e| e.into_inner());
         let (buffer_size, buffer_scroll) =
             editor.with_buffer(|buffer| (buffer.size(), buffer.scroll()));
         let last_changed = editor.changed();
@@ -988,7 +995,7 @@ where
             let parser = editor.parser();
             (parser.mode.clone(), parser.cmd)
         };
-        let mut font_system = font_system().write().unwrap();
+        let mut font_system = font_system().write().unwrap_or_else(|e| e.into_inner());
         let mut editor = editor.borrow_with(font_system.raw());
 
         // Adjust motions based on Ctrl and Shift
@@ -1183,9 +1190,9 @@ where
             Event::Keyboard(KeyEvent::ModifiersChanged(modifiers)) => {
                 if modifiers.shift() && !state.modifiers.shift() {
                     let anchor = editor.cursor();
-                    *state.shift_anchor.lock().unwrap() = Some(anchor);
+                    *state.shift_anchor.lock().unwrap_or_else(|e| e.into_inner()) = Some(anchor);
                 } else if !modifiers.shift() && state.modifiers.shift() {
-                    *state.shift_anchor.lock().unwrap() = None;
+                    *state.shift_anchor.lock().unwrap_or_else(|e| e.into_inner()) = None;
                 }
                 state.modifiers = *modifiers;
             }
@@ -1265,7 +1272,7 @@ where
                                     ClickKind::Single
                                 };
                             let maybe_anchor = if state.modifiers.shift() {
-                                *state.shift_anchor.lock().unwrap()
+                                *state.shift_anchor.lock().unwrap_or_else(|e| e.into_inner())
                             } else {
                                 None
                             };

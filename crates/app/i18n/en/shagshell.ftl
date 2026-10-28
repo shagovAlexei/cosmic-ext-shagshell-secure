@@ -876,3 +876,4 @@ options-menu = Menu
 options-menu-reset = Reset the menu to default
 options-menu-reset-ask = Reset the menu? Your items and menus are removed.
 options-menu-edit = Menus and items: order, names, hidden, your own programs
+term-osc52 = A program in the terminal copied { $chars } characters to the clipboard

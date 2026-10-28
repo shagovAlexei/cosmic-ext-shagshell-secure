@@ -94,6 +94,8 @@ pub struct App {
     tool_edit: Option<(shagshell_core::toolbar::ToolEdit, Vec<String>)>,
     menu_edit: Option<crate::menu_editor::Editor>,
     menu_reset_ask: bool,
+    /// Each session's own Button Bar (`shown_bar`), emptied when sessions change.
+    bar_cache: std::cell::RefCell<std::collections::HashMap<String, Option<String>>>,
     /// Help → About is shown (a dialog: the context drawer is at least 344 px wide).
     about: bool,
     /// File → Exit asked first: Script Builder work is unsaved.
@@ -350,6 +352,7 @@ impl Application for App {
             tool_edit: None,
             menu_edit: None,
             menu_reset_ask: false,
+            bar_cache: Default::default(),
             restore: Vec::new(),
             about: false,
             exit_ask: false,
@@ -412,6 +415,11 @@ impl Application for App {
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
+        // A session file may change on anything but terminal output (Session Options, the tree,
+        // import…): its Button Bar is read again then, not on every frame.
+        if !matches!(message, Message::Term(..)) {
+            self.bar_cache.get_mut().clear();
+        }
         self.sessions.right = self.config.session_manager_side == crate::config::Side::Right;
         self.sessions.cmd_right = self.config.command_manager_side == crate::config::Side::Right;
         let tabs_changed = matches!(
@@ -1813,9 +1821,16 @@ impl App {
         if self.buttons.picked_for.as_ref() == Some(&active) {
             return self.buttons.shown(None);
         }
-        let own = active
-            .and_then(|id| self.sessions.store.get(&id).ok())
-            .and_then(|s| s.button_bar);
+        // Read from its file once per session, not on every frame (`bar_cache`).
+        let own = active.and_then(|id| {
+            let mut cache = self.bar_cache.borrow_mut();
+            if let Some(bar) = cache.get(&id) {
+                return bar.clone();
+            }
+            let bar = self.sessions.store.get(&id).ok().and_then(|s| s.button_bar);
+            cache.insert(id, bar.clone());
+            bar
+        });
         self.buttons.shown(own.as_deref())
     }
 

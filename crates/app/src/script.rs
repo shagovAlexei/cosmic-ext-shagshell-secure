@@ -1114,12 +1114,17 @@ fn pump(
     }
 }
 
-fn log_path() -> Option<PathBuf> {
+/// `~/.local/state/shagshell/<name>` (`$XDG_STATE_HOME` when set).
+pub fn state_path(name: &str) -> Option<PathBuf> {
     let base = std::env::var_os("XDG_STATE_HOME")
         .map(PathBuf::from)
         .filter(|p| p.is_absolute())
         .or_else(|| std::env::home_dir().map(|h| h.join(".local/state")))?;
-    Some(base.join("shagshell/script.log"))
+    Some(base.join("shagshell").join(name))
+}
+
+fn log_path() -> Option<PathBuf> {
+    state_path("script.log")
 }
 
 /// The script log opened for appending (0600).

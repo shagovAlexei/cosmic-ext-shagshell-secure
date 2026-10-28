@@ -2,6 +2,9 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.97.5 — 2026-10-29
+- fix: a program writing the clipboard (OSC 52) is said in the status bar; a panic is written to `~/.local/state/shagshell/crash.log`; a panic in one terminal / note no longer poisons the locks the others need; the session's own Button Bar is no longer read from its file on every frame
+
 ## 0.97.4 — 2026-10-29
 - fix (security): the update runs `/usr/bin/pkexec /usr/bin/apt-get`, `/usr/bin/curl`, `/usr/bin/sha256sum` (not whatever PATH finds first); CI actions pinned by commit (Dependabot proposes updates); a pruned release keeps its tag, so any version can be built again
 
