@@ -111,7 +111,10 @@ pub const STOCK: &[(&str, &[&str])] = &[
             "AlwaysOnTop",
         ],
     ),
-    ("Help", &["CheckUpdates", "Donate", SEP, "About"]),
+    (
+        "Help",
+        &["CheckUpdates", "Changelog", "Donate", SEP, "About"],
+    ),
 ];
 
 /// A stock function's name (not a divider, not a program of the user's).

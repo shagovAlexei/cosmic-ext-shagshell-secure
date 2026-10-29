@@ -98,6 +98,8 @@ pub struct App {
     bar_cache: std::cell::RefCell<std::collections::HashMap<String, Option<String>>>,
     /// Help → About is shown (a dialog: the context drawer is at least 344 px wide).
     about: bool,
+    /// Help → Changelog shows.
+    changelog: bool,
     /// File → Exit asked first: Script Builder work is unsaved.
     exit_ask: bool,
     /// The result of a check made from the About dialog, shown in it.
@@ -361,6 +363,7 @@ impl Application for App {
             bar_cache: Default::default(),
             restore: Vec::new(),
             about: false,
+            changelog: false,
             exit_ask: false,
             about_note: None,
             schedule: Default::default(),
@@ -677,6 +680,7 @@ impl Application for App {
                     .as_ref()
                     .map(crate::securecrt_import::ScImport::view)
             })
+            .or_else(|| self.changelog.then(about::changelog))
             .or_else(|| self.about.then(|| about::view(self.about_note.as_deref())))
             .or_else(|| self.buttons.dialog())
             .or_else(|| (self.tool_edit.as_ref()).map(|(t, l)| toolbar::editor(t, l)))
@@ -1298,6 +1302,9 @@ impl App {
             }
             Message::Sessions(SmMsg::Key(TreeKey::Clear)) if self.update.is_some() => {
                 return self.updates(crate::updates::UpMsg::Later);
+            }
+            Message::Sessions(SmMsg::Key(TreeKey::Clear)) if self.changelog => {
+                self.changelog = false;
             }
             Message::Sessions(SmMsg::Key(TreeKey::Clear)) if self.menu_edit.is_some() => {
                 // Esc on «Reset the menu?» answers No; else it closes the editor.
@@ -2199,6 +2206,10 @@ impl App {
             Action::About => {
                 self.about = !self.about;
                 self.about_note = None;
+            }
+            Action::Changelog => {
+                self.changelog = !self.changelog;
+                self.about = false;
             }
             Action::CheckUpdates => return check_updates(true),
             Action::ToggleRecording => {

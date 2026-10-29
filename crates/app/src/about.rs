@@ -51,8 +51,15 @@ fn dialog(note: Option<&str>, max_height: f32) -> Element<'_, Message> {
             env!("CARGO_PKG_VERSION")
         )))
         .push(
-            widget::button::standard(fl!("menu-check-updates"))
-                .on_press(Message::Action(Action::CheckUpdates)),
+            widget::row::with_children(vec![
+                widget::button::standard(fl!("menu-check-updates"))
+                    .on_press(Message::Action(Action::CheckUpdates))
+                    .into(),
+                widget::button::standard(fl!("menu-changelog"))
+                    .on_press(Message::Action(Action::Changelog))
+                    .into(),
+            ])
+            .spacing(8),
         )
         .push_maybe(note.map(widget::text::body))
         .push(widget::text::body(fl!("about-comments")))
@@ -84,5 +91,30 @@ fn dialog(note: Option<&str>, max_height: f32) -> Element<'_, Message> {
                 .max_height(max_height),
         )
         .primary_action(widget::button::standard(fl!("close")).on_press(Message::CloseAbout))
+        .into()
+}
+
+/// Help → Changelog: the newest releases of `CHANGELOG.md` (built in), each with what it brought.
+pub fn changelog() -> Element<'static, Message> {
+    use cosmic::iced::Length;
+    static TEXT: &str = include_str!("../../../CHANGELOG.md");
+    let mut col = widget::column::with_capacity(64).spacing(4);
+    for (head, items) in shagshell_core::update::releases(TEXT, 40) {
+        col = col.push(widget::text::heading(head));
+        for item in items {
+            col = col.push(widget::text::body(format!("• {}", item.replace('`', ""))));
+        }
+        col = col.push(widget::Space::new().height(Length::Fixed(8.0)));
+    }
+    col = col.push(widget::text::caption(fl!("changelog-older")));
+    widget::dialog()
+        .title(fl!("menu-changelog"))
+        .width(Length::Fixed(760.0))
+        .max_width(760.0)
+        .control(widget::scrollable(col.padding([0, 12, 0, 0])).height(Length::Fixed(480.0)))
+        .primary_action(
+            widget::button::suggested(fl!("close"))
+                .on_press(Message::Action(crate::menu::Action::Changelog)),
+        )
         .into()
 }

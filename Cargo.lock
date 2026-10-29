@@ -4536,7 +4536,7 @@ dependencies = [
 
 [[package]]
 name = "shagshell"
-version = "0.99.1"
+version = "0.100.0"
 dependencies = [
  "alacritty_terminal",
  "ashpd 0.12.3",
@@ -4563,7 +4563,7 @@ dependencies = [
 
 [[package]]
 name = "shagshell-core"
-version = "0.99.1"
+version = "0.100.0"
 dependencies = [
  "jiff",
  "libc",
