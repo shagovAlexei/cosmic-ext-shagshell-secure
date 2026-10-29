@@ -2,6 +2,9 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.99.0 — 2026-10-29
+- feat: File → Export Settings… / Import Settings…: `~/.config/shagshell` and the Global Options as one `.tar.gz` (no passwords: they stay in the keyring); an import first saves the current settings to `~/.local/state/shagshell/before-import-<time>.tar.gz` and refuses an archive with links or other folders (spec 38)
+
 ## 0.98.0 — 2026-10-29
 - feat (security): signed updates — Update installs a release only when its `SHA256SUMS.minisig` is the release key's signature (minisign, `core::update::PUBLIC_KEY`) and the package is of the tag's version; CI makes a draft release, `just sign vX.Y.Z` on the author's machine signs and publishes it
 

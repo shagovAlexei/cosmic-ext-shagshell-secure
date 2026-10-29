@@ -512,6 +512,21 @@ pub async fn save_as(title: String, dir: PathBuf) -> Option<PathBuf> {
     picked.uris().first()?.to_file_path().ok()
 }
 
+/// A save dialog offering `name` in `dir`.
+pub async fn save_named(title: String, dir: PathBuf, name: String) -> Option<PathBuf> {
+    use ashpd::desktop::file_chooser::SaveFileRequest;
+    let mut r = SaveFileRequest::default()
+        .title(Some(title.as_str()))
+        .current_name(Some(name.as_str()))
+        .modal(true);
+    if dir.is_dir() {
+        let d: &Path = &dir;
+        r = r.current_folder::<&Path>(Some(d)).ok()?;
+    }
+    let picked = r.send().await.ok()?.response().ok()?;
+    picked.uris().first()?.to_file_path().ok()
+}
+
 /// The file chooser of «Open note…»: text and markdown first, anything else too.
 pub async fn pick(title: String, dir: PathBuf) -> Option<PathBuf> {
     use ashpd::desktop::file_chooser::{FileFilter, OpenFileRequest};

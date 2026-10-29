@@ -1,4 +1,5 @@
 pub mod askpass;
+pub mod backup;
 pub mod bar;
 pub mod bookmarks;
 pub mod builder;

@@ -26,6 +26,8 @@ pub const STOCK: &[(&str, &[&str])] = &[
             SEP,
             "ImportSshConfig",
             "ImportSecureCrt",
+            "ExportSettings",
+            "ImportSettings",
             SEP,
             "Exit",
         ],
