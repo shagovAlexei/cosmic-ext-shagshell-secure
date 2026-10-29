@@ -284,7 +284,7 @@ fn connect_bar(bar: &str, list: &[String], picked: Option<usize>) -> Element<'st
         .into_iter()
         .find(|(_, id)| *id == "ConnectBar")
     {
-        Some((chord, _)) => format!("{}  ({chord})", fl!("connect-bar-hint")),
+        Some((chord, _)) => format!("{} {chord}", fl!("connect-bar-hint")),
         None => fl!("connect-bar-hint"),
     };
     let input = widget::search_input(hint, bar.to_string())
