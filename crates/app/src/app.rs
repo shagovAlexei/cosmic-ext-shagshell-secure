@@ -234,6 +234,12 @@ pub enum Message {
     /// Global Options → Menu: «Reset» pressed (Yes / No shown) / answered No.
     MenuResetAsk(bool),
     MenuReset,
+    /// File → Export Settings…: where to (None: cancelled) / done.
+    BackupTo(Option<std::path::PathBuf>),
+    BackupDone(Result<std::path::PathBuf, String>),
+    /// File → Import Settings…: which archive / done (files, where the old ones went).
+    RestoreFrom(Option<std::path::PathBuf>),
+    RestoreDone(Result<(usize, std::path::PathBuf), String>),
     /// Esc taken by a text field of the main window.
     FieldEscape,
     /// A field of the main window was clicked: focused by id, which takes the keys from the
@@ -1339,6 +1345,53 @@ impl App {
             Message::Toolbar(m) => return self.toolbar(m),
             Message::MenuEdit(m) => self.menu_edit(m),
             Message::MenuResetAsk(on) => self.menu_reset_ask = on,
+            Message::BackupTo(None) | Message::RestoreFrom(None) => {}
+            Message::BackupTo(Some(p)) => {
+                return off_ui(
+                    move || {
+                        shagshell_core::backup::export(&config_home(), &p)
+                            .map(|()| p)
+                            .map_err(|e| e.to_string())
+                    },
+                    Message::BackupDone,
+                );
+            }
+            Message::BackupDone(r) => {
+                self.sessions.notice = Some(match r {
+                    Ok(p) => fl!("backup-exported", path = p.display().to_string()),
+                    Err(e) => fl!("backup-failed", error = e),
+                });
+            }
+            Message::RestoreFrom(Some(p)) => {
+                return off_ui(
+                    move || {
+                        // What is there now first, so an import can be undone.
+                        let now = jiff::Zoned::now().strftime("%Y%m%d-%H%M%S").to_string();
+                        let keep =
+                            crate::script::state_path(&format!("before-import-{now}.tar.gz"))
+                                .ok_or("no home folder")?;
+                        if let Some(d) = keep.parent() {
+                            std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
+                        }
+                        let home = config_home();
+                        shagshell_core::backup::export(&home, &keep).map_err(|e| e.to_string())?;
+                        let n =
+                            shagshell_core::backup::import(&p, &home).map_err(|e| e.to_string())?;
+                        Ok((n, keep))
+                    },
+                    Message::RestoreDone,
+                );
+            }
+            Message::RestoreDone(r) => {
+                self.sessions.notice = Some(match r {
+                    Ok((n, keep)) => fl!(
+                        "backup-imported",
+                        count = n,
+                        path = keep.display().to_string()
+                    ),
+                    Err(e) => fl!("backup-failed", error = e),
+                });
+            }
             Message::MenuReset => {
                 self.menu_reset_ask = false;
                 self.config.menus = Vec::new();
@@ -2148,6 +2201,24 @@ impl App {
                 if let Some((title, rec)) = self.tabs.toggle_recording() {
                     return self.save_recording(&title, rec);
                 }
+            }
+            Action::ExportSettings => {
+                let name = format!(
+                    "shagshell-settings-{}.tar.gz",
+                    jiff::Zoned::now().strftime("%Y-%m-%d")
+                );
+                let home = std::env::home_dir().unwrap_or_default();
+                return Task::perform(
+                    crate::notes::save_named(fl!("menu-export-settings"), home, name),
+                    |p| cosmic::Action::App(Message::BackupTo(p)),
+                );
+            }
+            Action::ImportSettings => {
+                let home = std::env::home_dir().unwrap_or_default();
+                return Task::perform(
+                    crate::script::pick(fl!("menu-import-settings"), home),
+                    |p| cosmic::Action::App(Message::RestoreFrom(p)),
+                );
             }
             Action::CustomizeMenu => {
                 self.menu_edit = Some(crate::menu_editor::Editor::new(&self.config.menus));
@@ -4079,6 +4150,15 @@ fn builtin_action(key: &Physical, mods: Modifiers) -> Option<Action> {
     }
     let n = name.strip_prefix("Digit")?.parse::<u8>().ok()?;
     (mods == Modifiers::ALT && (1..=9).contains(&n)).then(|| Action::SelectTab(n - 1))
+}
+
+/// `~/.config` (`$XDG_CONFIG_HOME` when set): where `core::backup` reads and writes.
+fn config_home() -> std::path::PathBuf {
+    std::env::var_os("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .or_else(|| std::env::home_dir().map(|h| h.join(".config")))
+        .unwrap_or_default()
 }
 
 #[cfg(test)]

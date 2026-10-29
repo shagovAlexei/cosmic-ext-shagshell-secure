@@ -60,6 +60,9 @@ pub enum Action {
     ImportSshConfig,
     /// File → Import from SecureCRT….
     ImportSecureCrt,
+    /// File → Export / Import Settings… (`core::backup`).
+    ExportSettings,
+    ImportSettings,
     SessionOptions,
     /// Options → Edit Default Session…: the template new sessions copy.
     EditDefault,
@@ -226,7 +229,10 @@ fn icon_of(a: Action) -> Option<cosmic::widget::icon::Handle> {
         Action::Reconnect => "view-refresh-symbolic",
         Action::Disconnect => "process-stop-symbolic",
         Action::CloseTab => "window-close-symbolic",
-        Action::ImportSshConfig | Action::ImportSecureCrt => "document-open-symbolic",
+        Action::ImportSshConfig | Action::ImportSecureCrt | Action::ImportSettings => {
+            "document-open-symbolic"
+        }
+        Action::ExportSettings => "document-save-symbolic",
         Action::Exit => "application-exit-symbolic",
         Action::Copy => "edit-copy-symbolic",
         Action::Paste => "edit-paste-symbolic",
@@ -298,6 +304,8 @@ pub fn entry(cmd: &str) -> Option<(Action, String)> {
         "CloseTab" => (Action::CloseTab, fl!("menu-close-tab")),
         "ImportSshConfig" => (Action::ImportSshConfig, fl!("menu-import-ssh-config")),
         "ImportSecureCrt" => (Action::ImportSecureCrt, fl!("menu-import-securecrt")),
+        "ExportSettings" => (Action::ExportSettings, fl!("menu-export-settings")),
+        "ImportSettings" => (Action::ImportSettings, fl!("menu-import-settings")),
         "Exit" => (Action::Exit, fl!("menu-exit")),
         "Copy" => (Action::Copy, fl!("menu-copy")),
         "Paste" => (Action::Paste, fl!("menu-paste")),
