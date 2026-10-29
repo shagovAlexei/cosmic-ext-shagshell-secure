@@ -159,6 +159,25 @@ pub fn download(tag: &str, dir: &std::path::Path) -> Result<std::path::PathBuf, 
     Ok(deb)
 }
 
+/// `CHANGELOG.md` as releases: (`0.98.0 — 2026-10-29`, its lines without the `- `), newest
+/// first, at most `n`.
+pub fn releases(md: &str, n: usize) -> Vec<(&str, Vec<&str>)> {
+    let mut out: Vec<(&str, Vec<&str>)> = Vec::new();
+    for line in md.lines() {
+        if let Some(head) = line.strip_prefix("## ") {
+            if out.len() == n {
+                break;
+            }
+            out.push((head.trim(), Vec::new()));
+        } else if let Some(item) = line.strip_prefix("- ")
+            && let Some((_, items)) = out.last_mut()
+        {
+            items.push(item.trim());
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -203,6 +222,26 @@ RUSgvEddN9WeCVzRYPrWRJhcXo6INRea0Hgx5fHElJAuc435mA841e9Z1y2YPxf02Hd0rX0iDgkbvhrj
 trusted comment: timestamp:1793258215\tfile:SHA256SUMS\thashed
 PvDft4WraL4HI8l0ZjJ72wYd06Y51GumewEQmK7FupG6n5gcPGZ1hGXnRmAddwH65iAOb0ajiN8bBEnHu0ZwAg==
 ";
+
+    #[test]
+    fn changelog_releases() {
+        let md =
+            "# Changelog\n\nIntro.\n\n## 0.2.0 — d2\n- feat: b\n- fix: c\n\n## 0.1.0 — d1\n- a\n";
+        assert_eq!(
+            releases(md, 10),
+            [
+                ("0.2.0 — d2", vec!["feat: b", "fix: c"]),
+                ("0.1.0 — d1", vec!["a"])
+            ]
+        );
+        assert_eq!(releases(md, 1).len(), 1);
+        let real = releases(include_str!("../../../CHANGELOG.md"), 1);
+        assert_eq!(
+            real[0].0.split(' ').next(),
+            Some(env!("CARGO_PKG_VERSION")),
+            "newest first"
+        );
+    }
 
     #[test]
     fn regression_unsigned_release_is_refused() {

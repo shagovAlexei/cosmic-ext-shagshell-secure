@@ -38,6 +38,8 @@ pub enum Action {
     ToggleRecording,
     /// Help → Check for Updates…
     CheckUpdates,
+    /// Help → Changelog: what each version brought (`CHANGELOG.md`, built in).
+    Changelog,
     /// Help → Support the Project.
     Donate,
     GlobalOptions,
@@ -261,6 +263,7 @@ fn icon_of(a: Action) -> Option<cosmic::widget::icon::Handle> {
         Action::DetachTab => "window-new-symbolic",
         Action::ReattachAll => "view-restore-symbolic",
         Action::CheckUpdates => "software-update-available-symbolic",
+        Action::Changelog => "document-open-recent-symbolic",
         Action::Donate => "emblem-favorite-symbolic",
         Action::About => "help-about-symbolic",
         Action::Pending | Action::Find => "edit-find-symbolic",
@@ -372,6 +375,7 @@ pub fn entry(cmd: &str) -> Option<(Action, String)> {
         "ReattachAll" => (Action::ReattachAll, fl!("menu-reattach-all")),
         "AlwaysOnTop" => (Action::AlwaysOnTop, fl!("menu-on-top")),
         "CheckUpdates" => (Action::CheckUpdates, fl!("menu-check-updates")),
+        "Changelog" => (Action::Changelog, fl!("menu-changelog")),
         "Donate" => (Action::Donate, fl!("menu-donate")),
         "About" => (Action::About, fl!("menu-about")),
         _ => return None,

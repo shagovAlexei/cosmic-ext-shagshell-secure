@@ -884,3 +884,5 @@ backup-imported = Imported { $count } files; the settings before are in { $path 
 backup-failed = Settings: { $error }
 me-reset-title = Reset the menu?
 me-reset-ask = Every menu and item goes back to how it was installed; your own menus, programs and names are removed. OK then stores it.
+menu-changelog = Changelog
+changelog-older = Older releases: CHANGELOG.md in the repository.

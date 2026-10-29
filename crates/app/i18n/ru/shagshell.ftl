@@ -882,3 +882,5 @@ backup-imported = Импортировано файлов: { $count }; преж�
 backup-failed = Настройки: { $error }
 me-reset-title = Сбросить меню?
 me-reset-ask = Все меню и пункты вернутся как при установке; свои меню, программы и названия удалятся. Сохранится по OK.
+menu-changelog = Журнал изменений
+changelog-older = Более старые версии: CHANGELOG.md в репозитории.
