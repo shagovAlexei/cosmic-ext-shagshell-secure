@@ -1300,7 +1300,11 @@ impl App {
                 return self.updates(crate::updates::UpMsg::Later);
             }
             Message::Sessions(SmMsg::Key(TreeKey::Clear)) if self.menu_edit.is_some() => {
-                self.menu_edit = None;
+                // Esc on «Reset the menu?» answers No; else it closes the editor.
+                match self.menu_edit.as_mut().filter(|e| e.asking) {
+                    Some(e) => e.asking = false,
+                    None => self.menu_edit = None,
+                }
             }
             Message::Sessions(SmMsg::Key(TreeKey::Clear)) if self.keys.is_some() => {
                 return self.key_dialog(crate::keygen::KgMsg::Close);

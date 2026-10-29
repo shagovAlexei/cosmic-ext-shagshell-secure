@@ -882,3 +882,5 @@ menu-import-settings = Import Settings…
 backup-exported = Settings exported to { $path } (passwords are not in it: they stay in the keyring)
 backup-imported = Imported { $count } files; the settings before are in { $path }. Restart the program.
 backup-failed = Settings: { $error }
+me-reset-title = Reset the menu?
+me-reset-ask = Every menu and item goes back to how it was installed; your own menus, programs and names are removed. OK then stores it.

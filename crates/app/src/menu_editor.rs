@@ -16,6 +16,8 @@ pub enum MeMsg {
     Function(usize),
     /// «В меню ▾»: the n-th menu.
     MoveTo(usize),
+    /// «По умолчанию» pressed (the question shows) / answered No.
+    ResetAsk(bool),
     Ok,
     Cancel,
 }
@@ -27,6 +29,8 @@ pub struct Editor {
     function_labels: Vec<String>,
     /// The menus' names, for «В меню ▾» (kept in step with `edit`).
     titles: Vec<String>,
+    /// «Reset the menu?» shows in place of the editor.
+    pub asking: bool,
 }
 
 impl Editor {
@@ -40,6 +44,7 @@ impl Editor {
             functions,
             function_labels,
             titles: Vec::new(),
+            asking: false,
         };
         e.retitle();
         e
@@ -58,14 +63,35 @@ impl Editor {
                 None => return,
             },
             MeMsg::MoveTo(i) => MenuMsg::MoveTo(i),
+            MeMsg::ResetAsk(on) => {
+                self.asking = on;
+                return;
+            }
             MeMsg::Ok | MeMsg::Cancel => return,
         };
+        if matches!(m, MenuMsg::Reset) {
+            self.asking = false;
+        }
         self.edit.update(m);
         self.retitle();
     }
 
     pub fn view<'a>(&'a self) -> Element<'a, Message> {
         let msg = |m| Message::MenuEdit(MeMsg::Edit(m));
+        if self.asking {
+            return widget::dialog()
+                .title(fl!("me-reset-title"))
+                .icon(crate::dialog_icons::Kind::Question.icon(48))
+                .body(fl!("me-reset-ask"))
+                .primary_action(
+                    widget::button::destructive(fl!("toolbar-reset")).on_press(msg(MenuMsg::Reset)),
+                )
+                .secondary_action(
+                    widget::button::standard(fl!("cancel"))
+                        .on_press(Message::MenuEdit(MeMsg::ResetAsk(false))),
+                )
+                .into();
+        }
         let e = &self.edit;
         let pick = |selected: bool, content: Element<'static, Message>, on: Message| {
             widget::button::custom(
@@ -267,7 +293,8 @@ impl Editor {
                 widget::button::standard(fl!("cancel")).on_press(Message::MenuEdit(MeMsg::Cancel)),
             )
             .tertiary_action(
-                widget::button::standard(fl!("toolbar-reset")).on_press(msg(MenuMsg::Reset)),
+                widget::button::standard(fl!("toolbar-reset"))
+                    .on_press(Message::MenuEdit(MeMsg::ResetAsk(true))),
             )
             .into()
     }
