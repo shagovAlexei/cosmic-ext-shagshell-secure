@@ -86,6 +86,25 @@ pub fn deb_name(sums: &str) -> Option<String> {
     (plain && name.starts_with("shagshell_") && name.ends_with(".deb")).then(|| name.to_string())
 }
 
+/// The release key (minisign, id 2D6ED6DB6B475AA3; its secret half never leaves the author's
+/// machine, `just sign`): `SHA256SUMS.minisig` must be its signature or nothing is installed.
+pub const PUBLIC_KEY: &str = "RWSjWkdr29ZuLYEDdNiSdCdDh6dnNVWVrYdVz4EIynxsvmWAkSHi1t9p";
+
+/// `sums` signed by `key` (`sig`: the `.minisig` file's text).
+pub fn signed(sums: &[u8], sig: &str, key: &str) -> Result<(), String> {
+    let key = minisign_verify::PublicKey::from_base64(key).map_err(|e| format!("key: {e}"))?;
+    let sig = minisign_verify::Signature::decode(sig).map_err(|e| format!("signature: {e}"))?;
+    key.verify(sums, &sig, false)
+        .map_err(|e| format!("signature: {e}"))
+}
+
+/// `deb_name`, and of `tag`'s version: a signed list of an older release under a newer tag
+/// (a downgrade) is refused.
+pub fn deb_for(sums: &str, tag: &str) -> Option<String> {
+    let version = tag.strip_prefix('v')?;
+    deb_name(sums).filter(|n| n.starts_with(&format!("shagshell_{version}_")))
+}
+
 /// `sha256sum -c SHA256SUMS` in `dir`: Ok only when every listed file matches.
 pub fn verify(dir: &std::path::Path) -> Result<(), String> {
     let out = Command::new("/usr/bin/sha256sum")
@@ -104,8 +123,9 @@ pub fn verify(dir: &std::path::Path) -> Result<(), String> {
     }
 }
 
-/// Download release `tag`'s package and `SHA256SUMS` into `dir` (curl, from this repository only)
-/// and check the hash. A package that does not match is deleted. Blocking.
+/// Download release `tag`'s `SHA256SUMS`, check its signature (`PUBLIC_KEY`), then the package
+/// it names (curl, from this repository only) and its hash. A package that does not match is
+/// deleted. Blocking.
 pub fn download(tag: &str, dir: &std::path::Path) -> Result<std::path::PathBuf, String> {
     if !valid_tag(tag) {
         return Err(format!("bad tag {tag}"));
@@ -125,8 +145,11 @@ pub fn download(tag: &str, dir: &std::path::Path) -> Result<std::path::PathBuf, 
         }
     };
     get("SHA256SUMS")?;
+    get("SHA256SUMS.minisig")?;
     let sums = std::fs::read_to_string(dir.join("SHA256SUMS")).map_err(|e| e.to_string())?;
-    let name = deb_name(&sums).ok_or("SHA256SUMS: no package")?;
+    let sig = std::fs::read_to_string(dir.join("SHA256SUMS.minisig")).map_err(|e| e.to_string())?;
+    signed(sums.as_bytes(), &sig, PUBLIC_KEY)?;
+    let name = deb_for(&sums, tag).ok_or("SHA256SUMS: no package of this version")?;
     get(&name)?;
     let deb = dir.join(&name);
     if let Err(e) = verify(dir) {
@@ -170,6 +193,51 @@ mod tests {
         assert!(!newer("0.17.1", "v0.17.0"));
         assert!(!newer("0.17.0", "nightly"));
         assert!(!newer("0.18.0", "v0.18.0.0"));
+    }
+
+    /// A key made for these tests (`minisign -G -W`) and its signature of `SUMS`.
+    const TEST_KEY: &str = "RWSgvEddN9WeCZl2msjaz9gC64+9jV6muLZ6r0IODQTjHaMEk0T6pYFs";
+    const SUMS: &str = "abc123  shagshell_0.98.0_amd64.deb\n";
+    const SIG: &str = "untrusted comment: signature from minisign secret key
+RUSgvEddN9WeCVzRYPrWRJhcXo6INRea0Hgx5fHElJAuc435mA841e9Z1y2YPxf02Hd0rX0iDgkbvhrjA7Nfp4Z3QawOZzcLcA8=
+trusted comment: timestamp:1793258215\tfile:SHA256SUMS\thashed
+PvDft4WraL4HI8l0ZjJ72wYd06Y51GumewEQmK7FupG6n5gcPGZ1hGXnRmAddwH65iAOb0ajiN8bBEnHu0ZwAg==
+";
+
+    #[test]
+    fn regression_unsigned_release_is_refused() {
+        // SHA256SUMS and the .deb came from the same release: whoever could publish one (a
+        // stolen GitHub token) could publish both, and apt installed it as root.
+        assert_eq!(signed(SUMS.as_bytes(), SIG, TEST_KEY), Ok(()));
+        let changed = SUMS.replace("abc123", "abc124");
+        assert!(
+            signed(changed.as_bytes(), SIG, TEST_KEY).is_err(),
+            "another file"
+        );
+        assert!(
+            signed(SUMS.as_bytes(), SIG, PUBLIC_KEY).is_err(),
+            "another key"
+        );
+        assert!(
+            signed(SUMS.as_bytes(), "", TEST_KEY).is_err(),
+            "no signature"
+        );
+        assert!(
+            minisign_verify::PublicKey::from_base64(PUBLIC_KEY).is_ok(),
+            "the release key decodes"
+        );
+    }
+
+    #[test]
+    fn regression_signed_old_package_is_not_a_new_version() {
+        // An old release's signed SHA256SUMS put under a new tag: a downgrade, refused.
+        let h = "a".repeat(64);
+        let sums = format!("{h}  shagshell_0.46.0_amd64.deb\n");
+        assert_eq!(
+            deb_for(&sums, "v0.46.0"),
+            Some("shagshell_0.46.0_amd64.deb".into())
+        );
+        assert_eq!(deb_for(&sums, "v0.98.0"), None);
     }
 
     #[test]

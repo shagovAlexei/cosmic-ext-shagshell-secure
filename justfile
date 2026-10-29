@@ -78,3 +78,19 @@ deb: (build-release '--locked')
      transfer queue, commands to many sessions; runs the system OpenSSH.
     EOC
     dpkg-deb --root-owner-group --build "$root" "target/deb/{{name}}_${version}_${arch}.deb"
+
+# CI makes a tag's release a draft (no user sees it); this signs its SHA256SUMS with the release
+# key, which never leaves this machine, and makes it the latest. The app installs nothing whose
+# SHA256SUMS.minisig does not check (core::update::PUBLIC_KEY).
+# Sign release TAG and publish it
+sign tag key='~/.config/minisign/shagshell.key':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    d=$(mktemp -d); trap 'rm -rf "$d"' EXIT
+    gh release download '{{tag}}' -p SHA256SUMS -D "$d"
+    echo "Signing for {{tag}}:"; cat "$d/SHA256SUMS"
+    minisign -S -s {{key}} -m "$d/SHA256SUMS" -t "shagshell {{tag}}"
+    minisign -Vq -P RWSjWkdr29ZuLYEDdNiSdCdDh6dnNVWVrYdVz4EIynxsvmWAkSHi1t9p -m "$d/SHA256SUMS"
+    gh release upload '{{tag}}' "$d/SHA256SUMS.minisig" --clobber
+    gh release edit '{{tag}}' --draft=false --latest
+    echo "{{tag}} is out."
