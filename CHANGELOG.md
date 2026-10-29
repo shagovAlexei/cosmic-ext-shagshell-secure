@@ -2,6 +2,9 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.98.0 — 2026-10-29
+- feat (security): signed updates — Update installs a release only when its `SHA256SUMS.minisig` is the release key's signature (minisign, `core::update::PUBLIC_KEY`) and the package is of the tag's version; CI makes a draft release, `just sign vX.Y.Z` on the author's machine signs and publishes it
+
 ## 0.97.5 — 2026-10-29
 - fix: a program writing the clipboard (OSC 52) is said in the status bar; a panic is written to `~/.local/state/shagshell/crash.log`; a panic in one terminal / note no longer poisons the locks the others need; the session's own Button Bar is no longer read from its file on every frame
 

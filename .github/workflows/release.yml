@@ -1,6 +1,7 @@
 name: release
 
-# Push a tag `vX.Y.Z` (matching `version` in Cargo.toml) → a GitHub release with the .deb;
+# Push a tag `vX.Y.Z` (matching `version` in Cargo.toml) → a draft GitHub release with the .deb,
+# published by `just sign vX.Y.Z` on the author's machine (the release key is only there);
 # only the last 5 releases are kept (every tag stays).
 # A PR changing this file builds the .deb only (an artifact, no release).
 # A push to main builds it too, with no release: that run keeps the build cache. A tag can only
@@ -65,7 +66,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           (cd target/deb && sha256sum *.deb > SHA256SUMS)
-          gh release create "$GITHUB_REF_NAME" target/deb/*.deb target/deb/SHA256SUMS --generate-notes
+          # A draft: nobody is offered it until the author signs it (`just sign vX.Y.Z`).
+          gh release create "$GITHUB_REF_NAME" target/deb/*.deb target/deb/SHA256SUMS --generate-notes --draft
 
       - name: Keep the last 5 releases
         if: startsWith(github.ref, 'refs/tags/')
@@ -74,7 +76,7 @@ jobs:
         run: |
           # Newest first; everything after the fifth goes. Its tag stays: any version can be
           # built again (`git checkout vX.Y.Z && just deb`) to go back to it.
-          gh release list --limit 100 --json tagName --jq '.[5:][].tagName' |
+          gh release list --limit 100 --json tagName,isDraft --jq '[.[] | select(.isDraft | not)] | .[5:][].tagName' |
             while read -r tag; do gh release delete "$tag" --yes; done
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

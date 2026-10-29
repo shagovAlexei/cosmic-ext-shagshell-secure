@@ -32,6 +32,6 @@ Every feature and every roadmap phase goes through these steps in order. Do not 
      gh pr checks --watch
      ```
    - Merge only after the user says so: `gh pr merge --merge --delete-branch`.
-   - Tag the bumped version on `main` and push the tag (`vX.Y.Z`): the release workflow attaches the .deb.
+   - Tag the bumped version on `main` and push the tag (`vX.Y.Z`): the release workflow makes a draft release with the .deb. Ask the user to run `just sign vX.Y.Z` (their minisign key signs `SHA256SUMS` and publishes it); until then no user is offered it.
 
 Bug fix: use `superpowers:systematic-debugging`; add a `regression_<what>` test in core and a row in `TESTING.md`; branch `fix/<topic>`.
