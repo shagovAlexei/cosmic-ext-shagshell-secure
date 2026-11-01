@@ -179,6 +179,8 @@ pub struct Config {
     pub strip_right: bool,
     /// Only the header of the pane shows.
     pub session_manager_collapsed: bool,
+    /// Session Manager order inside a folder: by name (false) or by hand (true: drag a row).
+    pub sessions_manual: bool,
     pub command_manager_collapsed: bool,
     /// Session Manager width, px (dragged).
     pub session_manager_width: u16,
@@ -354,6 +356,7 @@ impl Default for Config {
             notes_open: Vec::new(),
             commands_above: false,
             session_manager_collapsed: false,
+            sessions_manual: false,
             command_manager_collapsed: false,
             session_manager_width: 240,
             command_manager_width: 260,

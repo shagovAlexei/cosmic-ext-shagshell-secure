@@ -50,6 +50,8 @@ impl Node {
 
 pub struct Store {
     pub root: PathBuf,
+    /// Sort order «by hand»: each folder's `.order` file lists its names (else by name).
+    pub manual: bool,
 }
 
 /// `$XDG_CONFIG_HOME/shagshell/sessions` (`~/.config/…` without it).
@@ -64,13 +66,16 @@ pub fn default_root() -> PathBuf {
 
 impl Store {
     pub fn new(root: PathBuf) -> Self {
-        Self { root }
+        Self {
+            root,
+            manual: false,
+        }
     }
 
     /// The whole tree: folders first, then sessions, each by name ignoring case. A file that
     /// doesn't parse is left out (and logged), the rest still loads.
     pub fn load(&self) -> Vec<Node> {
-        load_dir(&self.root, true)
+        load_dir(&self.root, true, self.manual)
     }
 
     pub fn get(&self, id: &str) -> io::Result<Session> {
@@ -153,7 +158,23 @@ impl Store {
         let parent = parent(id);
         check_name(new_name, parent.is_empty())?;
         let new = join(parent, new_name);
-        self.relocate(id, &new)
+        let out = self.relocate(id, &new)?;
+        // The renamed one keeps its place in a hand-made order.
+        let dir = self.root.join(parent);
+        let order = read_order(&dir);
+        if order.iter().any(|n| n == file_name(id)) {
+            let order: Vec<String> = (order.into_iter())
+                .map(|n| {
+                    if n == file_name(id) {
+                        new_name.to_string()
+                    } else {
+                        n
+                    }
+                })
+                .collect();
+            let _ = std::fs::write(dir.join(ORDER), order.join("\n") + "\n");
+        }
+        Ok(out)
     }
 
     /// Move a session or folder into `folder` ("" = root); the new id. Not into itself or its
@@ -165,6 +186,58 @@ impl Store {
         let name = file_name(id);
         check_name(name, folder.is_empty())?;
         self.relocate(id, &join(folder, name))
+    }
+
+    /// Put `id` at place `at` among the siblings of its own kind (folders and sessions are
+    /// ordered apart), and keep the order of the folder. The place is clamped.
+    pub fn place(&self, id: &str, at: usize) -> io::Result<()> {
+        let dir = match parent(id) {
+            "" => self.root.clone(),
+            p => self.root.join(p),
+        };
+        let nodes = load_dir(&dir, parent(id).is_empty(), true);
+        let name = file_name(id);
+        let folder = self.is_folder(id);
+        let is_kind = |n: &Node| matches!(n, Node::Folder { .. }) == folder;
+        let mut same: Vec<String> = (nodes.iter().filter(|n| is_kind(n)))
+            .map(|n| n.name().to_string())
+            .collect();
+        let Some(from) = same.iter().position(|n| n == name) else {
+            return Err(ErrorKind::NotFound.into());
+        };
+        let moved = same.remove(from);
+        same.insert(at.min(same.len()), moved);
+        let others = (nodes.iter().filter(|n| !is_kind(n))).map(|n| n.name().to_string());
+        let all: Vec<String> = match folder {
+            true => same.into_iter().chain(others).collect(),
+            false => others.chain(same).collect(),
+        };
+        std::fs::write(dir.join(ORDER), all.join("\n") + "\n")
+    }
+
+    /// Put `id` just before its sibling `target` (the same folder, the same kind).
+    pub fn place_before(&self, id: &str, target: &str) -> io::Result<()> {
+        if parent(id) != parent(target) || self.is_folder(id) != self.is_folder(target) {
+            return Err(ErrorKind::InvalidInput.into());
+        }
+        let dir = match parent(id) {
+            "" => self.root.clone(),
+            p => self.root.join(p),
+        };
+        let folder = self.is_folder(id);
+        let nodes = load_dir(&dir, parent(id).is_empty(), true);
+        let same: Vec<&str> = (nodes.iter())
+            .filter(|n| matches!(n, Node::Folder { .. }) == folder)
+            .map(Node::name)
+            .collect();
+        let (Some(from), Some(to)) = (
+            same.iter().position(|n| *n == file_name(id)),
+            same.iter().position(|n| *n == file_name(target)),
+        ) else {
+            return Err(ErrorKind::NotFound.into());
+        };
+        // Taking `id` out first shifts the places after it.
+        self.place(id, if from < to { to - 1 } else { to })
     }
 
     /// Delete a session, or a folder with everything in it.
@@ -187,7 +260,7 @@ impl Store {
                 .sum()
         }
         match self.is_folder(id) {
-            true => count(&load_dir(&self.root.join(id), false)),
+            true => count(&load_dir(&self.root.join(id), false, false)),
             false => usize::from(self.file(id).is_file()),
         }
     }
@@ -315,7 +388,7 @@ fn every(nodes: &[Node], prefix: &str, out: &mut Vec<(String, Session)>) {
     }
 }
 
-fn load_dir(dir: &Path, root: bool) -> Vec<Node> {
+fn load_dir(dir: &Path, root: bool, manual: bool) -> Vec<Node> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
     };
@@ -330,7 +403,7 @@ fn load_dir(dir: &Path, root: bool) -> Vec<Node> {
             continue;
         }
         if path.is_dir() {
-            let children = load_dir(&path, false);
+            let children = load_dir(&path, false, manual);
             folders.push(Node::Folder {
                 name: name.to_string(),
                 children,
@@ -357,9 +430,34 @@ fn load_dir(dir: &Path, root: bool) -> Vec<Node> {
     let key = |n: &Node| n.name().to_lowercase();
     folders.sort_by_key(key);
     sessions.sort_by_key(key);
+    if manual {
+        let order = read_order(dir);
+        by_order(&mut folders, &order);
+        by_order(&mut sessions, &order);
+    }
     folders.extend(sessions);
     folders
 }
+
+/// The names a folder lists in its `.order` file, one a line.
+fn read_order(dir: &Path) -> Vec<String> {
+    std::fs::read_to_string(dir.join(ORDER))
+        .map(|t| t.lines().map(str::to_string).collect())
+        .unwrap_or_default()
+}
+
+/// The listed names first, in the listed order; the others after them, as they were.
+fn by_order(nodes: &mut [Node], order: &[String]) {
+    let at = |n: &Node| {
+        order
+            .iter()
+            .position(|o| o == n.name())
+            .unwrap_or(usize::MAX)
+    };
+    nodes.sort_by_key(at);
+}
+
+const ORDER: &str = ".order";
 
 #[cfg(test)]
 mod tests {
@@ -376,6 +474,33 @@ mod tests {
             host: s.into(),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn manual_order_places_and_survives_rename() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::new(dir.path().to_path_buf());
+        for n in ["a", "b", "c"] {
+            store.add("", n, &host(n)).unwrap();
+        }
+        store.add("Lab", "x", &host("x")).unwrap();
+        let names =
+            |s: &Store| -> Vec<String> { s.load().iter().map(|n| n.name().to_string()).collect() };
+        // By name until asked otherwise, whatever the order file says.
+        store.place("c", 0).unwrap();
+        assert_eq!(names(&store), ["Lab", "a", "b", "c"]);
+        store.manual = true;
+        assert_eq!(names(&store), ["Lab", "c", "a", "b"]);
+        store.place_before("a", "c").unwrap();
+        assert_eq!(names(&store), ["Lab", "a", "c", "b"]);
+        store.place_before("a", "b").unwrap();
+        assert_eq!(names(&store), ["Lab", "c", "a", "b"]);
+        store.rename("a", "z").unwrap();
+        assert_eq!(names(&store), ["Lab", "c", "z", "b"]);
+        // A folder and a session don't swap; a new one goes last.
+        assert!(store.place_before("Lab", "c").is_err());
+        store.add("", "d", &host("d")).unwrap();
+        assert_eq!(names(&store).last().unwrap(), "d");
     }
 
     #[test]
