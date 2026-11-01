@@ -236,6 +236,10 @@ pub struct Config {
     pub tabs_hide_single: bool,
     /// Double-click on a tab: 0 nothing, 1 close, 2 clone, 3 reconnect, 4 a window of its own.
     pub tab_double_click: u8,
+    /// Closing a live tab asks first (SecureCRT's «Show confirm disconnect dialog»).
+    pub confirm_disconnect: bool,
+    /// A connection that ended says so in a window («Show connection closed dialog»).
+    pub closed_dialog: bool,
     /// The terminal cursor blinks.
     pub cursor_blink: bool,
     /// Terminal cursor: 0 block, 1 underline, 2 bar; read through `cursor`.
@@ -371,6 +375,8 @@ impl Default for Config {
             font_family: String::new(),
             cursor_shape: 0,
             cursor_blink: false,
+            confirm_disconnect: true,
+            closed_dialog: false,
             tabs_bottom: false,
             note_buttons: shagshell_core::notes::default_buttons(),
             builder_buttons: shagshell_core::builder::bar::default_buttons(),

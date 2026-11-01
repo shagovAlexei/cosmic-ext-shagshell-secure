@@ -900,3 +900,9 @@ exit-locked-title = { $n ->
 exit-locked-body = Сначала разблокируйте (правый щелчок по вкладке → «Разблокировать сеанс…»):
 { $tabs }
 exit-unsaved-list = Несохранённые скрипты:
+
+options-dialogs = Диалоги
+options-confirm-disconnect = Спрашивать при закрытии подключённой вкладки
+options-closed-dialog = Показывать окно, когда соединение оборвалось
+closed-title = { $name }: соединение закрыто
+closed-body = Соединение завершилось. Вкладка осталась открытой: Enter запускает её заново.
