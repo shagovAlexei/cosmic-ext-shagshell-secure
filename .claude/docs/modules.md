@@ -24,6 +24,7 @@ We do **not** implement SSH. The system OpenSSH does it; we drive it.
 
 - Sessions: `~/.config/shagshell/sessions/<folder>/…/<name>.toml`, one file per session; the folder tree is the Session Manager tree.
 - `sessions/Default.toml` is the template: a new session copies it at creation (SecureCRT behaviour, no live inheritance).
+- Groups: `Session.groups` (names; none = built-in «Default») + `~/.config/shagshell/groups.toml` (colour per group); `Store::in_group` / `drop_group`. Window → Session Groups… (`app/groups.rs`).
 - Credentials: `~/.config/shagshell/credentials.toml` holds named sets (username only); sessions reference a set by name.
 - **Secrets only in Secret Service** (gnome-keyring), never in files: attributes `app=io.github.shagovalexei.ShagShellSecure`, `kind=session|credential`, `id=<session path or credential name>`, `secret=password|passphrase`; they follow a session renamed / moved / deleted (`keyring::retarget` / `forget_under`). A session with a credential set: its password is the set's (`askpass::owner`), its user the set's (`Credentials::resolve` at launch).
 - **Master password** = a keyring of our own labelled «ShagShell Secure» (gnome-keyring asks its password when made and on first use after login); its existence is the setting (no config flag); `keyring::set_separate` moves our items in / out. New secrets go there when it exists.

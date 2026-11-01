@@ -49,6 +49,7 @@ pub enum Field {
     Script,
     PreScript,
     Label,
+    Groups,
     Jump,
     ReconnectDelay,
     ReconnectTries,
@@ -249,6 +250,7 @@ impl SessionOptions {
                 Field::Script => f.script = v,
                 Field::PreScript => f.pre_script = v,
                 Field::Label => f.label = v,
+                Field::Groups => f.groups = v,
                 Field::Jump => f.jump = v,
                 Field::Device => f.device = v,
                 Field::Baud => f.baud = v,
@@ -457,6 +459,8 @@ impl SessionOptions {
                 icons.extend(PICKABLE.iter().map(|(_, g)| handle(*g)));
                 let icon_at = PICKABLE.iter().position(|(n, _)| *n == f.icon);
                 vec![
+                    field(fl!("so-groups"), Field::Groups, &f.groups, false),
+                    widget::text::caption(fl!("so-groups-hint")).into(),
                     field(fl!("so-label"), Field::Label, &f.label, false),
                     widget::text::caption(fl!("so-label-hint")).into(),
                     labelled(

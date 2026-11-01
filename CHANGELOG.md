@@ -2,6 +2,9 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.108.0 — 2026-11-01
+- feat: session groups — a session names its groups in Session Options → Groups (none: «Default»); Window → Session Groups… opens a group (one tab per session, tabs marked `[group]`), closes its tabs, or deletes it (the sessions stay); groups and their colours are in `groups.toml`
+
 ## 0.107.0 — 2026-11-01
 - feat: Global Options → Session Manager: sessions in a folder by name (as before) or by hand — drag a row onto another one of the same kind to put it before that one (the order is kept in the folder's `.order` file)
 

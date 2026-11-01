@@ -150,6 +150,9 @@ pub struct Session {
     pub button_bar: Option<String>,
     #[serde(skip_serializing_if = "Serial::is_default")]
     pub serial: Serial,
+    /// Groups it belongs to (`core::groups`); none: the built-in «Default».
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub groups: Vec<String>,
     /// The tab's text instead of the program's long title; empty: the program's, else the session name.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub label: String,

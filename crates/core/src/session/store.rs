@@ -320,6 +320,29 @@ impl Store {
         Ok(changed)
     }
 
+    /// The sessions in group `name` (`None`: the built-in «Default», those with no group), in tree order.
+    pub fn in_group(&self, name: Option<&str>) -> Vec<String> {
+        let mut all = Vec::new();
+        every(&self.load(), "", &mut all);
+        all.into_iter()
+            .filter(|(_, s)| match name {
+                Some(n) => s.groups.iter().any(|g| g == n),
+                None => s.groups.is_empty(),
+            })
+            .map(|(id, _)| id)
+            .collect()
+    }
+
+    /// Group `name` deleted: taken off every session (one left with none is in «Default» again).
+    pub fn drop_group(&self, name: &str) -> io::Result<()> {
+        for id in self.in_group(Some(name)) {
+            let mut s = self.get(&id)?;
+            s.groups.retain(|g| g != name);
+            self.save(&id, &s)?;
+        }
+        Ok(())
+    }
+
     /// A session or folder by that id (a folder and a session never share one).
     fn exists(&self, id: &str) -> bool {
         self.file(id).exists() || self.is_folder(id)
@@ -474,6 +497,23 @@ mod tests {
             host: s.into(),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn groups_select_members_and_drop_back_to_default() {
+        let (_d, st) = store();
+        let mut a = host("a");
+        a.groups = vec!["web".into(), "db".into()];
+        let mut b = host("b");
+        b.groups = vec!["web".into()];
+        st.add("", "a", &a).unwrap();
+        st.add("", "b", &b).unwrap();
+        st.add("", "c", &host("c")).unwrap();
+        assert_eq!(st.in_group(Some("web")), ["a", "b"]);
+        assert_eq!(st.in_group(None), ["c"]);
+        st.drop_group("web").unwrap();
+        assert_eq!(st.in_group(Some("db")), ["a"]);
+        assert_eq!(st.in_group(None), ["b", "c"]);
     }
 
     #[test]

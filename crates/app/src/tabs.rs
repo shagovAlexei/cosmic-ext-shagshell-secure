@@ -137,6 +137,8 @@ pub struct Launch {
     pub icon: String,
     /// The saved session (its id) this tab was opened from: it is opened again at the next start.
     pub session: Option<String>,
+    /// The group it was opened as a member of (Window → Session Groups…); "": none.
+    pub group: String,
 }
 
 impl Launch {
@@ -159,6 +161,7 @@ impl Launch {
             label: String::new(),
             icon: String::new(),
             session: None,
+            group: String::new(),
         }
     }
 
@@ -1949,6 +1952,11 @@ impl Tabs {
             true => format!("* {title}"),
             false => title,
         };
+        // ponytail: a text mark, the strip's tabs take no colour; add a coloured chip when needed.
+        let title = match self.tabs.get(&id).map(|t| t.launch.group.as_str()) {
+            Some(g) if !g.is_empty() => format!("[{g}] {title}"),
+            _ => title,
+        };
         for (_, group) in self.grid.iter_mut().flat_map(|g| g.iter_mut()) {
             if let Some(e) = entity_of(&group.model, id) {
                 group.model.text_set(e, title.clone());
@@ -1979,6 +1987,23 @@ impl Tabs {
             }
             _ => self.close_list(all),
         }
+    }
+
+    /// Window → Session Groups… → Close tabs: the tabs opened as members of `group`, without asking
+    /// (the button is the ask); a locked one stays.
+    pub fn close_group(&mut self, group: &str) -> Task<Message> {
+        let mut all = Vec::new();
+        for (pane, g) in self.grid.iter().flat_map(|g| g.iter()) {
+            all.extend(g.model.iter().map(|e| (*pane, e)));
+        }
+        all.retain(|(pane, e)| {
+            (self.grid.as_ref())
+                .and_then(|g| g.get(*pane)?.model.data::<TabId>(*e).copied())
+                .and_then(|id| self.tabs.get(&id))
+                .is_some_and(|t| t.launch.group == group)
+                && !self.tab_locked(*pane, *e)
+        });
+        self.close_list(all)
     }
 
     fn close_list(&mut self, list: Vec<(pane_grid::Pane, Entity)>) -> Task<Message> {

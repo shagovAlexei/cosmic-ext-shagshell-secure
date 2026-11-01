@@ -15,7 +15,7 @@ pub fn bar_id() -> widget::Id {
 
 /// The app functions a toolbar button can run: (name in the config, icon, action, label).
 pub type Tool = (&'static str, &'static str, Action, fn() -> String);
-pub const TOOLS: [Tool; 29] = [
+pub const TOOLS: [Tool; 30] = [
     // The Connect Bar's field itself, not a button (where it stands on the bar).
     (
         "ConnectBar",
@@ -143,6 +143,9 @@ pub const TOOLS: [Tool; 29] = [
         Action::FullScreen,
         || fl!("menu-full-screen"),
     ),
+    ("Groups", "system-users-symbolic", Action::Groups, || {
+        fl!("menu-groups")
+    }),
     (
         "Credentials",
         "system-users-symbolic",
