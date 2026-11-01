@@ -471,6 +471,24 @@ pub fn view<'a>(
             fl!("options-notes-right"),
             widget::toggler(config.notes_right).on_toggle(set(|c, on| c.notes_right = on)),
         ));
+    let sort = settings::flex_item(
+        fl!("options-sessions-sort"),
+        widget::dropdown(
+            vec![fl!("options-sort-name"), fl!("options-sort-manual")],
+            Some(usize::from(config.sessions_manual)),
+            {
+                let c = config.clone();
+                move |i| {
+                    let mut c = c.clone();
+                    c.sessions_manual = i == 1;
+                    Message::SetConfig(c)
+                }
+            },
+        ),
+    );
+    let sessions = settings::section()
+        .title(fl!("menu-session-manager"))
+        .add(sort);
     let dialogs = settings::section()
         .title(fl!("options-dialogs"))
         .add(settings::flex_item(
@@ -484,6 +502,7 @@ pub fn view<'a>(
         ));
     let content = widget::column::with_children(vec![
         interface.into(),
+        sessions.into(),
         dialogs.into(),
         toolbar.into(),
         menu.into(),

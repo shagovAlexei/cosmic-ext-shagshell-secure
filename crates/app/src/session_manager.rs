@@ -349,7 +349,20 @@ impl SessionManager {
                         Some(h) if self.rows.iter().any(|r| &r.id == h && r.folder) => h.clone(),
                         Some(h) => parent(h).to_string(),
                     };
-                    if into != parent(&id) {
+                    // By hand: onto a sibling row of the same kind = just before it.
+                    let sibling = (self.store.manual && into == parent(&id))
+                        .then(|| self.hover.clone())
+                        .flatten()
+                        .filter(|h| *h != id && parent(h) == parent(&id));
+                    if let Some(target) = sibling {
+                        match self.store.place_before(&id, &target) {
+                            Ok(()) => {
+                                self.reload();
+                                self.select(&id);
+                            }
+                            Err(e) => self.notice = Some(io_text(&e)),
+                        }
+                    } else if into != parent(&id) {
                         match self.store.move_to(&id, &into) {
                             Ok(new) => {
                                 self.retarget_expanded(&id, &new);

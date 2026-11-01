@@ -906,3 +906,7 @@ options-confirm-disconnect = Спрашивать при закрытии под
 options-closed-dialog = Показывать окно, когда соединение оборвалось
 closed-title = { $name }: соединение закрыто
 closed-body = Соединение завершилось. Вкладка осталась открытой: Enter запускает её заново.
+
+options-sessions-sort = Порядок сессий в папке
+options-sort-name = По имени
+options-sort-manual = Вручную (перетащить строку на другую)

@@ -286,6 +286,8 @@ impl Application for App {
         let mut sessions =
             SessionManager::new(store, &config.expanded, config.session_manager_width);
         sessions.right = config.session_manager_side == crate::config::Side::Right;
+        sessions.store.manual = config.sessions_manual;
+        sessions.reload();
         sessions.cmd_width = f32::from(config.command_manager_width).clamp(
             crate::session_manager::MIN_WIDTH,
             crate::session_manager::MAX_WIDTH,
@@ -1184,6 +1186,10 @@ impl App {
                     c.app_theme != self.config.app_theme,
                 );
                 let folder = c.scripts_folder != self.config.scripts_folder;
+                if c.sessions_manual != self.config.sessions_manual {
+                    self.sessions.store.manual = c.sessions_manual;
+                    self.sessions.reload();
+                }
                 self.config = c;
                 self.save_config();
                 if folder {

@@ -907,3 +907,7 @@ options-confirm-disconnect = Ask before closing a connected tab
 options-closed-dialog = Show a window when a connection is closed
 closed-title = { $name }: connection closed
 closed-body = The connection has ended. The tab stays open: Enter restarts it.
+
+options-sessions-sort = Sessions in a folder
+options-sort-name = By name
+options-sort-manual = By hand (drag a row onto another)
