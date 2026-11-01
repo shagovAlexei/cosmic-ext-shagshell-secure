@@ -644,24 +644,24 @@ impl ButtonBar {
                         false => menu::Item::Button(fl!("bb-right"), None, BarCmd::Move(i, 1)),
                     },
                 ];
-                // The hint, when the pointer rests on it.
-                let button: Element<'_, Message> = match b.tip.trim().is_empty() {
-                    true => button.into(),
+                // The hint, when the pointer rests on it. Outside the context menu: that one
+                // (a popup on Wayland) drops the overlay of what it holds.
+                let button: Element<'_, Message> = widget::context_menu(
+                    button,
+                    Some(menu::items(&std::collections::HashMap::new(), items)),
+                )
+                .window_id(window)
+                .on_surface_action(Message::Surface)
+                .into();
+                row = row.push(match b.tip.trim().is_empty() {
+                    true => button,
                     false => widget::tooltip(
                         button,
                         widget::text::caption(b.tip.clone()),
                         widget::tooltip::Position::Top,
                     )
                     .into(),
-                };
-                row = row.push(
-                    widget::context_menu(
-                        button,
-                        Some(menu::items(&std::collections::HashMap::new(), items)),
-                    )
-                    .window_id(window)
-                    .on_surface_action(Message::Surface),
-                );
+                });
             }
         }
         row = row.push(widget::tooltip(
