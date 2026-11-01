@@ -142,6 +142,10 @@ pub struct Item {
     pub program: bool,
     #[serde(default = "yes")]
     pub shown: bool,
+    /// An icon name of the user's choice; empty: the function's own. Shared by the menu, the
+    /// toolbar and anywhere else the function is drawn (`icon_of`).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub icon: String,
 }
 
 impl Default for Item {
@@ -152,6 +156,7 @@ impl Default for Item {
             label: String::new(),
             program: false,
             shown: true,
+            icon: String::new(),
         }
     }
 }
@@ -217,6 +222,13 @@ impl Menu {
     fn has_customize(&self) -> bool {
         self.items.iter().any(|i| i.cmd == CUSTOMIZE && !i.program)
     }
+}
+
+/// The icon the user chose for a stock function `cmd` in any menu, if any.
+pub fn icon_of<'a>(menus: &'a [Menu], cmd: &str) -> Option<&'a str> {
+    (menus.iter().flat_map(|m| &m.items))
+        .find(|i| !i.program && i.cmd == cmd && !i.icon.is_empty())
+        .map(|i| i.icon.as_str())
 }
 
 pub fn default_menus() -> Vec<Menu> {
@@ -292,6 +304,8 @@ pub enum MenuMsg {
     Label(String),
     Cmd(String),
     Params(String),
+    /// The chosen item's icon name (empty: the default one).
+    Icon(String),
     AddFunction(String),
     AddProgram,
     AddSep,
@@ -441,6 +455,7 @@ impl MenuEdit {
                     it.cmd = t
                 }
             }),
+            MenuMsg::Icon(t) => self.edit(|it| it.icon = t),
             MenuMsg::Params(t) => self.edit(|it| {
                 if it.is_own() {
                     it.params = t
@@ -497,6 +512,24 @@ mod tests {
 
     fn cmds(m: &Menu) -> Vec<&str> {
         m.items.iter().map(|i| i.cmd.as_str()).collect()
+    }
+
+    #[test]
+    fn item_icon_is_stored_and_found_by_function() {
+        let mut e = MenuEdit::new(&[]);
+        e.update(MenuMsg::SelectItem(0));
+        let cmd = e.list[0].items[0].cmd.clone();
+        e.update(MenuMsg::Icon("go-up-symbolic".into()));
+        assert_eq!(icon_of(&e.list, &cmd), Some("go-up-symbolic"));
+        let saved = e.ok();
+        let text = toml::to_string(&saved[0]).unwrap();
+        assert!(text.contains("go-up-symbolic"));
+        assert_eq!(icon_of(&merged(&saved), &cmd), Some("go-up-symbolic"));
+        // Cleared: the default again, and nothing is written.
+        let mut e = MenuEdit::new(&saved);
+        e.update(MenuMsg::SelectItem(0));
+        e.update(MenuMsg::Icon(String::new()));
+        assert_eq!(icon_of(&e.list, &cmd), None);
     }
 
     #[test]
