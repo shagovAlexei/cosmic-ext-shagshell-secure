@@ -849,13 +849,16 @@ impl App {
                     return Task::none();
                 };
                 match toolbar::function(&b.cmd) {
-                    Some(t) => return self.update(Message::Action(t.2)),
+                    Some(t) => return self.update(Message::Action(t.action)),
                     None => return self.run_program(&b.cmd, &b.params),
                 }
             }
             TbMsg::Open => {
                 let list = toolbar::buttons(&self.config.toolbar_buttons);
-                let labels = toolbar::TOOLS.iter().map(|t| (t.3)()).collect();
+                let labels = toolbar::choices()
+                    .into_iter()
+                    .filter_map(|n| toolbar::function(n).map(|f| f.label))
+                    .collect();
                 self.tool_edit = Some((ToolEdit::new(list, toolbar::default_bar()), labels));
             }
             TbMsg::Edit(m) => {

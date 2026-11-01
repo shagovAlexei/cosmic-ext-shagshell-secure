@@ -172,8 +172,44 @@ pub const TOOLS: [Tool; 29] = [
     ),
 ];
 
-pub fn function(name: &str) -> Option<&'static Tool> {
-    TOOLS.iter().find(|t| t.0 == name.trim())
+pub fn function(name: &str) -> Option<Fun> {
+    let name = name.trim();
+    if let Some(t) = TOOLS.iter().find(|t| t.0 == name) {
+        return Some(Fun {
+            icon: t.1.to_string(),
+            action: t.2,
+            label: (t.3)(),
+        });
+    }
+    // Any other function of the menu (Script Builder, Changelog…): its own icon, else a gear.
+    let (action, label) = crate::menu::entry(name)?;
+    crate::menu::FUNCTIONS.contains(&name).then(|| Fun {
+        icon: crate::menu::default_icon(name)
+            .unwrap_or_else(|| "applications-system-symbolic".into()),
+        action,
+        label,
+    })
+}
+
+/// A function a button runs, as `function` finds it.
+pub struct Fun {
+    pub icon: String,
+    pub action: Action,
+    pub label: String,
+}
+
+/// Every function the editor offers: the curated ones, then the menu's others (the ones whose
+/// action no curated one has).
+pub fn choices() -> Vec<&'static str> {
+    let mut out: Vec<&'static str> = TOOLS.iter().map(|t| t.0).collect();
+    for name in crate::menu::FUNCTIONS.iter() {
+        if let Some((a, _)) = crate::menu::entry(name)
+            && !TOOLS.iter().any(|t| t.2 == a)
+        {
+            out.push(name);
+        }
+    }
+    out
 }
 
 /// The toolbar until the user changes it: SecureCRT's groups.
@@ -222,7 +258,7 @@ pub fn buttons(config: &[ToolButton]) -> Vec<ToolButton> {
 pub fn icon(b: &ToolButton) -> String {
     const PROGRAM: &str = "application-x-executable-symbolic";
     match (b.icon.as_str(), function(&b.cmd)) {
-        ("", Some(t)) => crate::menu::custom_icon(&b.cmd).unwrap_or_else(|| t.1.to_string()),
+        ("", Some(t)) => crate::menu::custom_icon(&b.cmd).unwrap_or(t.icon),
         ("" | PROGRAM, None) if b.is_script() => "system-run-symbolic".into(),
         ("", None) => PROGRAM.into(),
         (i, _) => i.to_string(),
@@ -233,7 +269,7 @@ pub fn icon(b: &ToolButton) -> String {
 /// file name).
 pub fn tip(b: &ToolButton) -> String {
     match (b.tip.as_str(), function(&b.cmd)) {
-        ("", Some(t)) => (t.3)(),
+        ("", Some(t)) => t.label,
         ("", None) if b.is_script() => (std::path::Path::new(&b.cmd).file_name())
             .map_or_else(|| b.cmd.clone(), |n| n.to_string_lossy().into_owned()),
         ("", None) => b.cmd.clone(),
@@ -343,6 +379,15 @@ pub fn tip_button<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_menu_function_can_go_on_the_toolbar() {
+        // The Script Builder was in the menu, the Button Bar and Key Map, but not offered here.
+        assert!(choices().contains(&"ScriptBuilder"));
+        for name in crate::menu::FUNCTIONS.iter() {
+            assert!(function(name).is_some(), "{name} on the toolbar");
+        }
+    }
 
     #[test]
     fn the_default_bar_runs_known_functions() {
@@ -550,7 +595,8 @@ pub fn editor<'a>(t: &'a ToolEdit, labels: &'a [String]) -> Element<'a, Message>
     };
     let on = |f: fn(String) -> ToolMsg| editable.map(|_| f);
     let b = editable.cloned().unwrap_or_default();
-    let internal = editable.and_then(|b| TOOLS.iter().position(|t| t.0 == b.cmd));
+    let names = choices();
+    let internal = editable.and_then(|b| names.iter().position(|n| *n == b.cmd));
     let (cmd, params, icon_name, tip_text) = match editable {
         Some(b) => (&*b.cmd, &*b.params, &*b.icon, &*b.tip),
         None => ("", "", "", ""),
@@ -571,7 +617,7 @@ pub fn editor<'a>(t: &'a ToolEdit, labels: &'a [String]) -> Element<'a, Message>
         row![
             widget::text::body(fl!("bb-function")).width(Length::Fixed(110.0)),
             widget::dropdown(labels, internal, move |i| {
-                msg(ToolMsg::Function(TOOLS[i].0.to_string()))
+                msg(ToolMsg::Function(names[i].to_string()))
             }),
         ]
         .spacing(6)
