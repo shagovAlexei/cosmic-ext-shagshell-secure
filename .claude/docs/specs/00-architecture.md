@@ -74,7 +74,7 @@ Workspace из двух крейтов, как в shagoff-commander:
 - `crates/core` (`shagshell-core`) — без libcosmic, вся логика, unit-тесты.
 - `crates/app` (`shagshell`) — UI, разбит по фичам: каждый модуль владеет своими `Message`/`update`/`view`, `app.rs` только маршрутизирует. Урок commander: один `app.rs` вырос до 15 тыс. строк.
 
-Список модулей — в CLAUDE.md. Модульность — модули Rust, без плагинов.
+Список модулей — в `.claude/docs/modules.md`. Модульность — модули Rust, без плагинов.
 
 ### 4. UI
 
