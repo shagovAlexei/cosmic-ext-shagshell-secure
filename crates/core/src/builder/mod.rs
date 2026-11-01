@@ -687,6 +687,19 @@ mod tests {
     }
 
     #[test]
+    fn regression_own_imports_are_kept() {
+        if no_python() {
+            return;
+        }
+        // A function of the user's own file, imported and called, comes back as it was.
+        let src =
+            "from shag_blocks import *\nfrom test import my_func\nimport os\nx = my_func(1)\n";
+        let g = generate(&super::parse::tests::parse(src).unwrap());
+        assert_eq!(ast_dump(src), ast_dump(&g), "{g}");
+        assert!(g.contains("from test import my_func") && g.contains("import os"));
+    }
+
+    #[test]
     fn regression_shared_line_comment() {
         if no_python() {
             return;

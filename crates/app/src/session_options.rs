@@ -195,7 +195,7 @@ impl SessionOptions {
     pub fn title(&self) -> String {
         match &self.target {
             Target::New { .. } => fl!("so-title-new"),
-            Target::Edit { id } => fl!("so-title", name = name_of(id)),
+            Target::Edit { id } => fl!("so-title", name = id.as_str()),
             Target::Default => fl!("so-title-default"),
         }
     }

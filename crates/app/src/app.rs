@@ -1488,7 +1488,12 @@ impl App {
                         | crate::button_bar::BbMsg::RenameBar
                 );
                 if matches!(m, crate::button_bar::BbMsg::Select(_)) {
-                    self.buttons.picked_for = Some(self.tabs.active_session());
+                    let active = self.tabs.active_session();
+                    let own = active
+                        .as_ref()
+                        .and_then(|id| self.sessions.store.get(id).ok())
+                        .and_then(|s| s.button_bar);
+                    self.buttons.picked_for = Some((active, own));
                 }
                 let (run, notice) = self.buttons.update(m, self.shown_bar());
                 if notice.is_some() {
@@ -1894,12 +1899,8 @@ impl App {
     /// The bar on screen: the active session's own, else the one picked on the bar.
     fn shown_bar(&self) -> Option<usize> {
         let active = self.tabs.active_session();
-        // A bar picked on the bar itself wins over the session's own while that tab is up.
-        if self.buttons.picked_for.as_ref() == Some(&active) {
-            return self.buttons.shown(None);
-        }
         // Read from its file once per session, not on every frame (`bar_cache`).
-        let own = active.and_then(|id| {
+        let own = active.clone().and_then(|id| {
             let mut cache = self.bar_cache.borrow_mut();
             if let Some(bar) = cache.get(&id) {
                 return bar.clone();
@@ -1908,6 +1909,14 @@ impl App {
             cache.insert(id, bar.clone());
             bar
         });
+        // A bar picked on the bar itself wins over the session's own while that tab is up and
+        // the session's bar is still the one it had then (Session Options changed it: it wins).
+        if let Some((for_session, was)) = &self.buttons.picked_for
+            && *for_session == active
+            && *was == own
+        {
+            return self.buttons.shown(None);
+        }
         self.buttons.shown(own.as_deref())
     }
 

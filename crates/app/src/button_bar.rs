@@ -61,8 +61,9 @@ pub struct ButtonBar {
     broken: Option<String>,
     /// The bar picked on the bar itself.
     pub selected: usize,
-    /// The active session (its id) when a bar was picked: the pick beats that session's own bar.
-    pub picked_for: Option<Option<String>>,
+    /// (the active session's id, that session's own bar) when a bar was picked: the pick beats
+    /// the session's own bar until Session Options gives it another one.
+    pub picked_for: Option<(Option<String>, Option<String>)>,
     /// A bar renamed (`Some(new)`) or deleted (`None`) — `(old name, …)`: the sessions follow
     /// (the app takes it).
     pub relink: Option<(String, Option<String>)>,

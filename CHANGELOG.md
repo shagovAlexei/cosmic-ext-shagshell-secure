@@ -2,6 +2,10 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.104.1 — 2026-11-01
+- fix: a Button Bar picked on the bar no longer hides the bar chosen later in Session Options; Session Options' title shows the session's folder
+- test: own `import` / `from … import` lines in a Script Builder script are kept (shown as Python blocks)
+
 ## 0.104.0 — 2026-11-01
 - feat: a tab locked with Lock Session can't be closed (×, middle click, Close, Close others / all skip it)
 - fix: every way out of the program (File → Exit, the window's ×, the header's close) goes through one question; unsaved Script Builder tabs are listed, and locked tabs keep the program open (their list is shown)
