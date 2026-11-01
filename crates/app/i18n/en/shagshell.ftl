@@ -893,3 +893,11 @@ me-reset-title = Reset the menu?
 me-reset-ask = Every menu and item goes back to how it was installed; your own menus, programs and names are removed. OK then stores it.
 menu-changelog = Changelog
 changelog-older = Older releases: CHANGELOG.md in the repository.
+
+exit-locked-title = { $n ->
+    [one] A tab is locked
+   *[other] { $n } tabs are locked
+}
+exit-locked-body = Unlock them first (right click on the tab → Unlock Session…):
+{ $tabs }
+exit-unsaved-list = Not saved scripts:
