@@ -8,7 +8,8 @@ import os
 import threading
 import time
 
-__all__ = ["prompt", "run", "read_list", "log_to", "append_file", "to_clipboard", "each_host"]
+__all__ = ["prompt", "run", "read_list", "log_to", "append_file", "to_clipboard", "from_clipboard",
+           "each_host", "printbox", "ask", "read_until", "connect", "active_tab", "disconnect"]
 
 crt = getattr(builtins, "crt", None)
 if crt is None:  # imported before `crt` is defined (SecureCRT defines it as a builtin too)
@@ -106,6 +107,42 @@ def append_file(path, text):
 def to_clipboard(text):
     """Puts `text` on the clipboard."""
     crt.Clipboard.Text = str(text)
+
+
+def from_clipboard():
+    """The clipboard's text."""
+    return crt.Clipboard.Text
+
+
+def printbox(text, title="", buttons=0):
+    """A message box; returns the button pressed (short for crt.Dialog.MessageBox)."""
+    return crt.Dialog.MessageBox(str(text), title, buttons)
+
+
+def ask(message, title="", default="", password=False):
+    """Asks for a line of text, "" when cancelled (short for crt.Dialog.Prompt)."""
+    return crt.Dialog.Prompt(message, title, default, password)
+
+
+def read_until(text, timeout=30, tab=None):
+    """The output up to `text` (short for tab.Screen.ReadString); the tab: the script's own."""
+    return _tab(tab).Screen.ReadString(text, timeout)
+
+
+def connect(session):
+    """Opens the saved session `session` in a new tab and returns that tab."""
+    crt.Session.Connect('/S "%s"' % session)
+    return crt.GetActiveTab()
+
+
+def active_tab():
+    """The tab in front (short for crt.GetActiveTab)."""
+    return crt.GetActiveTab()
+
+
+def disconnect(tab=None):
+    """Disconnects the tab (the script's own by default)."""
+    _tab(tab).Session.Disconnect()
 
 
 def each_host(hosts, func, parallel=False, limit=10):
