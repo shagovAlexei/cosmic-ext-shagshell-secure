@@ -391,6 +391,8 @@ pub enum TabsMsg {
     Close(pane_grid::Pane, Entity),
     CloseConfirmed,
     CloseCancelled,
+    /// The «Connection closed» window's OK.
+    ClosedOk,
     Context(pane_grid::Pane, Entity),
     Reorder(pane_grid::Pane, ReorderEvent),
     /// A tab was dropped on this group (its bar or its body).
@@ -462,6 +464,11 @@ pub struct Tabs {
     notice: Mutex<Option<String>>,
     /// A live tab asked to close: waits for the dialog.
     confirm: Option<(pane_grid::Pane, Entity)>,
+    /// Global Options → Dialogs: closing a live tab does not ask / an ended connection says so.
+    no_confirm_close: bool,
+    closed_dialog: bool,
+    /// The «Connection closed» window: the tab's name.
+    closed_ask: Option<String>,
     /// «Close others / all» with live tabs among them: asked once (the tabs, then closed).
     confirm_many: Option<Vec<(pane_grid::Pane, Entity)>>,
     /// Tabs locked by the user (Lock Session), with their passwords (memory only).
@@ -1213,6 +1220,8 @@ impl Tabs {
     }
 
     pub fn set_log_prefs(&mut self, config: &Config) {
+        self.no_confirm_close = !config.confirm_disconnect;
+        self.closed_dialog = config.closed_dialog;
         self.log_prefs = (config.log_dir(), config.log_template.clone());
         self.download =
             (config.zmodem_auto && crate::menu::has_tool("rz")).then(|| config.download_dir());
@@ -1961,6 +1970,7 @@ impl Tabs {
                 .and_then(|id| self.tabs.get(&id))
                 .is_some_and(|t| t.live())
         });
+        let live = live && !self.no_confirm_close;
         match (live, all.is_empty()) {
             (_, true) => Task::none(),
             (true, _) => {
@@ -2334,7 +2344,7 @@ impl Tabs {
     /// Enter on a tab whose program ended: start it again. `false`: not such a tab.
     /// A «Close tab?» dialog is up.
     pub fn confirming(&self) -> bool {
-        self.confirm.is_some() || self.confirm_many.is_some()
+        self.confirm.is_some() || self.confirm_many.is_some() || self.closed_ask.is_some()
     }
 
     /// The active tab is an ssh one: an SFTP tab can use its connection.
@@ -2387,6 +2397,9 @@ impl Tabs {
                     None => fl!("term-exited"),
                 };
                 term::print(terminal, &format!("\r\n[{line}]\r\n"));
+                if self.closed_dialog && !tab.stopped {
+                    self.closed_ask = Some(tab.title());
+                }
                 // ssh says 255 when the connection is lost; after it had been up for a while
                 // (or while a series of retries goes on) the session connects by itself.
                 if let Some(r) = tab.launch.auto_reconnect
@@ -2522,7 +2535,7 @@ impl Tabs {
                     .and_then(|g| g.get(pane)?.model.data::<TabId>(e).copied())
                     .and_then(|id| self.tabs.get(&id))
                     .is_some_and(|t| t.live());
-                if alive {
+                if alive && !self.no_confirm_close {
                     self.confirm = Some((pane, e));
                 } else {
                     return self.close_now(pane, e);
@@ -2535,6 +2548,10 @@ impl Tabs {
                 if let Some((pane, e)) = self.confirm.take() {
                     return self.close_now(pane, e);
                 }
+            }
+            TabsMsg::ClosedOk => {
+                self.closed_ask = None;
+                return self.focus_active();
             }
             TabsMsg::CloseCancelled => {
                 self.confirm = None;
@@ -2671,6 +2688,19 @@ impl Tabs {
                     .primary_action(widget::button::suggested(ok).on_press(msg(TabsMsg::LockOk)))
                     .secondary_action(
                         widget::button::standard(fl!("cancel")).on_press(msg(TabsMsg::LockCancel)),
+                    )
+                    .into(),
+            );
+        }
+        if let Some(name) = &self.closed_ask {
+            return Some(
+                widget::dialog()
+                    .icon(crate::dialog_icons::Kind::Info.icon(48))
+                    .title(fl!("closed-title", name = name.as_str()))
+                    .body(fl!("closed-body"))
+                    .primary_action(
+                        widget::button::suggested(fl!("ok"))
+                            .on_press(Message::Tabs(TabsMsg::ClosedOk)),
                     )
                     .into(),
             );

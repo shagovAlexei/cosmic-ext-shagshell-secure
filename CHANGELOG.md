@@ -2,6 +2,9 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.105.0 — 2026-11-01
+- feat: Global Options → Dialogs: «Ask before closing a connected tab» (on by default) and «Show a window when a connection is closed» (off), as in SecureCRT
+
 ## 0.104.1 — 2026-11-01
 - fix: a Button Bar picked on the bar no longer hides the bar chosen later in Session Options; Session Options' title shows the session's folder
 - test: own `import` / `from … import` lines in a Script Builder script are kept (shown as Python blocks)

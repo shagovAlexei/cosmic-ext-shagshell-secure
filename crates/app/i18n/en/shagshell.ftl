@@ -901,3 +901,9 @@ exit-locked-title = { $n ->
 exit-locked-body = Unlock them first (right click on the tab → Unlock Session…):
 { $tabs }
 exit-unsaved-list = Not saved scripts:
+
+options-dialogs = Dialogs
+options-confirm-disconnect = Ask before closing a connected tab
+options-closed-dialog = Show a window when a connection is closed
+closed-title = { $name }: connection closed
+closed-body = The connection has ended. The tab stays open: Enter restarts it.

@@ -471,8 +471,20 @@ pub fn view<'a>(
             fl!("options-notes-right"),
             widget::toggler(config.notes_right).on_toggle(set(|c, on| c.notes_right = on)),
         ));
+    let dialogs = settings::section()
+        .title(fl!("options-dialogs"))
+        .add(settings::flex_item(
+            fl!("options-confirm-disconnect"),
+            widget::toggler(config.confirm_disconnect)
+                .on_toggle(set(|c, on| c.confirm_disconnect = on)),
+        ))
+        .add(settings::flex_item(
+            fl!("options-closed-dialog"),
+            widget::toggler(config.closed_dialog).on_toggle(set(|c, on| c.closed_dialog = on)),
+        ));
     let content = widget::column::with_children(vec![
         interface.into(),
+        dialogs.into(),
         toolbar.into(),
         menu.into(),
         terminal.into(),
