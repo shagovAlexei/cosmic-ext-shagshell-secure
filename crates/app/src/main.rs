@@ -94,7 +94,9 @@ fn main() -> cosmic::iced::Result {
     let settings = cosmic::app::Settings::default()
         .size(cosmic::iced::Size::new(1200.0, 800.0))
         // softbuffer (tiny-skia) takes only 24-bit X11 visuals; a transparent window gets a 32-bit one.
-        .transparent(!software);
+        .transparent(!software)
+        // The × of the main window asks first (unsaved scripts, locked tabs): `App::on_app_exit`.
+        .exit_on_close(false);
     cosmic::app::run::<app::App>(settings, startup)
 }
 

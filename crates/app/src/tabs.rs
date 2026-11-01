@@ -891,6 +891,29 @@ impl Tabs {
             .map(|(id, _)| *id)
     }
 
+    /// Titles of the tabs locked with Lock Session (they can't be closed, nor the program).
+    pub fn locked_tabs(&self) -> Vec<String> {
+        let mut out: Vec<String> = (self.user_locks.keys())
+            .filter_map(|id| self.title(*id))
+            .collect();
+        out.sort();
+        out
+    }
+
+    /// Titles of the Script Builder tabs with unsaved work.
+    pub fn unsaved_builder_titles(&self) -> Vec<String> {
+        (self.tabs.iter())
+            .filter(|(_, t)| matches!(&t.body, Body::Builder(v) if v.unsaved()))
+            .filter_map(|(id, _)| self.title(*id))
+            .collect()
+    }
+
+    fn tab_locked(&self, pane: pane_grid::Pane, e: Entity) -> bool {
+        (self.grid.as_ref())
+            .and_then(|g| g.get(pane)?.model.data::<TabId>(e).copied())
+            .is_some_and(|id| self.user_locks.contains_key(&id))
+    }
+
     /// Script Builder tabs with unsaved work.
     pub fn unsaved_builders(&self) -> usize {
         (self.tabs.values())
@@ -1931,7 +1954,7 @@ impl Tabs {
         for (pane, group) in self.grid.iter().flat_map(|g| g.iter()) {
             all.extend(group.model.iter().map(|e| (*pane, e)));
         }
-        all.retain(|t| Some(*t) != keep);
+        all.retain(|t| Some(*t) != keep && !self.tab_locked(t.0, t.1));
         let live = all.iter().any(|(pane, e)| {
             (self.grid.as_ref())
                 .and_then(|g| g.get(*pane)?.model.data::<TabId>(*e).copied())
@@ -2492,6 +2515,8 @@ impl Tabs {
                 }
                 return self.focus_active();
             }
+            // A tab locked with Lock Session stays until it is unlocked.
+            TabsMsg::Close(pane, e) if self.tab_locked(pane, e) => {}
             TabsMsg::Close(pane, e) => {
                 let alive = (self.grid.as_ref())
                     .and_then(|g| g.get(pane)?.model.data::<TabId>(e).copied())

@@ -670,6 +670,11 @@ impl Application for App {
         }
     }
 
+    /// The header's close button: the same way out as File → Exit.
+    fn on_app_exit(&mut self) -> Option<Message> {
+        Some(Message::Action(Action::Exit))
+    }
+
     fn dialog(&self) -> Option<Element<'_, Message>> {
         (self.asks.dialog(|t| self.tabs.title(t)))
             .or_else(|| self.keys.as_ref().map(Keys::view))
@@ -1689,6 +1694,10 @@ impl App {
             {
                 return self.scheduler(crate::scheduler::SchMsg::Close);
             }
+            // The main window's ×: the same way out as File → Exit.
+            Message::CloseRequested(w) if self.core.main_window_id() == Some(w) => {
+                return self.update(Message::Action(Action::Exit));
+            }
             Message::CloseRequested(_) => {}
             Message::Credentials(m) => return self.credentials(m),
             Message::Scheduler(m) => return self.scheduler(m),
@@ -1984,9 +1993,15 @@ impl App {
             return task;
         }
         match action {
-            Action::Exit if !self.exit_ask && self.tabs.unsaved_builders() > 0 => {
+            Action::Exit
+                if !self.exit_ask
+                    && (self.tabs.unsaved_builders() > 0
+                        || !self.tabs.locked_tabs().is_empty()) =>
+            {
                 self.exit_ask = true;
             }
+            // Locked tabs keep the program open.
+            Action::Exit if !self.tabs.locked_tabs().is_empty() => {}
             Action::Exit => {
                 self.tabs.save_notes();
                 let _ = std::fs::remove_file(askpass_sock(&self.control_dir));
@@ -2956,10 +2971,32 @@ impl App {
     /// A note tab for `path`: the one that has it is shown, else a new one.
     /// File → Exit with Script Builder work unsaved.
     fn exit_dialog(&self) -> Element<'_, Message> {
+        let locked = self.tabs.locked_tabs();
+        let unsaved = self.tabs.unsaved_builder_titles();
+        if !locked.is_empty() {
+            let mut body = fl!("exit-locked-body", tabs = locked.join("\n"));
+            if !unsaved.is_empty() {
+                body = format!(
+                    "{body}\n\n{}\n{}",
+                    fl!("exit-unsaved-list"),
+                    unsaved.join("\n")
+                );
+            }
+            return widget::dialog()
+                .icon(crate::dialog_icons::Kind::Lock.icon(48))
+                .title(fl!("exit-locked-title", n = locked.len()))
+                .body(body)
+                .primary_action(widget::button::suggested(fl!("ok")).on_press(Message::ExitCancel))
+                .into();
+        }
         widget::dialog()
             .icon(crate::dialog_icons::Kind::Warning.icon(48))
             .title(fl!("builder-exit-title", n = self.tabs.unsaved_builders()))
-            .body(fl!("builder-exit-body"))
+            .body(format!(
+                "{}\n\n{}",
+                unsaved.join("\n"),
+                fl!("builder-exit-body")
+            ))
             .primary_action(
                 widget::button::destructive(fl!("builder-exit"))
                     .on_press(Message::Action(Action::Exit)),
