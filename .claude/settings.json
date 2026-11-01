@@ -10,5 +10,8 @@
       "Bash(gh pr view *)",
       "Bash(gh pr checks *)"
     ]
+  },
+  "enabledPlugins": {
+    "superpowers@claude-plugins-official": false
   }
 }

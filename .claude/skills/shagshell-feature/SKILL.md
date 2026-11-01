@@ -1,37 +1,23 @@
 ---
 name: shagshell-feature
-description: Use when starting any new feature, roadmap phase, or non-trivial change in ShagShell Secure — runs the project cycle brainstorm → spec → plan → branch → TDD → verify → review → PR, with docs under .claude/docs.
+description: Use when starting any new feature, roadmap item, or bug fix in ShagShell Secure — the project cycle talk → (spec) → branch → test-first → verify → review → PR → tag.
 ---
 
 # Feature cycle for ShagShell Secure
 
-Every feature and every roadmap phase goes through these steps in order. Do not skip a step. Each step's gate is the user's approval.
-
-1. **Brainstorm.** Invoke `superpowers:brainstorming`. Before asking anything, read `CLAUDE.md`, `.claude/docs/ROADMAP.md` and the matching section of `.claude/docs/securecrt-reference.md`. If something should behave "like SecureCRT", that file is the source of truth; update it when the feature teaches us more.
-2. **Spec.** Write it to `.claude/docs/specs/NN-<topic>.md` (NN = roadmap phase number for phases, else the next free number; no dates in names). This overrides the brainstorming default `docs/superpowers/specs`. The user reviews the spec.
-3. **Plan.** Invoke `superpowers:writing-plans`. Save to `.claude/docs/plans/NN-<topic>.md` (same NN as the spec).
-4. **Branch.**
+1. **Talk it through.** Read the ROADMAP item (`grep` it, not the whole file), the module's section in `.claude/docs/modules.md` and, if it should behave "like SecureCRT", the matching part of `.claude/docs/securecrt-reference.md` (update it when you learn more). Ask only what changes what gets built, one question at a time; otherwise pick a sensible default and say it. Small change: describe it in chat and go. Big feature: write `.claude/docs/specs/NN-<topic>.md` (next free NN, no dates) and get the user's OK before code. No separate plan file unless the user asks.
+2. **Branch.** `git switch main && git pull && git switch -c feat/<topic>` (`fix/` for bugs, `docs/` for docs). Never commit to `main`.
+3. **Implement, test first.** Logic in `crates/core`: write the test, see it fail, make it pass. `crates/app` stays thin, split by feature module; `app.rs` only routes. Every UI string in `fl!` with `en` and `ru`. Secrets never in files or logs.
+   Bug: find the root cause first; add a `regression_<what>` test in core.
+4. **Verify.** `just verify > $SCRATCH/verify.log 2>&1; tail -30 $SCRATCH/verify.log`. For UI changes look at the real UI with `.claude/skills/shagshell-feature/headless.sh` (invisible sway + `wtype` + `grim`; never the user's desktop or config): `start`, keys, `shot name`, Read the png. Clicks on header menu items never arrive there: use the item's key or leave it to the manual check. Connections: local `sshd` (headless.sh) on 127.0.0.1:2222.
+   Add the manual check to `TESTING.md` as `- [ ]` under the phase, in Russian: bold name + version, numbered steps (preparation, exact menu paths from `i18n/ru`, what to click / press, a test `.py` written out in full if needed), a final «Должно быть:» line. Shared setup is in «Подготовка».
+5. **Review.** `/code-review low` (medium for big features); fix what it confirms.
+6. **PR.** Tick the item in `ROADMAP.md`; update `CLAUDE.md` / `modules.md` if the architecture changed. Bump `version` in the root `Cargo.toml` (feature → minor, fix → patch), add the `CHANGELOG.md` entry, run `just verify` so `Cargo.lock` follows.
    ```sh
-   git switch main && git pull
-   git switch -c feat/<topic>     # fix/<topic> for bugs, docs/<topic> for docs only
+   git push -u origin <branch>
+   gh pr create --fill
+   gh pr checks --watch > $SCRATCH/checks.log 2>&1; tail -5 $SCRATCH/checks.log
+   gh pr merge --merge --delete-branch
+   git switch main && git pull && git tag vX.Y.Z && git push origin vX.Y.Z
    ```
-   Never commit to `main` directly.
-5. **Implement.**
-   - Logic goes into `crates/core`, test-first with `superpowers:test-driven-development`.
-   - `crates/app` stays thin and split by feature module (own `Message` / `update` / `view`); `app.rs` only routes.
-   - Every new UI string in `fl!` with both `en` and `ru`.
-   - Secrets never touch files or logs.
-6. **Verify.** `just verify` must pass. Then look at the real UI with `.claude/skills/shagshell-feature/headless.sh` (adapted from shagoff-commander's in phase 1: invisible sway + `wtype` + `grim`; never the user's desktop or config): `start`, keys, `shot name`, then Read the png. Connection features are checked against a local `sshd` on `localhost` (password via askpass, SFTP put/get). Limit: in headless sway clicks on header menu **items** never arrive (the menu opens, the item does nothing; same in shagoff-commander) — reach the action by its key, or leave it to the manual check. Add the manual check to `TESTING.md` as `- [ ]` items under the phase; the user ticks them. Write each item in Russian as a detailed instruction: a bold name and version, numbered steps (what to prepare, with exact menu paths from `i18n/ru`, then what to click or press; a test `.py` written out in full when a script is needed), and a final «Должно быть:» line saying what is seen when it works. Shared setup is in the «Подготовка» section at the top of the file. Never write a one-line summary: the user must be able to follow it without knowing the code.
-7. **Review.** Run `/code-review` and fix what it confirms.
-8. **PR.**
-   - Tick the phase / feature in `ROADMAP.md`; if the architecture changed, update `CLAUDE.md` and `specs/00-architecture.md`.
-   - Bump `version` in the root `Cargo.toml`: feature → minor, fix → patch. Then build (`just verify`) so `Cargo.lock` follows, or CI's `--locked` fails.
-   - ```sh
-     git push -u origin feat/<topic>
-     gh pr create --fill        # body links the spec and the plan
-     gh pr checks --watch
-     ```
-   - Merge only after the user says so: `gh pr merge --merge --delete-branch`.
-   - Tag the bumped version on `main` and push the tag (`vX.Y.Z`): the release workflow makes a draft release with the .deb. Ask the user to run `just sign vX.Y.Z` (their minisign key signs `SHA256SUMS` and publishes it); until then no user is offered it.
-
-Bug fix: use `superpowers:systematic-debugging`; add a `regression_<what>` test in core and a row in `TESTING.md`; branch `fix/<topic>`.
+   Then tell the user to run `just sign vX.Y.Z` and suggest `/clear` before the next task.
