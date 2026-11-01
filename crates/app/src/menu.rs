@@ -223,7 +223,12 @@ fn menu_key(code: &str) -> Option<Key> {
 
 /// The icon of a menu item (symbolic, from the icon theme), SecureCRT style: most items have one.
 fn icon_of(a: Action) -> Option<cosmic::widget::icon::Handle> {
-    let name = match a {
+    Some(cosmic::widget::icon::from_name(icon_name(a)?).handle())
+}
+
+/// The theme icon name an action has by default.
+fn icon_name(a: Action) -> Option<&'static str> {
+    Some(match a {
         Action::Connect => "network-server-symbolic",
         Action::QuickConnect => "media-playback-start-symbolic",
         Action::NewLocalShell => "utilities-terminal-symbolic",
@@ -273,8 +278,12 @@ fn icon_of(a: Action) -> Option<cosmic::widget::icon::Handle> {
         Action::ZoomReset => "zoom-original-symbolic",
         Action::FullScreen => "view-fullscreen-symbolic",
         _ => return None,
-    };
-    Some(cosmic::widget::icon::from_name(name).handle())
+    })
+}
+
+/// The default icon name of a stock function (for the editor's preview).
+pub fn default_icon(cmd: &str) -> Option<String> {
+    icon_name(entry(cmd)?.0).map(str::to_string)
 }
 
 /// Every plain item gets its icon (a check box keeps its check mark: same indent).
@@ -411,6 +420,16 @@ pub fn label(it: &MenuItem) -> String {
     }
 }
 
+thread_local! {
+    /// The icons the user chose in Customize Menu… by function: the toolbar draws them too.
+    static ICONS: RefCell<std::collections::HashMap<String, String>> = RefCell::default();
+}
+
+/// The icon the user chose for this function, if any.
+pub fn custom_icon(cmd: &str) -> Option<String> {
+    ICONS.with_borrow(|m| m.get(cmd).cloned())
+}
+
 /// `core::menu::merged(menus)`, made again only when `menus` changes: the bar is drawn on every
 /// frame.
 fn drawn(menus: &[Menu]) -> Rc<Vec<Menu>> {
@@ -422,6 +441,15 @@ fn drawn(menus: &[Menu]) -> Rc<Vec<Menu>> {
         if saved.as_slice() != menus {
             *saved = menus.to_vec();
             *out = Rc::new(shagshell_core::menu::merged(menus));
+            let icons = (out.iter().flat_map(|m| &m.items))
+                .filter_map(|i| {
+                    Some((
+                        i.cmd.clone(),
+                        shagshell_core::menu::icon_of(out, &i.cmd)?.to_string(),
+                    ))
+                })
+                .collect();
+            ICONS.set(icons);
         }
         out.clone()
     })
@@ -551,10 +579,12 @@ pub fn bar(s: &State, menus: &[Menu]) -> Element<'static, Message> {
                 "Donate" if crate::updates::DONATE_URL.is_none() => continue,
                 _ => {
                     let Some((a, _)) = found else { continue };
+                    let own =
+                        custom_icon(&it.cmd).map(|n| cosmic::widget::icon::from_name(n).handle());
                     match (checked(a), enabled(a)) {
                         (Some(on), _) => CheckBox(text, None, on, a),
-                        (None, true) => Button(text, None, a),
-                        (None, false) => ButtonDisabled(text, None, a),
+                        (None, true) => Button(text, own, a),
+                        (None, false) => ButtonDisabled(text, own, a),
                     }
                 }
             };

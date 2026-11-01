@@ -894,7 +894,7 @@ impl App {
     }
 
     /// Tools → Customize Menu…: edits, OK (stored), Cancel.
-    fn menu_edit(&mut self, m: crate::menu_editor::MeMsg) {
+    fn menu_edit(&mut self, m: crate::menu_editor::MeMsg) -> Task<Message> {
         use crate::menu_editor::MeMsg;
         match m {
             MeMsg::Ok => {
@@ -905,11 +905,18 @@ impl App {
             }
             MeMsg::Cancel => self.menu_edit = None,
             m => {
+                let pick = matches!(m, MeMsg::PickOpen);
                 if let Some(e) = &mut self.menu_edit {
                     e.update(m);
                 }
+                if pick {
+                    return off_ui(toolbar::icon_names, |n| {
+                        Message::MenuEdit(MeMsg::PickLoaded(n))
+                    });
+                }
             }
         }
+        Task::none()
     }
 
     /// Edit → Find: its bar opened / typed in / stepped / closed; the active terminal searches.
@@ -1354,7 +1361,7 @@ impl App {
             }
             Message::Find(m) => return self.find(m),
             Message::Toolbar(m) => return self.toolbar(m),
-            Message::MenuEdit(m) => self.menu_edit(m),
+            Message::MenuEdit(m) => return self.menu_edit(m),
             Message::MenuResetAsk(on) => self.menu_reset_ask = on,
             Message::BackupTo(None) | Message::RestoreFrom(None) => {}
             Message::BackupTo(Some(p)) => {
@@ -1743,12 +1750,9 @@ impl App {
                     Slot::Tool => self.toolbar(crate::toolbar::TbMsg::Edit(
                         shagshell_core::toolbar::ToolMsg::Cmd(s),
                     )),
-                    Slot::Menu => {
-                        self.menu_edit(crate::menu_editor::MeMsg::Edit(
-                            shagshell_core::menu::MenuMsg::Cmd(s),
-                        ));
-                        Task::none()
-                    }
+                    Slot::Menu => self.menu_edit(crate::menu_editor::MeMsg::Edit(
+                        shagshell_core::menu::MenuMsg::Cmd(s),
+                    )),
                     Slot::Sched => self.scheduler(crate::scheduler::SchMsg::Script(s)),
                     Slot::Pre => self
                         .session_options(SoMsg::Field(crate::session_options::Field::PreScript, s)),

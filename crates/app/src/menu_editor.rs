@@ -18,6 +18,12 @@ pub enum MeMsg {
     MoveTo(usize),
     /// «По умолчанию» pressed (the question shows) / answered No.
     ResetAsk(bool),
+    /// The icon picker: open (the app loads the names), loaded, filter, pick, back.
+    PickOpen,
+    PickLoaded(Vec<String>),
+    PickFilter(String),
+    Pick(String),
+    PickClose,
     Ok,
     Cancel,
 }
@@ -31,6 +37,8 @@ pub struct Editor {
     titles: Vec<String>,
     /// «Reset the menu?» shows in place of the editor.
     pub asking: bool,
+    /// (all icon names, filter) while the icon picker shows.
+    picker: Option<(Vec<String>, String)>,
 }
 
 impl Editor {
@@ -45,6 +53,7 @@ impl Editor {
             function_labels,
             titles: Vec::new(),
             asking: false,
+            picker: None,
         };
         e.retitle();
         e
@@ -66,6 +75,30 @@ impl Editor {
             MeMsg::ResetAsk(on) => {
                 self.asking = on;
                 return;
+            }
+            MeMsg::PickOpen => {
+                self.picker = Some((Vec::new(), String::new()));
+                return;
+            }
+            MeMsg::PickLoaded(names) => {
+                if let Some((all, _)) = &mut self.picker {
+                    *all = names;
+                }
+                return;
+            }
+            MeMsg::PickFilter(f) => {
+                if let Some((_, old)) = &mut self.picker {
+                    *old = f;
+                }
+                return;
+            }
+            MeMsg::PickClose => {
+                self.picker = None;
+                return;
+            }
+            MeMsg::Pick(n) => {
+                self.picker = None;
+                MenuMsg::Icon(n)
             }
             MeMsg::Ok | MeMsg::Cancel => return,
         };
@@ -91,6 +124,15 @@ impl Editor {
                         .on_press(Message::MenuEdit(MeMsg::ResetAsk(false))),
                 )
                 .into();
+        }
+        if let Some((all, filter)) = &self.picker {
+            return crate::toolbar::icon_picker(
+                all,
+                filter,
+                |n| Message::MenuEdit(MeMsg::Pick(n)),
+                |f| Message::MenuEdit(MeMsg::PickFilter(f)),
+                Message::MenuEdit(MeMsg::PickClose),
+            );
         }
         let e = &self.edit;
         let pick = |selected: bool, content: Element<'static, Message>, on: Message| {
@@ -247,6 +289,27 @@ impl Editor {
                 .on_input(move |s| msg(MenuMsg::Label(s)))
                 .into(),
             ));
+            if !it.is_own() {
+                let shown = match it.icon.as_str() {
+                    "" => crate::menu::default_icon(&it.cmd).unwrap_or_default(),
+                    i => i.to_string(),
+                };
+                fields = fields.push(
+                    row![
+                        field(
+                            fl!("toolbar-icon"),
+                            widget::text_input(shown.clone(), it.icon.clone())
+                                .on_input(move |s| msg(MenuMsg::Icon(s)))
+                                .into(),
+                        ),
+                        widget::button::standard(fl!("toolbar-pick"))
+                            .leading_icon(widget::icon::from_name(shown).size(16))
+                            .on_press(Message::MenuEdit(MeMsg::PickOpen)),
+                    ]
+                    .spacing(6)
+                    .align_y(Alignment::Center),
+                );
+            }
             if it.is_own() {
                 fields = fields.push(
                     row![

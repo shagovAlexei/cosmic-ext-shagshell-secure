@@ -222,7 +222,7 @@ pub fn buttons(config: &[ToolButton]) -> Vec<ToolButton> {
 pub fn icon(b: &ToolButton) -> String {
     const PROGRAM: &str = "application-x-executable-symbolic";
     match (b.icon.as_str(), function(&b.cmd)) {
-        ("", Some(t)) => t.1.to_string(),
+        ("", Some(t)) => crate::menu::custom_icon(&b.cmd).unwrap_or_else(|| t.1.to_string()),
         ("" | PROGRAM, None) if b.is_script() => "system-run-symbolic".into(),
         ("", None) => PROGRAM.into(),
         (i, _) => i.to_string(),
@@ -418,13 +418,30 @@ pub fn icon_names() -> Vec<String> {
 }
 
 fn picker_view<'a>(all: &'a [String], filter: &'a str) -> Element<'a, Message> {
-    use cosmic::iced::widget::{column, row};
     let msg = |m| Message::Toolbar(TbMsg::Edit(m));
+    icon_picker(
+        all,
+        filter,
+        move |n| msg(ToolMsg::Pick(n)),
+        move |s| msg(ToolMsg::PickFilter(s)),
+        msg(ToolMsg::PickClose),
+    )
+}
+
+/// The icon picker's dialog; what is pressed is up to the caller (the toolbar, Customize Menu).
+pub fn icon_picker<'a>(
+    all: &'a [String],
+    filter: &'a str,
+    pick: impl Fn(String) -> Message + Copy + 'a,
+    on_filter: impl Fn(String) -> Message + 'a,
+    close: Message,
+) -> Element<'a, Message> {
+    use cosmic::iced::widget::{column, row};
     let (shown, total) = matching(all, filter, PICKER_MAX);
     let cell = |name: &'a str| -> Element<'a, Message> {
         widget::tooltip(
             widget::button::icon(widget::icon::from_name(name).size(24))
-                .on_press(msg(ToolMsg::Pick(name.into()))),
+                .on_press(pick(name.into())),
             widget::text(name).size(12),
             tooltip::Position::Top,
         )
@@ -441,8 +458,7 @@ fn picker_view<'a>(all: &'a [String], filter: &'a str) -> Element<'a, Message> {
         .title(fl!("toolbar-pick-title"))
         .control(
             column![
-                widget::text_input(fl!("toolbar-pick-filter"), filter)
-                    .on_input(move |s| msg(ToolMsg::PickFilter(s))),
+                widget::text_input(fl!("toolbar-pick-filter"), filter).on_input(on_filter),
                 widget::container(
                     widget::scrollable(grid).height(cosmic::iced::Length::Fixed(250.0))
                 )
@@ -457,9 +473,7 @@ fn picker_view<'a>(all: &'a [String], filter: &'a str) -> Element<'a, Message> {
             .spacing(8)
             .width(cosmic::iced::Length::Fill),
         )
-        .secondary_action(
-            widget::button::standard(fl!("toolbar-pick-back")).on_press(msg(ToolMsg::PickClose)),
-        )
+        .secondary_action(widget::button::standard(fl!("toolbar-pick-back")).on_press(close))
         .into()
 }
 
