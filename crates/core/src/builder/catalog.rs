@@ -661,6 +661,86 @@ pub static CATALOG: &[Entry] = &[
         "to_clipboard(out)",
     ),
     m(
+        "blocks.from_clipboard",
+        &[],
+        "str",
+        ["The clipboard's text.", "Текст из буфера обмена."],
+        "out = from_clipboard()",
+    ),
+    m(
+        "blocks.printbox",
+        &[
+            p("text", Text),
+            d("title", Text, "''"),
+            d("buttons", Choice(BUTTONS), "0"),
+        ],
+        "int",
+        [
+            "A message box (short for Dialog.MessageBox); returns the button pressed.",
+            "Окно сообщения (коротко от Dialog.MessageBox); возвращает нажатую кнопку.",
+        ],
+        "printbox('Done', 'Check')",
+    ),
+    m(
+        "blocks.ask",
+        &[
+            p("message", Text),
+            d("title", Text, "''"),
+            d("default", Text, "''"),
+            d("password", Bool, "False"),
+        ],
+        "str",
+        [
+            "Asks for a line of text, \"\" when cancelled (short for Dialog.Prompt).",
+            "Спрашивает строку текста, \"\" — отмена (коротко от Dialog.Prompt).",
+        ],
+        "name = ask('Name:', 'New user')",
+    ),
+    m(
+        "blocks.read_until",
+        &[
+            p("text", Text),
+            d("timeout", Number, "30"),
+            d("tab", Expr, "None"),
+        ],
+        "str",
+        [
+            "The output up to text (short for Screen.ReadString); tab: the script's own by default.",
+            "Вывод до text (коротко от Screen.ReadString); tab: по умолчанию вкладка скрипта.",
+        ],
+        "out = read_until('#', 30)",
+    ),
+    m(
+        "blocks.connect",
+        &[p("session", Text)],
+        "Tab",
+        [
+            "Opens the saved session in a new tab and returns the tab (short for Session.Connect).",
+            "Открывает сохранённую сессию в новой вкладке и возвращает её (коротко от Session.Connect).",
+        ],
+        "tab = connect('router1')",
+    ),
+    m(
+        "blocks.active_tab",
+        &[],
+        "Tab",
+        [
+            "The tab in front (short for GetActiveTab).",
+            "Вкладка впереди (коротко от GetActiveTab).",
+        ],
+        "tab = active_tab()",
+    ),
+    m(
+        "blocks.disconnect",
+        &[d("tab", Expr, "None")],
+        "",
+        [
+            "Disconnects the tab, the script's own by default (short for Session.Disconnect).",
+            "Отключает вкладку, по умолчанию скрипта (коротко от Session.Disconnect).",
+        ],
+        "disconnect(tab)",
+    ),
+    m(
         "blocks.each_host",
         &[
             p("hosts", Expr),

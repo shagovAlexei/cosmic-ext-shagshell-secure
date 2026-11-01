@@ -18,6 +18,6 @@ description: Use when starting any new feature, roadmap item, or bug fix in Shag
    gh pr create --fill
    gh pr checks --watch > $SCRATCH/checks.log 2>&1; tail -5 $SCRATCH/checks.log
    gh pr merge --merge --delete-branch
-   git switch main && git pull && git tag vX.Y.Z && git push origin vX.Y.Z
+   git switch main && git pull   # tag only when the user asks for a release (see memory no-tags-until-asked)
    ```
-   Then tell the user to run `just sign vX.Y.Z` and suggest `/clear` before the next task.
+   Tag + `just sign` only when the user asks for a release; suggest `/clear` after a finished task.

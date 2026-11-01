@@ -1951,6 +1951,13 @@ fn entry_label(e: &Entry) -> String {
         "blocks.log_to" => fl!("block-log-to"),
         "blocks.append_file" => fl!("block-append-file"),
         "blocks.to_clipboard" => fl!("block-to-clipboard"),
+        "blocks.from_clipboard" => fl!("block-from-clipboard"),
+        "blocks.printbox" => fl!("block-printbox"),
+        "blocks.ask" => fl!("block-ask"),
+        "blocks.read_until" => fl!("block-read-until"),
+        "blocks.connect" => fl!("block-connect"),
+        "blocks.active_tab" => fl!("block-active-tab"),
+        "blocks.disconnect" => fl!("block-disconnect"),
         "blocks.each_host" => fl!("block-each-host"),
         p => p.to_string(),
     }

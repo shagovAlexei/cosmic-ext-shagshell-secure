@@ -2,6 +2,9 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.102.0 — 2026-11-01
+- feat: Script Builder: short blocks for long `crt` calls — `printbox`, `ask`, `read_until`, `connect`, `active_tab`, `disconnect` — and `from_clipboard` (pair of `to_clipboard`)
+
 ## 0.101.0 — 2026-11-01
 - feat: Tools → Customize Menu…: an icon for any command («Icon» field + «Pick…», same picker as the toolbar); the choice is shared by the menu and the toolbar
 
