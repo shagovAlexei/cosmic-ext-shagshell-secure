@@ -11,6 +11,7 @@ mod credentials_window;
 mod dialog_icons;
 mod editor;
 mod find_bar;
+mod groups;
 mod i18n;
 mod keygen;
 mod keymap_editor;

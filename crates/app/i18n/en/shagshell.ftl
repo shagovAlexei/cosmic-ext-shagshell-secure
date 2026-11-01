@@ -911,3 +911,13 @@ closed-body = The connection has ended. The tab stays open: Enter restarts it.
 options-sessions-sort = Sessions in a folder
 options-sort-name = By name
 options-sort-manual = By hand (drag a row onto another)
+
+menu-groups = Session Groups…
+groups-title = Session Groups
+groups-default = Default
+groups-open = Open
+groups-close-tabs = Close tabs
+groups-hint = Sessions that name no group are in Default. Add groups in Session Options → Groups.
+groups-delete-confirm = Delete group “{ $name }”? The sessions stay; they only leave the group.
+so-groups = Groups (comma between; empty: Default)
+so-groups-hint = A new name makes a new group. Open a group in Window → Session Groups…; its tabs show [group].

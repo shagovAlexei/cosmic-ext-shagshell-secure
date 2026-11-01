@@ -57,6 +57,10 @@ pub struct App {
     options: Option<SessionOptions>,
     /// The Credentials Manager window, when open.
     creds_win: Option<crate::credentials_window::CredWindow>,
+    /// Window → Session Groups…, when open.
+    groups_dlg: Option<crate::groups::GroupsDialog>,
+    /// The group whose sessions `open_sessions` is opening ("": none): their tabs carry it.
+    opening_group: String,
     /// Passwords in a keyring of our own (the master password); `None`: not known yet, or being
     /// changed (the checkbox waits).
     separate: Option<bool>,
@@ -193,6 +197,7 @@ pub enum Message {
     SftpTx(crate::sftp_worker::Events),
     Sftp(crate::term::TabId, crate::sftp_view::SftpMsg),
     Credentials(crate::credentials_window::CwMsg),
+    Groups(crate::groups::GrMsg),
     Scheduler(crate::scheduler::SchMsg),
     Note(crate::term::TabId, crate::notes::NoteMsg),
     /// The Script Builder tab's own messages; its clock (a parse due); a `.py` picked for it.
@@ -337,6 +342,8 @@ impl Application for App {
             user_keys_broken,
             options: None,
             creds_win: None,
+            groups_dlg: None,
+            opening_group: String::new(),
             separate: None,
             control_dir,
             asks,
@@ -680,6 +687,11 @@ impl Application for App {
     fn dialog(&self) -> Option<Element<'_, Message>> {
         (self.asks.dialog(|t| self.tabs.title(t)))
             .or_else(|| self.keys.as_ref().map(Keys::view))
+            .or_else(|| {
+                self.groups_dlg
+                    .as_ref()
+                    .map(crate::groups::GroupsDialog::view)
+            })
             .or_else(|| self.commands.dialog())
             .or_else(|| self.keymap.as_ref().map(crate::keymap_editor::Editor::view))
             .or_else(|| {
@@ -1714,6 +1726,7 @@ impl App {
             }
             Message::CloseRequested(_) => {}
             Message::Credentials(m) => return self.credentials(m),
+            Message::Groups(m) => return self.groups(m),
             Message::Scheduler(m) => return self.scheduler(m),
             Message::SchedTick => return self.sched_tick(),
             Message::NoteTick => self.tabs.notes_tick(),
@@ -2112,6 +2125,9 @@ impl App {
             }
             Action::EditDefault => return self.open_options(Target::Default),
             Action::Credentials => return self.open_credentials(),
+            Action::Groups => {
+                self.groups_dlg = Some(crate::groups::GroupsDialog::new(&self.sessions.store))
+            }
             Action::KeyMap if self.user_keys_broken => {
                 self.sessions.notice = Some(fl!("km-broken"));
             }
@@ -2845,6 +2861,7 @@ impl App {
         scripts: bool,
     ) -> Task<Message> {
         launch.session = Some(id.to_string());
+        launch.group = self.opening_group.clone();
         let post = if scripts { s.script.as_str() } else { "" };
         let pre = s.pre_script.trim();
         if !scripts || pre.is_empty() {
@@ -3310,6 +3327,52 @@ impl App {
             }
             _ => String::new(),
         }
+    }
+
+    /// Window → Session Groups…: what its buttons do.
+    fn groups(&mut self, msg: crate::groups::GrMsg) -> Task<Message> {
+        use crate::groups::GrMsg;
+        let Some(dlg) = self.groups_dlg.as_mut() else {
+            return Task::none();
+        };
+        match msg {
+            GrMsg::Open(name) => {
+                let ids = self.sessions.store.in_group(name.as_deref());
+                self.groups_dlg = None;
+                self.opening_group = name.unwrap_or_else(|| fl!("groups-default"));
+                let task = self.open_sessions(&ids, true);
+                self.opening_group.clear();
+                return task;
+            }
+            GrMsg::CloseTabs(name) => {
+                self.groups_dlg = None;
+                return self.tabs.close_group(&name);
+            }
+            GrMsg::Delete(name) => dlg.ask_delete(name),
+            GrMsg::Cancel => dlg.cancel(),
+            GrMsg::DeleteConfirmed => {
+                let name = dlg.take_confirm();
+                if let Some(name) = name {
+                    let mut g = crate::groups::load();
+                    g.remove(&name);
+                    let done = self
+                        .sessions
+                        .store
+                        .drop_group(&name)
+                        .map_err(|e| e.to_string());
+                    let saved = g
+                        .save(&shagshell_core::groups::default_path())
+                        .map_err(|e| e.to_string());
+                    if let Err(e) = done.and(saved) {
+                        self.sessions.notice = Some(e);
+                    }
+                    self.sessions.reload();
+                    self.groups_dlg = Some(crate::groups::GroupsDialog::new(&self.sessions.store));
+                }
+            }
+            GrMsg::Close => self.groups_dlg = None,
+        }
+        Task::none()
     }
 
     /// Tools → Credentials Manager…; open already: raised.
@@ -3791,6 +3854,7 @@ impl App {
         let password = o.password();
         let store = &self.sessions.store;
         let io = |e: std::io::Error| crate::session_manager::io_text(&e);
+        crate::groups::ensure(&s.groups);
         let mut tasks = Vec::new();
         let mut moved: Option<Task<Message>> = None;
         // The saved session this ends up as: where a typed Logon password is stored.
@@ -4011,6 +4075,7 @@ fn ssh_launch(
         label,
         icon: s.icon.clone(),
         session: None,
+        group: String::new(),
     })
 }
 
@@ -4107,6 +4172,7 @@ fn program_launch(
         label,
         icon: s.icon.clone(),
         session: None,
+        group: String::new(),
     })
 }
 

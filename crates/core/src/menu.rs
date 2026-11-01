@@ -108,6 +108,8 @@ pub const STOCK: &[(&str, &[&str])] = &[
             "DetachTab",
             "ReattachAll",
             SEP,
+            "Groups",
+            SEP,
             "AlwaysOnTop",
         ],
     ),

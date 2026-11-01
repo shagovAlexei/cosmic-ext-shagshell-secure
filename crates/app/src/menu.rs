@@ -70,6 +70,8 @@ pub enum Action {
     EditDefault,
     /// Tools → Credentials Manager….
     Credentials,
+    /// Window → Session Groups…
+    Groups,
     /// Tools → Create Public Key….
     CreateKey,
     /// Tools → Upload Public Key….
@@ -257,7 +259,7 @@ fn icon_name(a: Action) -> Option<&'static str> {
         Action::Scheduler => "alarm-symbolic",
         Action::ScriptsFolder => "folder-open-symbolic",
         Action::ScriptsRefresh => "view-refresh-symbolic",
-        Action::Credentials => "system-users-symbolic",
+        Action::Credentials | Action::Groups => "system-users-symbolic",
         Action::CreateKey | Action::UploadKey => "dialog-password-symbolic",
         Action::KeyMap => "input-keyboard-symbolic",
         Action::CustomizeMenu => "open-menu-symbolic",
@@ -372,6 +374,7 @@ pub fn entry(cmd: &str) -> Option<(Action, String)> {
         "ScriptsRefresh" => (Action::ScriptsRefresh, fl!("menu-script-refresh")),
         "GlobalOptions" => (Action::GlobalOptions, fl!("menu-global-options")),
         "Credentials" => (Action::Credentials, fl!("menu-credentials")),
+        "Groups" => (Action::Groups, fl!("menu-groups")),
         "CreateKey" => (Action::CreateKey, fl!("menu-create-key")),
         "UploadKey" => (Action::UploadKey, fl!("menu-upload-key")),
         "KeyMap" => (Action::KeyMap, fl!("menu-keymap")),
