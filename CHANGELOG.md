@@ -2,6 +2,10 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.103.0 — 2026-11-01
+- feat: Script Builder: each block shows its line number in the code, the breakpoint sits at the right end; a field with a wrong value gets an orange frame
+- fix: Button Bar: a button's hint shows on hover again (the context menu swallowed its overlay)
+
 ## 0.102.0 — 2026-11-01
 - feat: Script Builder: short blocks for long `crt` calls — `printbox`, `ask`, `read_until`, `connect`, `active_tab`, `disconnect` — and `from_clipboard` (pair of `to_clipboard`)
 

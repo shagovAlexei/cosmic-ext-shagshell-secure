@@ -221,6 +221,8 @@ pub struct BuilderView {
     discarded: bool,
     run: Option<Run>,
     breaks: HashSet<Pos>,
+    /// Each block's first line in the code (set at the start of every draw): the numbers on the tape.
+    lines: std::cell::RefCell<HashMap<Pos, usize>>,
     /// ⚙: light the blocks up while running; stop at breakpoints / steps.
     trace: bool,
     stops: bool,
@@ -316,6 +318,7 @@ impl BuilderView {
             discarded: false,
             run: None,
             breaks: HashSet::new(),
+            lines: Default::default(),
             trace: true,
             stops: true,
             settings_open: false,
@@ -978,6 +981,13 @@ impl BuilderView {
         buttons: &[String],
     ) -> Element<'a, Message> {
         let m = move |x| Message::Builder(id, x);
+        {
+            let mut lines = self.lines.borrow_mut();
+            lines.clear();
+            for (p, l) in builder::generate_map(&self.doc.blocks).1 {
+                lines.entry(p).or_insert(l);
+            }
+        }
         let palette = widget::container(
             widget::column::with_children(vec![
                 widget::scrollable(self.palette(m))
@@ -1503,12 +1513,26 @@ impl BuilderView {
         let p = pos.clone();
         let width =
             (text.chars().count().max(hint.chars().count()) as f32 * 8.0 + 24.0).clamp(60.0, 420.0);
-        widget::text_input(hint, text)
+        let bad = self.bad.contains_key(&key);
+        let field = widget::text_input(hint, text)
             .id(fid.clone())
             .on_focus(Message::FocusField(fid))
             .on_input(move |t| Message::Builder(id, BuilderMsg::Field(p.clone(), f, t)))
-            .width(Length::Fixed(width))
-            .into()
+            .width(Length::Fixed(width));
+        match bad {
+            // A wrong value gets an orange frame.
+            true => widget::container(field)
+                .padding(2)
+                .class(theme::Container::custom(|_| {
+                    let mut s = widget::container::Style::default();
+                    s.border.color = cosmic::iced::Color::from_rgb(1.0, 0.6, 0.0);
+                    s.border.width = 2.0;
+                    s.border.radius = 8.0.into();
+                    s
+                }))
+                .into(),
+            false => field.into(),
+        }
     }
 
     /// The field of a catalog parameter: a check box, a list of names, or text.
@@ -1571,21 +1595,6 @@ impl BuilderView {
         let selected = self.selected.as_ref() == Some(&pos);
         let raw = |f: F| field::get(b, f);
         let mut head: Vec<Element<'a, Message>> = vec![];
-        if self.stops {
-            let on = self.breaks.contains(&pos);
-            let dot = widget::text::body(if on { "●" } else { "○" }).class(match on {
-                true => theme::Text::Color(cosmic::iced::Color::from_rgb(0.85, 0.2, 0.2)),
-                false => theme::Text::Default,
-            });
-            head.push(
-                widget::tooltip(
-                    widget::mouse_area(dot).on_press(m(BuilderMsg::Break(pos.clone()))),
-                    widget::text::caption(fl!("builder-break")),
-                    widget::tooltip::Position::Top,
-                )
-                .into(),
-            );
-        }
         head.push(
             widget::mouse_area(widget::text::body("⠿"))
                 .on_press(m(BuilderMsg::Press(Drag::Move(pos.clone()))))
@@ -1772,11 +1781,41 @@ impl BuilderView {
                 head.push(inp(F::Text, String::new()));
             }
         }
-        let mut col = widget::column::with_capacity(4).spacing(4).push(
-            widget::flex_row(head)
-                .spacing(6)
-                .align_items(Alignment::Center),
-        );
+        // Line number at the left (as in the code pane), the breakpoint at the far right.
+        let number = widget::container(
+            widget::text::monotext(
+                self.lines
+                    .borrow()
+                    .get(&pos)
+                    .map_or(String::new(), |l| l.to_string()),
+            )
+            .size(12),
+        )
+        .width(Length::Fixed(34.0))
+        .align_x(Alignment::End);
+        let mut top = widget::row::with_capacity(3)
+            .spacing(6)
+            .align_y(Alignment::Center)
+            .push(number)
+            .push(
+                widget::flex_row(head)
+                    .spacing(6)
+                    .align_items(Alignment::Center)
+                    .width(Length::Fill),
+            );
+        if self.stops {
+            let on = self.breaks.contains(&pos);
+            let dot = widget::text::body(if on { "●" } else { "○" }).class(match on {
+                true => theme::Text::Color(cosmic::iced::Color::from_rgb(0.85, 0.2, 0.2)),
+                false => theme::Text::Default,
+            });
+            top = top.push(widget::tooltip(
+                widget::mouse_area(dot).on_press(m(BuilderMsg::Break(pos.clone()))),
+                widget::text::caption(fl!("builder-break")),
+                widget::tooltip::Position::Top,
+            ));
+        }
+        let mut col = widget::column::with_capacity(4).spacing(4).push(top);
         for (title, list, n) in bodies {
             col = col.push_maybe(title);
             col = col.push(
