@@ -52,24 +52,12 @@ impl Entry {
     pub fn group(&self) -> &'static str {
         self.path.split_once('.').map_or("crt", |(g, _)| g)
     }
-
-    /// A short block: a one-word stand-in for a long `crt` call (the palette's «Short blocks»).
-    pub fn is_short(&self) -> bool {
-        SHORT.contains(&self.path)
-    }
 }
 
-/// The big blocks that only shorten a `crt` call (`printbox` = `crt.Dialog.MessageBox`…).
-pub const SHORT: [&str; 8] = [
-    "blocks.printbox",
-    "blocks.ask",
-    "blocks.read_until",
-    "blocks.connect",
-    "blocks.active_tab",
-    "blocks.disconnect",
-    "blocks.to_clipboard",
-    "blocks.from_clipboard",
-];
+/// The palette's «Short blocks»: every `blocks.*` command (`shag_blocks.py`), in catalog order.
+pub fn short_blocks() -> impl Iterator<Item = &'static Entry> {
+    CATALOG.iter().filter(|e| e.group() == "blocks")
+}
 
 /// Whether a palette group shows its items: «Frequent» and «Short blocks» start unfolded, the
 /// rest folded; `toggled` = the user clicked its title (an odd number of times). Searching
@@ -829,14 +817,12 @@ mod tests {
     }
 
     #[test]
-    fn short_blocks_are_big_blocks() {
-        for p in SHORT {
-            let e = CATALOG.iter().find(|e| e.path == p).expect(p);
-            assert_eq!(e.group(), "blocks", "{p}");
-            assert!(e.is_short());
-        }
-        let run = CATALOG.iter().find(|e| e.path == "blocks.run").unwrap();
-        assert!(!run.is_short());
+    fn short_blocks_are_all_blocks() {
+        // «Big blocks» and «Short blocks» are one palette group: every `blocks.*` command.
+        let short: Vec<_> = short_blocks().map(|e| e.path).collect();
+        let all = CATALOG.iter().filter(|e| e.path.starts_with("blocks."));
+        assert_eq!(short, all.map(|e| e.path).collect::<Vec<_>>());
+        assert!(short.contains(&"blocks.run") && short.contains(&"blocks.printbox"));
     }
 
     #[test]

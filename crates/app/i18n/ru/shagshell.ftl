@@ -835,7 +835,6 @@ builder-hosts = хосты
 builder-parallel = параллельно
 builder-limit = не больше
 builder-host-hint = (внутри: tab — вкладка хоста, host — его имя)
-builder-big = Крупные блоки
 builder-short = Короткие блоки
 builder-import = Короткие блоки подключены (from shag_blocks import *)
 builder-no-sessions = Нет сохранённых сессий
