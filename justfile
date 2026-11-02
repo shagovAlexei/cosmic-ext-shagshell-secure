@@ -69,7 +69,7 @@ deb: (build-release '--locked')
     Maintainer: Shagov Alexei <shagov.alexei@gmail.com>
     Installed-Size: $(du -sk "$root/usr" | cut -f1)
     Depends: $libs, openssh-client, xdg-utils
-    Recommends: telnet, picocom, python3, gnome-keyring
+    Recommends: telnet, picocom, lrzsz, python3, gnome-keyring
     Section: net
     Priority: optional
     Homepage: {{repo}}

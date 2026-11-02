@@ -94,7 +94,9 @@ fn main() -> cosmic::iced::Result {
     }
     let software = pick_renderer();
     i18n::init(&i18n_embed::DesktopLanguageRequester::requested_languages());
+    let roots = shagshell_core::icons::roots();
     let settings = cosmic::app::Settings::default()
+        .default_icon_theme(shagshell_core::icons::fallback_theme(&roots).unwrap_or_default())
         .size(cosmic::iced::Size::new(1200.0, 800.0))
         // softbuffer (tiny-skia) takes only 24-bit X11 visuals; a transparent window gets a 32-bit one.
         .transparent(!software)
@@ -122,8 +124,25 @@ fn pick_renderer() -> bool {
         ..Default::default()
     }));
     let f16 = wgpu::DownlevelFlags::SHADER_F16_IN_F32;
-    if !adapter.is_ok_and(|a| a.get_downlevel_capabilities().flags.contains(f16)) {
-        log::warn!("GPU without SHADER_F16_IN_F32: software rendering (ICED_BACKEND=tiny-skia)");
+    // The device iced's compositor asks for (iced/wgpu/src/window/compositor.rs). OpenGL 3.3
+    // (Radeon RV710 on Linux Lite) has the flag but no storage buffers: the device fails, iced
+    // silently falls back to tiny-skia on our 32-bit transparent window and panics.
+    let device_ok = |a: &wgpu::Adapter| {
+        let limits = wgpu::Limits {
+            max_bind_groups: 2,
+            max_non_sampler_bindings: 2048,
+            ..wgpu::Limits::downlevel_defaults()
+        };
+        let desc = wgpu::DeviceDescriptor {
+            required_limits: limits,
+            ..Default::default()
+        };
+        pollster::block_on(a.request_device(&desc)).is_ok()
+    };
+    if !adapter.is_ok_and(|a| a.get_downlevel_capabilities().flags.contains(f16) && device_ok(&a)) {
+        log::warn!(
+            "GPU without SHADER_F16_IN_F32 or its device: software rendering (ICED_BACKEND=tiny-skia)"
+        );
         // Run ourselves again with it set: `set_var` here would race the GPU driver's threads
         // the probe just started. `exec` only returns on failure.
         let exe = std::env::current_exe().unwrap_or_else(|_| "shagshell".into());
