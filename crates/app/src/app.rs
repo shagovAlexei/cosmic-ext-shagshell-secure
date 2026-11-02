@@ -1571,6 +1571,10 @@ impl App {
                         | crate::button_bar::BbMsg::Edit(_)
                         | crate::button_bar::BbMsg::NewBar
                         | crate::button_bar::BbMsg::RenameBar
+                        | crate::button_bar::BbMsg::DupBar
+                        | crate::button_bar::BbMsg::MAdd
+                        | crate::button_bar::BbMsg::MRename
+                        | crate::button_bar::BbMsg::MDup
                 );
                 if matches!(m, crate::button_bar::BbMsg::Select(_)) {
                     let active = self.tabs.active_session();
@@ -1585,7 +1589,7 @@ impl App {
                     self.sessions.notice = notice;
                 }
                 // A bar renamed or deleted: the sessions that named it follow.
-                if let Some((old, new)) = self.buttons.relink.take() {
+                for (old, new) in std::mem::take(&mut self.buttons.relink) {
                     match self.sessions.store.relink_bar(&old, new.as_deref()) {
                         Ok(_) => self.sessions.reload(),
                         Err(e) => {

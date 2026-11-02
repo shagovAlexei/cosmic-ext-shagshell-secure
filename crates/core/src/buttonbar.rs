@@ -90,6 +90,9 @@ pub struct Bar {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Bars {
+    /// Kept in alphabetical order (Button Bar Manager's check box).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub sort: bool,
     #[serde(rename = "bar")]
     pub bars: Vec<Bar>,
 }
@@ -107,7 +110,61 @@ pub fn default_path() -> PathBuf {
     )
 }
 
+impl Bar {
+    /// `buttons` after button `after` (`None` or past the end: at the end); the index of the
+    /// first one inserted.
+    pub fn insert(&mut self, after: Option<usize>, buttons: &[Button]) -> usize {
+        let at = after.map_or(self.buttons.len(), |i| (i + 1).min(self.buttons.len()));
+        self.buttons.splice(at..at, buttons.iter().cloned());
+        at
+    }
+}
+
 impl Bars {
+    /// Alphabetical (case blind) when `sort` is on.
+    pub fn resort(&mut self) {
+        if self.sort {
+            self.bars.sort_by_key(|b| b.name.to_lowercase());
+        }
+    }
+
+    /// Where `name` is now (after a `resort`).
+    fn place(&mut self, name: &str) -> usize {
+        self.resort();
+        self.index_of(name).unwrap_or(0)
+    }
+
+    /// Bar `at` one place up (`-1`) or down (`1`); where it is now.
+    pub fn move_bar(&mut self, at: usize, by: isize) -> usize {
+        let j = at.saturating_add_signed(by);
+        if at < self.bars.len() && j < self.bars.len() {
+            self.bars.swap(at, j);
+            return j;
+        }
+        at
+    }
+
+    /// A copy of bar `at` under `name`; its index.
+    pub fn duplicate(&mut self, at: usize, name: &str) -> Result<usize, BarError> {
+        let buttons = self.bars.get(at).map(|b| b.buttons.clone());
+        let i = self.add(name)?;
+        if let Some(b) = buttons {
+            self.bars[i].buttons = b;
+        }
+        Ok(i)
+    }
+
+    /// «name (copy)», «name (copy 2)»… — the first one not taken (`word`: the language's «copy»).
+    pub fn copy_name(&self, name: &str, word: &str) -> String {
+        let mut cur = format!("{name} ({word})");
+        let mut n = 2;
+        while self.index_of(&cur).is_some() {
+            cur = format!("{name} ({word} {n})");
+            n += 1;
+        }
+        cur
+    }
+
     pub fn index_of(&self, name: &str) -> Option<usize> {
         self.bars.iter().position(|b| b.name == name)
     }
@@ -125,7 +182,7 @@ impl Bars {
             name: name.to_string(),
             buttons: Vec::new(),
         });
-        Ok(self.bars.len() - 1)
+        Ok(self.place(name))
     }
 
     pub fn rename(&mut self, at: usize, name: &str) -> Result<(), BarError> {
@@ -139,6 +196,7 @@ impl Bars {
         if let Some(b) = self.bars.get_mut(at) {
             b.name = name.to_string();
         }
+        self.resort();
         Ok(())
     }
 
@@ -299,6 +357,64 @@ mod tests {
         b.shift(0, 2, 1); // already last
         let labels: Vec<_> = b.bars[0].buttons.iter().map(|x| x.label.as_str()).collect();
         assert_eq!(labels, ["2", "1", "3"]);
+    }
+
+    fn labels(bar: &Bar) -> Vec<&str> {
+        bar.buttons.iter().map(|x| x.label.as_str()).collect()
+    }
+
+    #[test]
+    fn buttons_are_inserted_after_one_or_at_the_end() {
+        let mut bar = Bar::default();
+        for n in ["1", "2"] {
+            bar.buttons.push(button(n, Kind::Send, n));
+        }
+        let two = [button("a", Kind::Send, "a"), button("b", Kind::Send, "b")];
+        assert_eq!(bar.insert(Some(0), &two), 1);
+        assert_eq!(labels(&bar), ["1", "a", "b", "2"]);
+        assert_eq!(bar.insert(None, &two[..1]), 4);
+        assert_eq!(labels(&bar), ["1", "a", "b", "2", "a"]);
+        assert_eq!(bar.insert(Some(99), &two[1..]), 5); // past the end: the end
+        assert_eq!(Bar::default().insert(Some(0), &two), 0);
+    }
+
+    #[test]
+    fn a_bar_is_duplicated_with_a_free_name() {
+        let mut b = Bars::default();
+        b.add("x").unwrap();
+        b.bars[0].buttons.push(button("1", Kind::Send, "1"));
+        assert_eq!(b.copy_name("x", "copy"), "x (copy)");
+        let i = b.duplicate(0, "x (copy)").unwrap();
+        assert_eq!((i, b.bars[1].buttons.len()), (1, 1));
+        assert_eq!(b.copy_name("x", "copy"), "x (copy 2)");
+        assert_eq!(b.duplicate(0, "x (copy)"), Err(BarError::Taken));
+        assert_eq!(b.duplicate(0, " "), Err(BarError::Empty));
+    }
+
+    #[test]
+    fn bars_move_and_sort() {
+        let mut b = Bars::default();
+        for n in ["b", "c", "A"] {
+            b.add(n).unwrap();
+        }
+        let names = |b: &Bars| b.bars.iter().map(|x| x.name.clone()).collect::<Vec<_>>();
+        assert_eq!(b.move_bar(0, 1), 1);
+        assert_eq!(b.move_bar(2, 1), 2); // already last
+        assert_eq!(b.move_bar(0, -1), 0); // already first
+        assert_eq!(names(&b), ["c", "b", "A"]);
+        b.sort = true;
+        b.resort();
+        assert_eq!(names(&b), ["A", "b", "c"]);
+        // sorted: a new bar lands in its place
+        let i = b.add("a2").unwrap();
+        assert_eq!((i, names(&b)[1].as_str()), (1, "a2"));
+    }
+
+    #[test]
+    fn an_old_file_has_no_sort() {
+        let b: Bars = toml::from_str("[[bar]]\nname = \"x\"\n").unwrap();
+        assert!(!b.sort);
+        assert!(!toml::to_string(&b).unwrap().contains("sort"));
     }
 
     #[test]

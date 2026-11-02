@@ -23,6 +23,25 @@ pub enum BbMsg {
     NewBar,
     RenameBar,
     DeleteBar,
+    Copy(usize),
+    /// After button `i`, or at the end.
+    Paste(Option<usize>),
+    CopyBar,
+    DupBar,
+    Manage,
+    ManageBars,
+    /// Button Manager / Button Bar Manager.
+    MSel(usize),
+    MUp,
+    MDown,
+    MEdit,
+    MAdd,
+    MCopy,
+    MPaste,
+    MDelete,
+    MRename,
+    MDup,
+    MSort(bool),
     /// The «Map Button» window's fields.
     Label(String),
     Tip(String),
@@ -38,6 +57,21 @@ pub enum BbMsg {
     Cancel,
 }
 
+/// What a bar-name window does.
+#[derive(Clone, Copy)]
+enum Name {
+    New,
+    Rename(usize),
+    Duplicate(usize),
+}
+
+/// What a confirm window deletes: (bar, button) or a bar.
+#[derive(Clone, Copy)]
+enum Del {
+    Button(usize, usize),
+    Bar(usize),
+}
+
 enum Dialog {
     Map {
         bar: usize,
@@ -47,12 +81,42 @@ enum Dialog {
         error: Option<String>,
     },
     BarName {
-        /// `None`: a new bar.
-        rename: Option<usize>,
+        what: Name,
         text: String,
         error: Option<String>,
     },
-    DeleteBar(usize),
+    Confirm(Del),
+    /// Button Manager: a draft of bar `bar`, written back by «OK».
+    Buttons {
+        bar: usize,
+        draft: Bar,
+        sel: Option<usize>,
+    },
+    /// Button Bar Manager: a draft of all the bars; `renamed`: the sessions follow on «OK».
+    Bars {
+        draft: Bars,
+        sel: Option<usize>,
+        renamed: Vec<(String, Option<String>)>,
+    },
+}
+
+/// A bar renamed, copied or new; its index and (old, new) when renamed.
+fn name_op(
+    bars: &mut Bars,
+    what: Name,
+    text: &str,
+) -> Result<(usize, Option<(String, String)>), BarError> {
+    match what {
+        Name::New => bars.add(text).map(|i| (i, None)),
+        Name::Duplicate(at) => bars.duplicate(at, text).map(|i| (i, None)),
+        Name::Rename(at) => {
+            let old = bars.bars.get(at).map(|b| b.name.clone());
+            bars.rename(at, text)?;
+            let new = text.trim().to_string();
+            let i = bars.index_of(&new).unwrap_or(at);
+            Ok((i, old.filter(|o| *o != new).map(|o| (o, new))))
+        }
+    }
 }
 
 pub struct ButtonBar {
@@ -66,8 +130,12 @@ pub struct ButtonBar {
     pub picked_for: Option<(Option<String>, Option<String>)>,
     /// A bar renamed (`Some(new)`) or deleted (`None`) — `(old name, …)`: the sessions follow
     /// (the app takes it).
-    pub relink: Option<(String, Option<String>)>,
+    pub relink: Vec<(String, Option<String>)>,
     dialog: Option<Dialog>,
+    /// The windows below the open one (a manager under its Map Button window…).
+    under: Vec<Dialog>,
+    /// Buttons copied (pasted into any bar).
+    clip: Vec<Button>,
     input_id: widget::Id,
     kinds: Vec<String>,
     kind_icons: Vec<widget::icon::Handle>,
@@ -78,7 +146,132 @@ pub struct ButtonBar {
     functions: Vec<String>,
 }
 
+fn side_button<'a>(label: String, msg: Option<BbMsg>) -> Element<'a, Message> {
+    widget::button::standard(label)
+        .on_press_maybe(msg.map(Message::ButtonBar))
+        .width(Length::Fill)
+        .into()
+}
+
+/// A manager window: the list (dot + text) and `side` buttons, arrows under the list, «OK» /
+/// «Cancel». `sort`: the check box «Sort alphabetically» (bars only).
+fn manager<'a>(
+    title: String,
+    rows: Vec<(Option<String>, String)>,
+    sel: Option<usize>,
+    side: Vec<Element<'a, Message>>,
+    (up, down): (bool, bool),
+    sort: Option<bool>,
+) -> Element<'a, Message> {
+    let m = Message::ButtonBar;
+    let list = widget::column::with_children(
+        rows.into_iter()
+            .enumerate()
+            .map(|(i, (dot, text))| {
+                let mut r = widget::row::with_capacity(2)
+                    .spacing(8)
+                    .align_y(Alignment::Center);
+                if let Some(svg) = dot {
+                    r = r.push(
+                        widget::icon(widget::icon::from_svg_bytes(svg.into_bytes())).size(12),
+                    );
+                }
+                widget::button::custom(r.push(widget::text::body(text)))
+                    .class(match sel == Some(i) {
+                        true => cosmic::theme::Button::Suggested,
+                        false => cosmic::theme::Button::Text,
+                    })
+                    .width(Length::Fill)
+                    .on_press(m(BbMsg::MSel(i)))
+                    .into()
+            })
+            .collect::<Vec<Element<'a, Message>>>(),
+    );
+    let arrows = widget::row::with_children(vec![
+        widget::button::icon(widget::icon::from_name("go-up-symbolic"))
+            .on_press_maybe(up.then(|| m(BbMsg::MUp)))
+            .into(),
+        widget::button::icon(widget::icon::from_name("go-down-symbolic"))
+            .on_press_maybe(down.then(|| m(BbMsg::MDown)))
+            .into(),
+    ])
+    .spacing(4);
+    let mut left = widget::column::with_capacity(3).spacing(8).push(
+        widget::container(widget::scrollable(list))
+            .class(cosmic::theme::Container::Card)
+            .height(Length::Fixed(260.0))
+            .width(Length::Fill),
+    );
+    left = left.push(arrows);
+    if let Some(on) = sort {
+        left = left.push(
+            widget::checkbox(on)
+                .label(fl!("bb-sort"))
+                .on_toggle(move |v| m(BbMsg::MSort(v))),
+        );
+    }
+    let body = widget::row::with_children(vec![
+        left.width(Length::Fill).into(),
+        widget::column::with_children(side)
+            .spacing(8)
+            .width(Length::Fixed(150.0))
+            .into(),
+    ])
+    .spacing(12);
+    widget::dialog()
+        .icon(crate::dialog_icons::Kind::Edit.icon(48))
+        .title(title)
+        .control(body)
+        .primary_action(widget::button::suggested(fl!("ok")).on_press(m(BbMsg::Ok)))
+        .secondary_action(widget::button::standard(fl!("cancel")).on_press(m(BbMsg::Cancel)))
+        .into()
+}
+
 impl ButtonBar {
+    /// The one menu of a button (`Some((its index, the last index))`) and of the empty space.
+    fn menu_items(
+        &self,
+        shown: Option<usize>,
+        button: Option<(usize, usize)>,
+    ) -> Vec<menu::Item<BarCmd, String>> {
+        let item = |label: String, cmd: BarCmd, on: bool| match on {
+            true => menu::Item::Button(label, None, cmd),
+            false => menu::Item::ButtonDisabled(label, None, cmd),
+        };
+        let has = shown.is_some();
+        let i = button.map_or(0, |(i, _)| i);
+        let on = button.is_some();
+        let full = shown
+            .and_then(|s| self.bars.bars.get(s))
+            .is_some_and(|b| !b.buttons.is_empty());
+        vec![
+            item(fl!("bb-add"), BarCmd::AddButton, true),
+            item(fl!("bb-edit-button"), BarCmd::Edit(i), on),
+            item(fl!("bb-left"), BarCmd::Move(i, -1), on && i > 0),
+            item(
+                fl!("bb-right"),
+                BarCmd::Move(i, 1),
+                button.is_some_and(|(i, last)| i < last),
+            ),
+            item(fl!("bb-delete-button"), BarCmd::Delete(i), on),
+            item(fl!("bb-manager"), BarCmd::Manage, has),
+            menu::Item::Divider,
+            item(fl!("bb-copy"), BarCmd::Copy(i), on),
+            item(
+                fl!("bb-paste"),
+                BarCmd::Paste(button.map(|(i, _)| i)),
+                has && !self.clip.is_empty(),
+            ),
+            item(fl!("bb-copy-bar"), BarCmd::CopyBar, full),
+            menu::Item::Divider,
+            item(fl!("bb-new-bar"), BarCmd::NewBar, true),
+            item(fl!("bb-rename-bar"), BarCmd::RenameBar, has),
+            item(fl!("bb-delete-bar"), BarCmd::DeleteBar, has),
+            item(fl!("bb-duplicate-bar"), BarCmd::DupBar, has),
+            item(fl!("bb-bar-manager"), BarCmd::ManageBars, true),
+        ]
+    }
+
     pub fn new() -> Self {
         let path = buttonbar::default_path();
         let (bars, broken) = match Bars::load(&path) {
@@ -90,8 +283,10 @@ impl ButtonBar {
             broken,
             selected: 0,
             picked_for: None,
-            relink: None,
+            relink: Vec::new(),
             dialog: None,
+            under: Vec::new(),
+            clip: Vec::new(),
             input_id: widget::Id::unique(),
             kinds: Vec::new(),
             kind_icons: Kind::ALL
@@ -165,6 +360,7 @@ impl ButtonBar {
                 any = true;
             }
         }
+        self.bars.resort();
         any.then(|| self.save()).flatten()
     }
 
@@ -245,13 +441,72 @@ impl ButtonBar {
                 }
             }
             BbMsg::Delete(i) => {
-                if let Some(bar) = shown.and_then(|s| self.bars.bars.get_mut(s))
-                    && i < bar.buttons.len()
+                if let Some(s) = shown
+                    && self.bars.bars.get(s).is_some_and(|b| i < b.buttons.len())
                 {
-                    bar.buttons.remove(i);
+                    self.dialog = Some(Dialog::Confirm(Del::Button(s, i)));
+                }
+            }
+            BbMsg::Copy(i) => {
+                if let Some(b) = shown
+                    .and_then(|s| self.bars.bars.get(s))
+                    .and_then(|bar| bar.buttons.get(i))
+                {
+                    self.clip = vec![b.clone()];
+                }
+            }
+            BbMsg::CopyBar => {
+                if let Some(bar) = shown.and_then(|s| self.bars.bars.get(s)) {
+                    self.clip = bar.buttons.clone();
+                }
+            }
+            BbMsg::Paste(after) => {
+                if let Some(bar) = shown.and_then(|s| self.bars.bars.get_mut(s))
+                    && !self.clip.is_empty()
+                {
+                    bar.insert(after, &self.clip);
                     notice = self.save();
                 }
             }
+            BbMsg::DupBar => {
+                if let Some(s) = shown {
+                    let text = self
+                        .bars
+                        .copy_name(&self.bars.bars[s].name, &fl!("bb-copy-word"));
+                    self.dialog = Some(Dialog::BarName {
+                        what: Name::Duplicate(s),
+                        text,
+                        error: None,
+                    });
+                }
+            }
+            BbMsg::Manage => {
+                if let Some(s) = shown {
+                    self.dialog = Some(Dialog::Buttons {
+                        bar: s,
+                        draft: self.bars.bars[s].clone(),
+                        sel: None,
+                    });
+                }
+            }
+            BbMsg::ManageBars => {
+                self.dialog = Some(Dialog::Bars {
+                    draft: self.bars.clone(),
+                    sel: shown,
+                    renamed: Vec::new(),
+                });
+            }
+            BbMsg::MSel(_)
+            | BbMsg::MUp
+            | BbMsg::MDown
+            | BbMsg::MEdit
+            | BbMsg::MAdd
+            | BbMsg::MCopy
+            | BbMsg::MPaste
+            | BbMsg::MDelete
+            | BbMsg::MRename
+            | BbMsg::MDup
+            | BbMsg::MSort(_) => self.manager(msg),
             BbMsg::Move(i, by) => {
                 if let Some(s) = shown {
                     self.bars.shift(s, i, by);
@@ -260,7 +515,7 @@ impl ButtonBar {
             }
             BbMsg::NewBar => {
                 self.dialog = Some(Dialog::BarName {
-                    rename: None,
+                    what: Name::New,
                     text: String::new(),
                     error: None,
                 });
@@ -268,7 +523,7 @@ impl ButtonBar {
             BbMsg::RenameBar => {
                 if let Some(s) = shown {
                     self.dialog = Some(Dialog::BarName {
-                        rename: Some(s),
+                        what: Name::Rename(s),
                         text: self.bars.bars[s].name.clone(),
                         error: None,
                     });
@@ -276,7 +531,7 @@ impl ButtonBar {
             }
             BbMsg::DeleteBar => {
                 if let Some(s) = shown {
-                    self.dialog = Some(Dialog::DeleteBar(s));
+                    self.dialog = Some(Dialog::Confirm(Del::Bar(s)));
                 }
             }
             BbMsg::Label(t) => self.map(|b| b.label = t),
@@ -314,10 +569,154 @@ impl ButtonBar {
                     *text = t;
                 }
             }
-            BbMsg::Cancel => self.dialog = None,
+            BbMsg::Cancel => self.dialog = self.under.pop(),
             BbMsg::Ok => notice = self.ok(),
         }
         (None, notice)
+    }
+
+    /// A window on top of the open one; «OK» / «Cancel» bring the open one back.
+    fn push(&mut self, d: Dialog) {
+        if let Some(cur) = self.dialog.replace(d) {
+            self.under.push(cur);
+        }
+    }
+
+    fn new_button() -> Button {
+        Button {
+            kind: Kind::Send,
+            ..Button::default()
+        }
+    }
+
+    /// The managers' list, buttons and arrows.
+    fn manager(&mut self, msg: BbMsg) {
+        let by = match msg {
+            BbMsg::MUp => -1,
+            _ => 1,
+        };
+        let clip = self.clip.clone();
+        let mut open = None;
+        match self.dialog.as_mut() {
+            Some(Dialog::Buttons { draft, sel, .. }) => match msg {
+                BbMsg::MSel(i) => *sel = Some(i),
+                BbMsg::MUp | BbMsg::MDown => {
+                    if let Some(i) = *sel {
+                        let j = i.saturating_add_signed(by);
+                        if i < draft.buttons.len() && j < draft.buttons.len() {
+                            draft.buttons.swap(i, j);
+                            *sel = Some(j);
+                        }
+                    }
+                }
+                BbMsg::MEdit => {
+                    if let Some(i) = *sel
+                        && let Some(b) = draft.buttons.get(i)
+                    {
+                        open = Some(Dialog::Map {
+                            bar: 0,
+                            at: Some(i),
+                            button: b.clone(),
+                            error: None,
+                        });
+                    }
+                }
+                BbMsg::MAdd => {
+                    open = Some(Dialog::Map {
+                        bar: 0,
+                        at: None,
+                        button: Self::new_button(),
+                        error: None,
+                    });
+                }
+                BbMsg::MCopy => {
+                    if let Some(b) = sel.and_then(|i| draft.buttons.get(i)) {
+                        self.clip = vec![b.clone()];
+                    }
+                }
+                BbMsg::MPaste => {
+                    if !clip.is_empty() {
+                        *sel = Some(draft.insert(*sel, &clip));
+                    }
+                }
+                BbMsg::MDelete => {
+                    if let Some(i) = *sel
+                        && i < draft.buttons.len()
+                    {
+                        open = Some(Dialog::Confirm(Del::Button(0, i)));
+                    }
+                }
+                _ => {}
+            },
+            Some(Dialog::Bars { draft, sel, .. }) => match msg {
+                BbMsg::MSel(i) => *sel = Some(i),
+                BbMsg::MUp | BbMsg::MDown => {
+                    if let Some(i) = *sel
+                        && !draft.sort
+                    {
+                        *sel = Some(draft.move_bar(i, by));
+                    }
+                }
+                BbMsg::MEdit => {
+                    if let Some(i) = *sel
+                        && let Some(b) = draft.bars.get(i)
+                    {
+                        open = Some(Dialog::Buttons {
+                            bar: i,
+                            draft: b.clone(),
+                            sel: None,
+                        });
+                    }
+                }
+                BbMsg::MAdd => {
+                    open = Some(Dialog::BarName {
+                        what: Name::New,
+                        text: String::new(),
+                        error: None,
+                    });
+                }
+                BbMsg::MRename => {
+                    if let Some(i) = *sel
+                        && let Some(b) = draft.bars.get(i)
+                    {
+                        open = Some(Dialog::BarName {
+                            what: Name::Rename(i),
+                            text: b.name.clone(),
+                            error: None,
+                        });
+                    }
+                }
+                BbMsg::MDup => {
+                    if let Some(i) = *sel
+                        && let Some(b) = draft.bars.get(i)
+                    {
+                        open = Some(Dialog::BarName {
+                            what: Name::Duplicate(i),
+                            text: draft.copy_name(&b.name, &fl!("bb-copy-word")),
+                            error: None,
+                        });
+                    }
+                }
+                BbMsg::MDelete => {
+                    if let Some(i) = *sel
+                        && i < draft.bars.len()
+                    {
+                        open = Some(Dialog::Confirm(Del::Bar(i)));
+                    }
+                }
+                BbMsg::MSort(on) => {
+                    let name = sel.and_then(|i| draft.bars.get(i)).map(|b| b.name.clone());
+                    draft.sort = on;
+                    draft.resort();
+                    *sel = name.and_then(|n| draft.index_of(&n));
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+        if let Some(d) = open {
+            self.push(d);
+        }
     }
 
     fn map(&mut self, f: impl FnOnce(&mut Button)) {
@@ -359,6 +758,14 @@ impl ButtonBar {
                     label: button.label.trim().to_string(),
                     ..button
                 };
+                if let Some(Dialog::Buttons { draft, sel, .. }) = self.under.last_mut() {
+                    match at {
+                        Some(i) if i < draft.buttons.len() => draft.buttons[i] = button,
+                        _ => *sel = Some(draft.insert(*sel, &[button])),
+                    }
+                    self.dialog = self.under.pop();
+                    return None;
+                }
                 let bar = match self.bars.bars.get(bar) {
                     Some(_) => bar,
                     None => match self.bars.add(&fl!("bb-default-name")) {
@@ -375,25 +782,32 @@ impl ButtonBar {
                 }
                 self.save()
             }
-            Dialog::BarName { rename, text, .. } => {
-                let was = rename
-                    .and_then(|i| self.bars.bars.get(i))
-                    .map(|b| b.name.clone());
-                let r = match rename {
-                    Some(i) => self.bars.rename(i, &text).map(|()| i),
-                    None => self.bars.add(&text),
+            Dialog::BarName { what, text, .. } => {
+                let in_manager = matches!(self.under.last(), Some(Dialog::Bars { .. }));
+                let r = match self.under.last_mut() {
+                    Some(Dialog::Bars { draft, .. }) => name_op(draft, what, &text),
+                    _ => name_op(&mut self.bars, what, &text),
                 };
                 match r {
-                    Ok(i) => {
-                        if let Some(old) = was.filter(|o| *o != self.bars.bars[i].name) {
-                            self.relink = Some((old, Some(self.bars.bars[i].name.clone())));
+                    Ok((i, renamed)) => {
+                        if in_manager {
+                            if let Some(Dialog::Bars {
+                                sel, renamed: all, ..
+                            }) = self.under.last_mut()
+                            {
+                                *sel = Some(i);
+                                all.extend(renamed.map(|(o, n)| (o, Some(n))));
+                            }
+                            self.dialog = self.under.pop();
+                            return None;
                         }
+                        self.relink.extend(renamed.map(|(o, n)| (o, Some(n))));
                         self.selected = i;
                         self.save()
                     }
                     Err(e) => {
                         self.dialog = Some(Dialog::BarName {
-                            rename,
+                            what,
                             text,
                             error: Some(Self::bar_error(e)),
                         });
@@ -401,15 +815,77 @@ impl ButtonBar {
                     }
                 }
             }
-            Dialog::DeleteBar(i) => {
+            Dialog::Confirm(Del::Button(bar, i)) => {
+                if let Some(Dialog::Buttons { draft, sel, .. }) = self.under.last_mut() {
+                    if i < draft.buttons.len() {
+                        draft.buttons.remove(i);
+                    }
+                    *sel = None;
+                    self.dialog = self.under.pop();
+                    return None;
+                }
+                if let Some(b) = self.bars.bars.get_mut(bar)
+                    && i < b.buttons.len()
+                {
+                    b.buttons.remove(i);
+                }
+                self.save()
+            }
+            Dialog::Confirm(Del::Bar(i)) => {
+                if let Some(Dialog::Bars {
+                    draft,
+                    sel,
+                    renamed,
+                    ..
+                }) = self.under.last_mut()
+                {
+                    if let Some(b) = draft.bars.get(i) {
+                        renamed.push((b.name.clone(), None));
+                    }
+                    draft.remove(i);
+                    *sel = None;
+                    self.dialog = self.under.pop();
+                    return None;
+                }
                 if let Some(b) = self.bars.bars.get(i) {
-                    self.relink = Some((b.name.clone(), None));
+                    self.relink.push((b.name.clone(), None));
                 }
                 self.bars.remove(i);
                 // The picked bar keeps being the same one; if it was this one, its neighbour.
                 if self.selected >= i {
                     self.selected = self.selected.saturating_sub(1);
                 }
+                self.save()
+            }
+            Dialog::Buttons { bar, draft, .. } => {
+                if let Some(Dialog::Bars { draft: bars, .. }) = self.under.last_mut() {
+                    if let Some(b) = bars.bars.get_mut(bar) {
+                        b.buttons = draft.buttons;
+                    }
+                    self.dialog = self.under.pop();
+                    return None;
+                }
+                if let Some(b) = self.bars.bars.get_mut(bar) {
+                    b.buttons = draft.buttons;
+                }
+                self.save()
+            }
+            Dialog::Bars { draft, renamed, .. } => {
+                // The picked bar stays the picked one, under its new name if renamed.
+                let mut name = self.bars.bars.get(self.selected).map(|b| b.name.clone());
+                for (old, new) in &renamed {
+                    if name.as_ref() == Some(old) {
+                        name = new.clone();
+                    }
+                }
+                self.bars = draft;
+                self.selected = name.and_then(|n| self.bars.index_of(&n)).unwrap_or(0);
+                // A bar deleted and made again under its name keeps its sessions.
+                self.relink.extend(
+                    renamed
+                        .into_iter()
+                        .filter(|(old, new)| new.is_some() || self.bars.index_of(old).is_none()),
+                );
                 self.save()
             }
         }
@@ -539,13 +1015,14 @@ impl ButtonBar {
                 ok(title, col.into(), fl!("ok"))
             }
             Dialog::BarName {
-                rename,
+                what,
                 text,
                 error: e,
             } => {
-                let title = match rename {
-                    Some(_) => fl!("bb-rename-title"),
-                    None => fl!("bb-new-title"),
+                let title = match what {
+                    Name::Rename(_) => fl!("bb-rename-title"),
+                    Name::Duplicate(_) => fl!("bb-dup-title"),
+                    Name::New => fl!("bb-new-title"),
                 };
                 let body = widget::column::with_children(vec![
                     field(
@@ -560,17 +1037,34 @@ impl ButtonBar {
                 .spacing(8);
                 ok(title, body.into(), fl!("ok"))
             }
-            Dialog::DeleteBar(i) => {
-                let name = self
-                    .bars
-                    .bars
-                    .get(*i)
-                    .map(|b| b.name.clone())
-                    .unwrap_or_default();
+            Dialog::Confirm(del) => {
+                let (title, body) = match *del {
+                    Del::Button(bar, i) => {
+                        let label = match self.under.last() {
+                            Some(Dialog::Buttons { draft, .. }) => draft.buttons.get(i),
+                            _ => self.bars.bars.get(bar).and_then(|b| b.buttons.get(i)),
+                        }
+                        .map(|b| b.label.clone())
+                        .unwrap_or_default();
+                        (
+                            fl!("bb-delete-button-title", name = label),
+                            fl!("bb-delete-button-body"),
+                        )
+                    }
+                    Del::Bar(i) => {
+                        let name = match self.under.last() {
+                            Some(Dialog::Bars { draft, .. }) => draft.bars.get(i),
+                            _ => self.bars.bars.get(i),
+                        }
+                        .map(|b| b.name.clone())
+                        .unwrap_or_default();
+                        (fl!("bb-delete-title", name = name), fl!("bb-delete-body"))
+                    }
+                };
                 widget::dialog()
                     .icon(crate::dialog_icons::Kind::Warning.icon(48))
-                    .title(fl!("bb-delete-title", name = name))
-                    .body(fl!("bb-delete-body"))
+                    .title(title)
+                    .body(body)
                     .primary_action(
                         widget::button::destructive(fl!("sm-delete")).on_press(m(BbMsg::Ok)),
                     )
@@ -578,6 +1072,63 @@ impl ButtonBar {
                         widget::button::standard(fl!("cancel")).on_press(m(BbMsg::Cancel)),
                     )
                     .into()
+            }
+            Dialog::Buttons { draft, sel, .. } => {
+                let rows = draft
+                    .buttons
+                    .iter()
+                    .map(|b| (buttonbar::dot_svg(&b.color), b.label.clone()))
+                    .collect();
+                let has = sel.is_some_and(|i| i < draft.buttons.len());
+                let side = vec![
+                    side_button(fl!("bb-m-edit"), has.then_some(BbMsg::MEdit)),
+                    side_button(fl!("bb-m-add"), Some(BbMsg::MAdd)),
+                    side_button(fl!("bb-m-copy"), has.then_some(BbMsg::MCopy)),
+                    side_button(
+                        fl!("bb-m-paste"),
+                        (!self.clip.is_empty()).then_some(BbMsg::MPaste),
+                    ),
+                    side_button(fl!("sm-delete"), has.then_some(BbMsg::MDelete)),
+                ];
+                let (up, down) = (
+                    sel.is_some_and(|i| i > 0),
+                    sel.is_some_and(|i| i + 1 < draft.buttons.len()),
+                );
+                manager(
+                    fl!("bb-manager-title", name = draft.name.clone()),
+                    rows,
+                    *sel,
+                    side,
+                    (up, down),
+                    None,
+                )
+            }
+            Dialog::Bars { draft, sel, .. } => {
+                let rows = draft
+                    .bars
+                    .iter()
+                    .map(|b| (None, format!("{} ({})", b.name, b.buttons.len())))
+                    .collect();
+                let has = sel.is_some_and(|i| i < draft.bars.len());
+                let side = vec![
+                    side_button(fl!("bb-m-add"), Some(BbMsg::MAdd)),
+                    side_button(fl!("bb-m-edit"), has.then_some(BbMsg::MEdit)),
+                    side_button(fl!("bb-m-duplicate"), has.then_some(BbMsg::MDup)),
+                    side_button(fl!("bb-m-rename"), has.then_some(BbMsg::MRename)),
+                    side_button(fl!("sm-delete"), has.then_some(BbMsg::MDelete)),
+                ];
+                let (up, down) = (
+                    !draft.sort && sel.is_some_and(|i| i > 0),
+                    !draft.sort && sel.is_some_and(|i| i + 1 < draft.bars.len()),
+                );
+                manager(
+                    fl!("bb-bar-manager-title"),
+                    rows,
+                    *sel,
+                    side,
+                    (up, down),
+                    Some(draft.sort),
+                )
             }
         })
     }
@@ -630,21 +1181,7 @@ impl ButtonBar {
                 if let Some(h) = height {
                     button = button.height(Length::Fixed(f32::from(h)));
                 }
-                let items = vec![
-                    menu::Item::Button(fl!("bb-edit"), None, BarCmd::Edit(i)),
-                    menu::Item::Button(fl!("sm-delete"), None, BarCmd::Delete(i)),
-                    menu::Item::Divider,
-                    match i {
-                        0 => menu::Item::ButtonDisabled(fl!("bb-left"), None, BarCmd::Move(i, -1)),
-                        _ => menu::Item::Button(fl!("bb-left"), None, BarCmd::Move(i, -1)),
-                    },
-                    match i == last {
-                        true => {
-                            menu::Item::ButtonDisabled(fl!("bb-right"), None, BarCmd::Move(i, 1))
-                        }
-                        false => menu::Item::Button(fl!("bb-right"), None, BarCmd::Move(i, 1)),
-                    },
-                ];
+                let items = self.menu_items(shown, Some((i, last)));
                 // The hint, when the pointer rests on it. Outside the context menu: that one
                 // (a popup on Wayland) drops the overlay of what it holds.
                 let button: Element<'_, Message> = widget::context_menu(
@@ -673,18 +1210,7 @@ impl ButtonBar {
         ));
         // Bars are managed from the menu of the empty space. Not around the whole row: a menu
         // inside a menu never opens, the outer one takes the click (a button had no «Edit»).
-        let has = shown.is_some();
-        let bar_item = |label: String, cmd: BarCmd, on: bool| match on {
-            true => menu::Item::Button(label, None, cmd),
-            false => menu::Item::ButtonDisabled(label, None, cmd),
-        };
-        let items = vec![
-            bar_item(fl!("bb-new-bar"), BarCmd::NewBar, true),
-            bar_item(fl!("bb-rename-bar"), BarCmd::RenameBar, has),
-            bar_item(fl!("bb-delete-bar"), BarCmd::DeleteBar, has),
-            menu::Item::Divider,
-            bar_item(fl!("bb-add"), BarCmd::AddButton, true),
-        ];
+        let items = self.menu_items(shown, None);
         row = row.push(
             widget::context_menu(
                 widget::Space::new()
@@ -712,6 +1238,12 @@ enum BarCmd {
     RenameBar,
     DeleteBar,
     AddButton,
+    Copy(usize),
+    Paste(Option<usize>),
+    CopyBar,
+    DupBar,
+    Manage,
+    ManageBars,
 }
 
 impl menu::Action for BarCmd {
@@ -725,6 +1257,12 @@ impl menu::Action for BarCmd {
             BarCmd::RenameBar => BbMsg::RenameBar,
             BarCmd::DeleteBar => BbMsg::DeleteBar,
             BarCmd::AddButton => BbMsg::AddButton,
+            BarCmd::Copy(i) => BbMsg::Copy(i),
+            BarCmd::Paste(a) => BbMsg::Paste(a),
+            BarCmd::CopyBar => BbMsg::CopyBar,
+            BarCmd::DupBar => BbMsg::DupBar,
+            BarCmd::Manage => BbMsg::Manage,
+            BarCmd::ManageBars => BbMsg::ManageBars,
         })
     }
 }
