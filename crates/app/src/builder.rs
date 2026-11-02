@@ -1252,7 +1252,8 @@ impl BuilderView {
         pop.into()
     }
 
-    /// «From a template ▾»: a button and, open, the list: «Templates», then «Examples».
+    /// «From a template ▾»: a button and, open, the list: «Templates», «Examples (short blocks)»,
+    /// «Examples».
     fn templates_view<'a>(
         &self,
         m: impl Fn(BuilderMsg) -> Message + Copy + 'a,
@@ -1272,9 +1273,10 @@ impl BuilderView {
                         let dir = p.parent().and_then(|d| d.file_name());
                         if dir != last {
                             last = dir;
-                            let head = match dir.is_some_and(|d| d == "templates") {
-                                true => fl!("builder-group-templates"),
-                                false => fl!("builder-group-examples"),
+                            let head = match dir.and_then(|d| d.to_str()) {
+                                Some("templates") => fl!("builder-group-templates"),
+                                Some("examples-short") => fl!("builder-group-examples-short"),
+                                _ => fl!("builder-group-examples"),
                             };
                             rows.push(widget::text::heading(head).into());
                         }
@@ -2057,10 +2059,11 @@ impl BuilderView {
 /// A compound block's body: its title (`elif x:`, `except E as e:`), blocks, body number.
 type Sub<'a> = (Option<Element<'a, Message>>, &'a [Block], usize);
 
-/// The files «From a template ▾» lists: `scripts/templates/*.py`, then `scripts/examples/*.py`.
+/// The files «From a template ▾» lists: `scripts/templates/*.py`, then `scripts/examples-short`,
+/// then `scripts/examples`.
 fn templates() -> Vec<PathBuf> {
     let dir = shagshell_core::script::default_dir();
-    ["templates", "examples"]
+    ["templates", "examples-short", "examples"]
         .iter()
         .flat_map(|d| shagshell_core::script::list_dir(&dir.join(d)))
         .collect()

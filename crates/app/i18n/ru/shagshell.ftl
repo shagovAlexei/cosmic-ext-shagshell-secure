@@ -841,6 +841,7 @@ builder-no-sessions = Нет сохранённых сессий
 builder-from-template = Из шаблона ▾
 builder-group-templates = Шаблоны
 builder-group-examples = Примеры
+builder-group-examples-short = Примеры (короткие блоки)
 builder-no-templates = Нет шаблонов в ~/.config/shagshell/scripts/templates
 builder-save-template = Сохранить как шаблон…
 block-prompt = Дождаться приглашения

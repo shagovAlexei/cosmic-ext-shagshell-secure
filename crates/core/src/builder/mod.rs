@@ -624,7 +624,10 @@ mod tests {
             })
             .collect();
         files.push((s("multiline.py"), s(include_str!("tests/multiline.py"))));
-        for (n, t) in crate::bundled::TEMPLATES {
+        for (n, t) in (crate::bundled::TEMPLATES.iter())
+            .chain(crate::bundled::EXAMPLES_SHORT)
+            .filter(|(n, _)| n.ends_with(".py"))
+        {
             files.push((s(n), s(t)));
         }
         let mut rec = crate::recorder::Recorder::new();
