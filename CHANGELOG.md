@@ -2,6 +2,9 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.111.0 — 2026-11-02
+- feat: Global Options → Tabs — colour of each tab state (hex), grey icons for no indicator, show/hide «new output», «idle» (after 3–300 s) and «script running / locked», tab width by label or fixed (80–400 px); background fill and left stripe are not possible with libcosmic's tab bar
+
 ## 0.110.0 — 2026-11-02
 - feat: Global Options → Status bar — choose the items (state, protocol, size, cursor, connected time, local time, log, recording), their order, seconds on/off and right alignment; Caps/Num Lock items are not offered (no way to read the lock state)
 
