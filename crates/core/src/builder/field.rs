@@ -152,6 +152,16 @@ pub enum Bad {
     NotNumber,
 }
 
+/// What picking saved session `id` from the list types into field `p`; `None`: not a session
+/// field (no list next to it).
+pub fn session_pick(p: &super::catalog::Param, id: &str) -> Option<String> {
+    match p.ty {
+        Ty::Session => Some(format!("/S \"{id}\"")),
+        Ty::Text if p.name == "session" => Some(id.to_string()),
+        _ => None,
+    }
+}
+
 /// The value a field typed `input` holds.
 pub fn typed(ty: Ty, input: &str) -> Result<String, Bad> {
     if let Some(e) = input.strip_prefix('=') {
@@ -512,6 +522,20 @@ pub fn set(b: &mut Block, f: F, value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn session_pick_by_field() {
+        let param = |path: &str| lookup(path).unwrap().params[0];
+        assert_eq!(
+            session_pick(&param("connect"), "lab/r1"),
+            Some("lab/r1".into())
+        );
+        assert_eq!(
+            session_pick(&param("Session.Connect"), "r1"),
+            Some("/S \"r1\"".into())
+        );
+        assert_eq!(session_pick(&param("Screen.Send"), "r1"), None);
+    }
 
     #[test]
     fn literal_round_trip() {
