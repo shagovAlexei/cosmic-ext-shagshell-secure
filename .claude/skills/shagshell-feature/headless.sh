@@ -3,7 +3,8 @@
 # Run ShagShell Secure in an invisible sway session and drive it, without touching the user's
 # desktop, focus, config or state. Needs: sway, wtype, grim.
 #
-#   headless.sh start [WxH]        start headless sway (default 1200x800) + the app (debug build)
+#   headless.sh start [WxH]        start headless sway (default 1200x800) + the app (debug build;
+#                                  SHAGSHELL_BIN=target/release/shagshell for timings)
 #   headless.sh key ARGS...        wtype ARGS (e.g. -k F7, -M shift -k F2 -m shift)
 #   headless.sh click X Y [right|middle|double|none|up|down]  mouse at (X, Y), click or wheel (built from ./vpointer once)
 #   headless.sh drag X1 Y1 X2 Y2   press at (X1, Y1), move to (X2, Y2), release
@@ -34,7 +35,7 @@ app() {
     kill_pid app
     cd "$ROOT"
     WAYLAND_DISPLAY="$(sock)" XDG_CONFIG_HOME="$DIR/cfg" XDG_STATE_HOME="$DIR/state" XDG_DATA_HOME="$DIR/data" \
-        XDG_CACHE_HOME="$DIR/cache" ICED_BACKEND="${ICED_BACKEND:-}" setsid "$ROOT/target/debug/shagshell" >"$DIR/app.log" 2>&1 &
+        XDG_CACHE_HOME="$DIR/cache" ICED_BACKEND="${ICED_BACKEND:-}" setsid "${SHAGSHELL_BIN:-$ROOT/target/debug/shagshell}" >"$DIR/app.log" 2>&1 &
     echo $! >"$DIR/app.pid"
     sleep 3
 }
