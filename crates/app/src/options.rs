@@ -186,6 +186,10 @@ pub fn view<'a>(
             fl!("options-highlight"),
             widget::toggler(config.highlight_enabled)
                 .on_toggle(set(|c, on| c.highlight_enabled = on)),
+        ))
+        .add(settings::flex_item(
+            fl!("options-builder-stacked"),
+            widget::toggler(config.builder_stacked).on_toggle(set(|c, on| c.builder_stacked = on)),
         ));
     let colour_names: Vec<String> = vec![
         fl!("hl-red"),

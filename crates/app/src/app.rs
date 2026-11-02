@@ -317,6 +317,7 @@ impl Application for App {
         tabs.note_buttons = shagshell_core::notes::BAR.clean(&config.note_buttons);
         tabs.look = config.tab_look.clone();
         tabs.builder_buttons = shagshell_core::builder::bar::BAR.clean(&config.builder_buttons);
+        tabs.builder_stacked = config.builder_stacked;
         tabs.set_note_font(&config.note_font_family, config.note_font_px());
         tabs.set_log_prefs(&config);
         let scripts = crate::script::Scripts::new(tabs.taps.clone(), control_dir.clone());
@@ -1230,6 +1231,7 @@ impl App {
                     shagshell_core::notes::BAR.clean(&self.config.note_buttons);
                 self.tabs.builder_buttons =
                     shagshell_core::builder::bar::BAR.clean(&self.config.builder_buttons);
+                self.tabs.builder_stacked = self.config.builder_stacked;
                 let px = self.config.note_font_px();
                 self.tabs
                     .set_note_font(&self.config.note_font_family.clone(), px);

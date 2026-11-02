@@ -235,6 +235,8 @@ pub struct Config {
     pub note_buttons: Vec<String>,
     /// The Script Builder bar's buttons, in order (`core::builder::bar`), set in its «⋯».
     pub builder_buttons: Vec<String>,
+    /// Script Builder: every field of a block on its own line (off: in a row, wrapping).
+    pub builder_stacked: bool,
     /// The main menu as the user arranged it (Tools → Customize Menu…); empty: the stock one.
     pub menus: Vec<shagshell_core::menu::Menu>,
     /// Ctrl+Tab goes back to the tab used before (SecureCRT's option), not the next one.
@@ -391,6 +393,7 @@ impl Default for Config {
             status_bar: Default::default(),
             note_buttons: shagshell_core::notes::default_buttons(),
             builder_buttons: shagshell_core::builder::bar::default_buttons(),
+            builder_stacked: false,
             menus: Vec::new(),
             note_font_family: String::new(),
             notes_right: false,

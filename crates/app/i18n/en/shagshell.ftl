@@ -125,6 +125,7 @@ options-log-hint = %S session · %H host · %P port · %U user · %Y %M %D date 
 options-colours = Terminal colours
 options-scheme = Colour scheme
 options-highlight = Keyword highlighting
+options-builder-stacked = Script Builder: each field of a block on its own line
 options-hl-word = word
 options-hl-fill = fill
 options-hl-add = Add word
