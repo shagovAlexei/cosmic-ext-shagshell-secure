@@ -26,6 +26,24 @@ pub fn visible(tree: &[Node], expanded: &BTreeSet<String>, filter: &str) -> Vec<
     out
 }
 
+/// The rows worth drawing of `len` rows `row_h` high, `offset` scrolled into a view `height`
+/// high (a screen's worth more on each side, so a fast scroll does not show a gap). An unknown
+/// height (0: not laid out yet) draws the first rows as if it were 2000 high. An offset past
+/// the end (the list got shorter) counts as the end.
+pub fn on_screen(len: usize, row_h: f32, offset: f32, height: f32) -> std::ops::Range<usize> {
+    // A list that fits a screen is drawn whole: iced reports no viewport for it, so its height
+    // may be stale (the window grew since).
+    if len as f32 * row_h <= 4000.0 {
+        return 0..len;
+    }
+    let height = if height > 0.0 { height } else { 2000.0 };
+    // A filter may have shortened the list since the last scroll: the view is at its end now.
+    let offset = offset.min((len as f32 * row_h - height).max(0.0));
+    let first = ((offset - height) / row_h).max(0.0) as usize;
+    let last = ((offset + 2.0 * height) / row_h).ceil() as usize;
+    first.min(len)..last.min(len)
+}
+
 /// Rows of `nodes` under `prefix`; with a filter, only those leading to a match (`true`: any).
 fn walk(
     nodes: &[Node],
@@ -129,6 +147,17 @@ pub fn sessions_under(tree: &[Node], ids: &BTreeSet<String>) -> Vec<String> {
 mod tests {
     use super::*;
     use crate::session::Session;
+
+    #[test]
+    fn on_screen_draws_the_view_and_a_screen_around_it() {
+        assert_eq!(on_screen(600, 25.0, 0.0, 500.0), 0..40);
+        assert_eq!(on_screen(600, 25.0, 5000.0, 500.0), 180..240);
+        assert_eq!(on_screen(600, 25.0, 14500.0, 500.0), 560..600);
+        assert_eq!(on_screen(10, 25.0, 0.0, 500.0), 0..10);
+        assert_eq!(on_screen(160, 25.0, 0.0, 100.0), 0..160);
+        assert_eq!(on_screen(600, 25.0, 0.0, 0.0), 0..160);
+        assert_eq!(on_screen(40, 25.0, 10000.0, 500.0), 0..40);
+    }
 
     fn sess(name: &str, host: &str) -> Node {
         Node::Session {

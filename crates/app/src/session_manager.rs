@@ -46,6 +46,8 @@ pub enum SmMsg {
     Hover(Option<String>),
     /// The pointer left the tree: a drop now goes nowhere.
     Leave,
+    /// The tree scrolled or resized (iced reports both, unless it all fits): (offset, height).
+    Scrolled(f32, f32),
     /// The left button came up anywhere (only listened to while a row or the splitter is held).
     Release,
     Cursor(f32, f32),
@@ -120,6 +122,8 @@ pub struct SessionManager {
     tree: Vec<Node>,
     pub expanded: BTreeSet<String>,
     rows: Vec<Row>,
+    /// `SmMsg::Scrolled`: only the rows in view are drawn (600 rows cost 8 ms a frame).
+    scroll: (f32, f32),
     selected: BTreeSet<String>,
     anchor: Option<String>,
     filter: String,
@@ -170,6 +174,7 @@ impl SessionManager {
             tree: Vec::new(),
             expanded: expanded.iter().cloned().collect(),
             rows: Vec::new(),
+            scroll: (0.0, 0.0),
             selected: BTreeSet::new(),
             anchor: None,
             filter: String::new(),
@@ -317,6 +322,7 @@ impl SessionManager {
             }
             SmMsg::Toggle(id) => return self.toggle(id),
             SmMsg::Leave => self.over_tree = false,
+            SmMsg::Scrolled(offset, height) => self.scroll = (offset, height),
             SmMsg::Hover(h) => {
                 self.over_tree = true;
                 if let Some(p) = &self.pressed
@@ -743,9 +749,18 @@ impl SessionManager {
             .center(Length::Fill)
             .into(),
             false => {
-                let rows = self.rows.iter().map(|r| self.row(r, window));
-                let column = widget::column::with_children(rows.collect::<Vec<_>>());
-                widget::scrollable(column).height(Length::Shrink).into()
+                let (offset, height) = self.scroll;
+                let shown = rows::on_screen(self.rows.len(), ROW_H, offset, height);
+                let gap = |n: usize| widget::Space::new().height(n as f32 * ROW_H).into();
+                let mut column = vec![gap(shown.start)];
+                column.extend(self.rows[shown.clone()].iter().map(|r| self.row(r, window)));
+                column.push(gap(self.rows.len() - shown.end));
+                widget::scrollable(widget::column::with_children(column))
+                    .height(Length::Shrink)
+                    .on_scroll(|v| {
+                        Message::Sessions(SmMsg::Scrolled(v.absolute_offset().y, v.bounds().height))
+                    })
+                    .into()
             }
         };
         // Below the rows: dropping there means «into the root»; a click there clears the focus.
@@ -803,6 +818,8 @@ impl SessionManager {
         let target = self.drag.is_some() && r.folder && self.hover.as_ref() == Some(&r.id);
         let cell = widget::container(line)
             .width(Length::Fill)
+            .height(ROW_H)
+            .align_y(iced::Alignment::Center)
             .padding([2, 4])
             .class(cosmic::theme::Container::custom(move |theme| {
                 let c = theme.cosmic();
@@ -830,6 +847,9 @@ impl SessionManager {
             .into()
     }
 }
+
+/// A row's height: fixed, so the rows out of view are just a gap of known height.
+const ROW_H: f32 = 25.0;
 
 fn row_menu(folder: bool) -> Vec<menu::Tree<Message>> {
     use menu::Item::{Button, ButtonDisabled, Divider};
