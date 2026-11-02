@@ -353,14 +353,8 @@ impl ButtonBar {
     /// Bars brought in by an import (names that are not here yet): added and saved. `Some`: why
     /// they could not be saved.
     pub fn merge(&mut self, bars: Vec<Bar>) -> Option<String> {
-        let mut any = false;
-        for b in bars {
-            if self.bars.index_of(&b.name).is_none() {
-                self.bars.bars.push(b);
-                any = true;
-            }
-        }
-        self.bars.resort();
+        let any;
+        (any, self.selected) = self.bars.merge(bars, self.selected);
         any.then(|| self.save()).flatten()
     }
 

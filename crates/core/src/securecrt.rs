@@ -6,7 +6,7 @@
 use crate::buttonbar::{Bar, Button, Kind, Target};
 use crate::session::{Protocol, Session};
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// One `.ini`: its `S:` / `D:` values by name, and its `Z:` lists (one line per entry).
 #[derive(Debug, Default)]
@@ -353,15 +353,17 @@ pub struct BarsFound {
     pub bars: Vec<Bar>,
     /// Buttons that did not come across: `(bar, label, kind)`.
     pub skipped: Vec<(String, String, String)>,
+    /// File names of the scripts of `RUN` buttons found neither under wine nor on a disk.
+    pub missing: Vec<String>,
 }
 
 /// `ButtonBarV5.ini`: `Z:"bar name"=<count>` and that many button lines
 /// ` KIND,arg,arg,,label,0,n,tooltip,`; for `SEND` the string is field 1 and the label field 2,
 /// for `RUN` the script is field 1, its arguments field 2 and the label field 4. `SEND` is
 /// imported as Send String (to the current tab), `RUN` of a `.py` as Run Script (its Windows path
-/// put under the wine `prefix`, if there is one); the rest, with the bar settings lines (`D:`,
-/// `S:`), are reported.
-pub fn read_button_bars(text: &str, prefix: Option<&Path>) -> BarsFound {
+/// put under the wine `prefix`, if there is one, or found on one of the `mounts`); the rest, with
+/// the bar settings lines (`D:`, `S:`), are reported.
+pub fn read_button_bars(text: &str, prefix: Option<&Path>, mounts: &[PathBuf]) -> BarsFound {
     let mut found = BarsFound::default();
     let mut cur: Option<usize> = None;
     for line in text.trim_start_matches('\u{feff}').lines() {
@@ -403,10 +405,17 @@ pub fn read_button_bars(text: &str, prefix: Option<&Path>) -> BarsFound {
                             .to_string(),
                         l => l.to_string(),
                     };
+                    let arg = windows_path(get(1), prefix, mounts);
+                    if !Path::new(&arg).exists() {
+                        let name = arg.rsplit('/').next().unwrap_or("").to_string();
+                        if !found.missing.contains(&name) {
+                            found.missing.push(name);
+                        }
+                    }
                     found.bars[i].buttons.push(Button {
                         label,
                         kind: Kind::Script,
-                        arg: windows_path(get(1), prefix),
+                        arg,
                         args: get(2).trim().to_string(),
                         target: Target::Current,
                         color: String::new(),
@@ -448,26 +457,48 @@ fn is_python(path: &str) -> bool {
 }
 
 /// `C:\dir\a.py` (single or doubled backslashes) as a path under the wine `prefix`
-/// (`<prefix>/drive_c/dir/a.py`); no prefix or not a drive path: slashes only.
-fn windows_path(path: &str, prefix: Option<&Path>) -> String {
+/// (`<prefix>/drive_c/dir/a.py`), or, not there, the first `<mount>/dir/a.py` that is (the Windows
+/// disk of a dual boot); no prefix or not a drive path: slashes only.
+fn windows_path(path: &str, prefix: Option<&Path>, mounts: &[PathBuf]) -> String {
     let p = path.trim();
     let mut chars = p.chars();
     let drive = match (chars.next(), chars.next(), chars.next()) {
         (Some(d), Some(':'), Some('\\' | '/')) if d.is_ascii_alphabetic() => Some(d),
         _ => None,
     };
-    let (Some(d), Some(prefix)) = (drive, prefix) else {
+    let Some(d) = drive else {
         return p.replace('\\', "/");
     };
+    let rest: PathBuf = p[2..]
+        .split(['\\', '/'])
+        .filter(|s| !s.is_empty())
+        .collect();
     // Wine's Z: is the Linux root.
-    let mut out = match d.to_ascii_lowercase() {
-        'z' => std::path::PathBuf::from("/"),
-        d => prefix.join(format!("drive_{d}")),
+    let wine = match (d.to_ascii_lowercase(), prefix) {
+        ('z', Some(_)) => return Path::new("/").join(rest).display().to_string(),
+        (d, Some(prefix)) => Some(prefix.join(format!("drive_{d}")).join(&rest)),
+        _ => None,
     };
-    for seg in p[2..].split(['\\', '/']).filter(|s| !s.is_empty()) {
-        out.push(seg);
+    let on_disk = || mounts.iter().map(|m| m.join(&rest)).find(|c| c.exists());
+    match wine {
+        Some(w) if w.exists() => Some(w),
+        w => on_disk().or(w),
     }
-    out.display().to_string()
+    .map_or_else(|| p.replace('\\', "/"), |w| w.display().to_string())
+}
+
+/// Where a Windows disk may be mounted: the folders in `/media/$USER`, `/run/media/$USER`, `/mnt`.
+fn disk_mounts() -> Vec<PathBuf> {
+    let user = std::env::var("USER").unwrap_or_default();
+    [
+        format!("/media/{user}"),
+        format!("/run/media/{user}"),
+        "/mnt".into(),
+    ]
+    .iter()
+    .filter_map(|d| std::fs::read_dir(d).ok())
+    .flat_map(|r| r.flatten().map(|e| e.path()))
+    .collect()
 }
 
 /// The wine prefix (the folder holding `drive_c`) that `root` lies in.
@@ -569,6 +600,8 @@ pub struct Report {
     pub bars_existing: usize,
     /// `RUN` and other buttons that need SecureCRT itself.
     pub buttons_skipped: usize,
+    /// Scripts of imported `RUN` buttons that are not on this machine (file names).
+    pub scripts_missing: Vec<String>,
     /// Colour schemes to add or to put over a built-in one (the app merges them into its file).
     pub schemes: Vec<crate::color_scheme::Scheme>,
     /// Same as a scheme we have already.
@@ -638,8 +671,9 @@ pub fn import(
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
             Err(e) => return Err(e),
         };
-        let f = read_button_bars(&text, wine_prefix(root).as_deref());
+        let f = read_button_bars(&text, wine_prefix(root).as_deref(), &disk_mounts());
         r.buttons_skipped = f.skipped.len();
+        r.scripts_missing = f.missing;
         for b in f.bars {
             match known.contains(&b.name) {
                 true => r.bars_existing += 1,
@@ -787,7 +821,7 @@ mod tests {
     #[test]
     fn button_bar_lines() {
         let text = "\u{feff}D:\"Sort Alphabetically\"=00000000\nZ:\"Main\"=00000003\n SEND,conn\\\\n,conn,,,0,5,,\n RUN,C:\\\\x\\\\a.py,arg,,runit,0,5,tip,\n RUN,C:\\\\x\\\\b.vbs,,,vb,0,5,,\n SEND,ls\\\\n\\r\\npwd\\\\n\\r\\n,,,,0,1,,\nZ:\"---\"=00000000\nZ:\"Other\"=00000001\n SEND,a\\,b,comma,,,0,1,,\n";
-        let f = read_button_bars(text, None);
+        let f = read_button_bars(text, None, &[]);
         assert_eq!(f.bars.len(), 2);
         let main = &f.bars[0].buttons;
         assert_eq!(main.len(), 3);
@@ -814,16 +848,47 @@ mod tests {
     fn windows_paths_go_under_the_wine_prefix() {
         let pre = Path::new("/home/u/.wine");
         assert_eq!(
-            windows_path("C:\\Users\\u\\a b.py", Some(pre)),
+            windows_path("C:\\Users\\u\\a b.py", Some(pre), &[]),
             "/home/u/.wine/drive_c/Users/u/a b.py"
         );
         assert_eq!(
-            windows_path("d:/x//y.py", Some(pre)),
+            windows_path("d:/x//y.py", Some(pre), &[]),
             "/home/u/.wine/drive_d/x/y.py"
         );
-        assert_eq!(windows_path("Z:\\home\\u\\a.py", Some(pre)), "/home/u/a.py");
-        assert_eq!(windows_path("C:\\x\\a.py", None), "C:/x/a.py");
-        assert_eq!(windows_path("/opt/a.py", Some(pre)), "/opt/a.py");
+        assert_eq!(
+            windows_path("Z:\\home\\u\\a.py", Some(pre), &[]),
+            "/home/u/a.py"
+        );
+        assert_eq!(windows_path("C:\\x\\a.py", None, &[]), "C:/x/a.py");
+        assert_eq!(windows_path("/opt/a.py", Some(pre), &[]), "/opt/a.py");
+    }
+
+    #[test]
+    fn regression_run_scripts_on_a_mounted_windows_disk() {
+        // `C:\Users\…` from the Windows machine: not under wine, but on its disk mounted at
+        // `/media/<user>/sys`; a script found nowhere is reported.
+        let dir = tempfile::tempdir().unwrap();
+        let pre = dir.path().join(".wine");
+        std::fs::create_dir_all(pre.join("drive_c")).unwrap();
+        let disk = dir.path().join("media/sys");
+        std::fs::create_dir_all(disk.join("Users/w/S")).unwrap();
+        std::fs::write(disk.join("Users/w/S/a.py"), "").unwrap();
+        let text = "Z:\"M\"=00000002\n RUN,C:\\\\Users\\\\w\\\\S\\\\a.py,,,a,0,5,,\n RUN,C:\\\\Users\\\\w\\\\S\\\\gone.py,,,g,0,5,,\n";
+        let f = read_button_bars(
+            text,
+            Some(&pre),
+            &[dir.path().join("media/x"), disk.clone()],
+        );
+        let b = &f.bars[0].buttons;
+        assert_eq!(b[0].arg, disk.join("Users/w/S/a.py").display().to_string());
+        assert_eq!(
+            b[1].arg,
+            pre.join("drive_c/Users/w/S/gone.py").display().to_string()
+        );
+        assert_eq!(f.missing, ["gone.py"]);
+        // A config copied off the Windows disk, no wine: the disk is still looked at.
+        let f = read_button_bars(text, None, std::slice::from_ref(&disk));
+        assert_eq!(f.bars[0].buttons[0].arg, b[0].arg);
     }
 
     /// Against a real SecureCRT folder (set `SECURECRT_CONFIG`); prints only counts.
@@ -868,13 +933,14 @@ mod tests {
             cmds.count(),
             cmds.folders.len()
         );
-        let b = read_button_bars(&text, None);
+        let b = read_button_bars(&text, wine_prefix(&root).as_deref(), &disk_mounts());
         let n: usize = b.bars.iter().map(|x| x.buttons.len()).sum();
         println!(
-            "bars {} buttons {} skipped {}",
+            "bars {} buttons {} skipped {} scripts missing {}",
             b.bars.len(),
             n,
-            b.skipped.len()
+            b.skipped.len(),
+            b.missing.len()
         );
         // every session's bar name exists among the imported bars
         let names: Vec<&str> = b.bars.iter().map(|x| x.name.as_str()).collect();

@@ -1002,6 +1002,7 @@ scheme-background = Фон
 scheme-cursor = Курсор
 scheme-bad-color = Нужно #RRGGBB
 sc-schemes = Цветовые схемы
+sc-report-missing = Скрипты кнопок не найдены на этом компьютере (поправьте путь в кнопке): { $files }.
 sc-report-schemes = Цветовых схем добавлено: { $added } (уже были: { $existing }).
 bb-edit-button = Изменить кнопку…
 bb-delete-button = Удалить кнопку…
