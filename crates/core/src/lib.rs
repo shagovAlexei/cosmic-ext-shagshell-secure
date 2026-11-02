@@ -34,6 +34,7 @@ pub mod session;
 pub mod sftp;
 pub mod shell;
 pub mod sshconfig;
+pub mod status_items;
 pub mod tab_icon;
 pub mod tablock;
 pub mod tabs;

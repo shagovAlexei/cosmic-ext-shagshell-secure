@@ -6,6 +6,7 @@ use crate::fl;
 use cosmic::app::context_drawer::{self, ContextDrawer};
 use cosmic::widget::{self, settings};
 use shagshell_core::highlight::{Colour, Rule, Rules};
+use shagshell_core::status_items::{Item, Layout};
 
 /// `separate`: passwords in a keyring of their own (`None`: not known yet / being changed).
 /// `reset_ask`: «Reset the menu» pressed, Yes / No shown.
@@ -427,6 +428,7 @@ pub fn view<'a>(
             widget::button::standard(fl!("options-open"))
                 .on_press(Message::Toolbar(crate::toolbar::TbMsg::Open)),
         ));
+    let status = status_section(config);
     // The menu (Tools → Customize Menu…): back to the stock one, asked once inline.
     let menu = settings::section()
         .title(fl!("options-menu"))
@@ -505,6 +507,7 @@ pub fn view<'a>(
         sessions.into(),
         dialogs.into(),
         toolbar.into(),
+        status.into(),
         menu.into(),
         terminal.into(),
         notes.into(),
@@ -580,3 +583,82 @@ fn size_choice(
 
 /// The heights offered for tab headers and Button Bar buttons (0: the theme's).
 const HEIGHTS: [u16; 8] = [0, 24, 28, 32, 36, 40, 48, 56];
+
+fn item_name(i: Item) -> String {
+    match i {
+        Item::State => fl!("status-item-state"),
+        Item::Protocol => fl!("status-item-protocol"),
+        Item::Size => fl!("status-item-size"),
+        Item::Cursor => fl!("status-item-cursor"),
+        Item::Up => fl!("status-item-up"),
+        Item::Clock => fl!("status-item-clock"),
+        Item::Log => fl!("status-item-log"),
+        Item::Recording => fl!("status-item-recording"),
+        Item::Unknown => String::new(),
+    }
+}
+
+/// Terminal → Appearance → Status Bar: the selected items (up / down / remove), the rest (add).
+fn status_section(config: &Config) -> settings::Section<'_, Message> {
+    let edit = |f: fn(&mut Layout)| {
+        let mut c = config.clone();
+        f(&mut c.status_bar);
+        Message::SetConfig(c)
+    };
+    let with = |f: Box<dyn Fn(&mut Layout)>| {
+        let mut c = config.clone();
+        f(&mut c.status_bar);
+        Message::SetConfig(c)
+    };
+    let layout = &config.status_bar;
+    let mut section = settings::section().title(fl!("options-statusbar"));
+    for item in layout.items.iter().copied().filter(|i| *i != Item::Unknown) {
+        let btn = |label: &str, f: Box<dyn Fn(&mut Layout)>| {
+            widget::button::standard(label.to_string()).on_press(with(f))
+        };
+        section = section.add(settings::flex_item(
+            item_name(item),
+            widget::row::with_children(vec![
+                btn("▲", Box::new(move |l| l.shift(item, -1))).into(),
+                btn("▼", Box::new(move |l| l.shift(item, 1))).into(),
+                btn("✕", Box::new(move |l| l.remove(item))).into(),
+            ])
+            .spacing(4),
+        ));
+    }
+    for item in layout.available() {
+        section = section.add(settings::flex_item(
+            item_name(item),
+            widget::button::standard(fl!("status-add"))
+                .on_press(with(Box::new(move |l| l.add(item)))),
+        ));
+    }
+    section
+        .add(settings::flex_item(
+            fl!("status-seconds"),
+            widget::toggler(layout.seconds).on_toggle({
+                let c = config.clone();
+                move |on| {
+                    let mut c = c.clone();
+                    c.status_bar.seconds = on;
+                    Message::SetConfig(c)
+                }
+            }),
+        ))
+        .add(settings::flex_item(
+            fl!("status-right"),
+            widget::toggler(layout.right).on_toggle({
+                let c = config.clone();
+                move |on| {
+                    let mut c = c.clone();
+                    c.status_bar.right = on;
+                    Message::SetConfig(c)
+                }
+            }),
+        ))
+        .add(settings::flex_item(
+            fl!("status-reset"),
+            widget::button::standard(fl!("toolbar-reset"))
+                .on_press(edit(|l| *l = Layout::default())),
+        ))
+}

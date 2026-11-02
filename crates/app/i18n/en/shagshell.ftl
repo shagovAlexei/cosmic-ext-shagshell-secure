@@ -929,3 +929,17 @@ as-close = Close tab
 as-close-all = Close all tabs
 as-page-tree = Sessions
 as-page-active = Active
+
+options-statusbar = Status bar
+status-add = Add
+status-seconds = Show seconds
+status-right = Align to the right
+status-item-state = Connection state
+status-item-protocol = Protocol
+status-item-size = Size (columns × rows)
+status-item-cursor = Cursor position
+status-item-up = Connected time
+status-item-clock = Local time
+status-item-log = Log file
+status-item-recording = Script recording
+status-reset = Reset the status bar to default

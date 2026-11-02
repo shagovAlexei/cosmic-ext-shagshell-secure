@@ -607,7 +607,10 @@ impl Application for App {
                     .map(|_| Message::Blink),
                 false => Subscription::none(),
             },
-            match self.tabs.any_live() {
+            match self.tabs.any_live()
+                || (self.config.status_bar.items)
+                    .contains(&shagshell_core::status_items::Item::Clock)
+            {
                 true => cosmic::iced::time::every(std::time::Duration::from_secs(1))
                     .map(|_| Message::StatusTick),
                 false => Subscription::none(),
@@ -793,6 +796,7 @@ impl Application for App {
         }
         centre = centre.push(status_bar::view(
             self.tabs.status(),
+            &self.config.status_bar,
             self.sessions.notice.as_deref(),
         ));
         let mut middle = widget::row::with_capacity(3).spacing(2);
