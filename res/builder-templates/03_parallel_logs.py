@@ -6,7 +6,7 @@ hosts = read_list('~/servers.txt')
 commands = read_list('~/commands.txt')
 
 
-def _host_1(tab, host):
+def _host_1(host, tab):
     log_to('~/logs/%S_%Y%M%D.log', tab=tab)
     for cmd in commands:
         run(cmd, tab=tab)

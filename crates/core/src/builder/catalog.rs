@@ -762,8 +762,8 @@ pub static CATALOG: &[Entry] = &[
         ],
         "list",
         [
-            "For every saved session in hosts: connect, func(tab, host), disconnect; the failed ones as (host, error).",
-            "Для каждой сохранённой сессии из hosts: подключиться, func(tab, host), отключиться; возвращает неудачные (хост, ошибка).",
+            "For every saved session in hosts: connect, func(host, tab), disconnect; the failed ones as (host, error).",
+            "Для каждой сохранённой сессии из hosts: подключиться, func(host, tab), отключиться; возвращает неудачные (хост, ошибка).",
         ],
         "each_host(hosts, check)",
     ),
@@ -857,11 +857,11 @@ pub static CATALOG: &[Entry] = &[
     ),
     m(
         "blocks.activate",
-        &[p("tab", Expr)],
+        &[d("tab", Expr, "None")],
         "",
         [
-            "Brings the tab to the front (short for Tab.Activate).",
-            "Делает вкладку активной (коротко от Tab.Activate).",
+            "Brings the tab to the front, the script's own by default (short for Tab.Activate).",
+            "Делает вкладку активной, по умолчанию вкладку скрипта (коротко от Tab.Activate).",
         ],
         "activate(tab)",
     ),
@@ -994,21 +994,29 @@ pub static CATALOG: &[Entry] = &[
     ),
     m(
         "blocks.upload",
-        &[p("local", File), d("remote", Text, "''")],
+        &[
+            p("local", File),
+            d("remote", Text, "''"),
+            d("tab", Expr, "None"),
+        ],
         "",
         [
-            "A file to the server over the script tab's SFTP (remote: a name, a folder, or empty = home) (short for FileTransfer.Upload).",
-            "Файл на сервер по SFTP вкладки скрипта (remote: имя, папка или пусто — домашняя) (коротко от FileTransfer.Upload).",
+            "A file to the server over the tab's SFTP (remote: a name, a folder, or empty = home) (short for FileTransfer.Upload).",
+            "Файл на сервер по SFTP вкладки (по умолчанию — скрипта; remote: имя, папка или пусто — домашняя) (коротко от FileTransfer.Upload).",
         ],
         "upload('~/backup.cfg', '/tmp/')",
     ),
     m(
         "blocks.download",
-        &[p("remote", Text), d("local", File, "''")],
+        &[
+            p("remote", Text),
+            d("local", File, "''"),
+            d("tab", Expr, "None"),
+        ],
         "",
         [
-            "A file from the server over the script tab's SFTP (local: empty = ~/Downloads) (short for FileTransfer.Download).",
-            "Файл с сервера по SFTP вкладки скрипта (local: пусто — ~/Downloads) (коротко от FileTransfer.Download).",
+            "A file from the server over the tab's SFTP (local: empty = ~/Downloads) (short for FileTransfer.Download).",
+            "Файл с сервера по SFTP вкладки (по умолчанию — скрипта; local: пусто — ~/Downloads) (коротко от FileTransfer.Download).",
         ],
         "download('/etc/hostname')",
     ),
@@ -1103,10 +1111,12 @@ class Tab:
     def __init__(self, n):
         self.Index = n
         self.Screen, self.Session = Rec("tab%d.Screen" % n), Rec("tab%d.Session" % n)
+        self.Activate = Rec("tab%d.Activate" % n)
         self.Session.LogFileName = ""
         self.Session.Connected = n == 1
 class Crt(Rec):
     Arguments = ["a", "b"]
+    def GetActiveTab(self): return Tab(7)
     def GetTab(self, n): return Tab(n)
     def GetScriptTab(self): return Tab(0)
 crt = builtins.crt = Crt("crt")
@@ -1152,6 +1162,18 @@ assert [c for c in calls if c[0].endswith("Send")] == [
     ("tab0.Screen.Send", "ls\r"), ("tab0.Screen.Send", "pwd\r"),
     ("tab1.Screen.Send", "id\r"), ("tab1.Screen.Send", "w\r")], calls
 assert [g[1] for g in got] == [30, 30, 5, 30], got
+# each_host calls func(host, tab); a func written before as (tab, host) still gets them right.
+calls.clear()
+crt.Session = Rec("crt.Session")
+crt.Session.Connect = lambda cmd: 7
+seen = []
+def new(host, tab): seen.append((host, tab.Session._n))
+def old(tab, host): seen.append((host, tab.Session._n))
+b.each_host(["h1"], new); b.each_host(["h2"], old)
+assert seen == [("h1", "tab7.Session"), ("h2", "tab7.Session")], seen
+calls.clear()
+b.activate(); b.upload("l", tab=t1)
+assert ("tab0.Activate",) in calls and ("crt.FileTransfer.Upload", "l", "") in calls, calls
 "##;
         let o = Command::new("python3")
             .args(["-I", "-c", SNIPPET])

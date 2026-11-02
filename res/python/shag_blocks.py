@@ -5,6 +5,7 @@ A script made with them starts with `from shag_blocks import *`. ShagShell keeps
 """
 import builtins
 import functools
+import inspect
 import os
 import threading
 import time
@@ -205,9 +206,9 @@ def connected(tab=None):
     return bool(_tab(tab).Session.Connected)
 
 
-def activate(tab):
-    """Brings the tab to the front (short for tab.Activate)."""
-    tab.Activate()
+def activate(tab=None):
+    """Brings the tab to the front, the script's own by default (short for tab.Activate)."""
+    _tab(tab).Activate()
 
 
 def status(text, tab=None):
@@ -277,16 +278,23 @@ def unlock(tab=None):
     _tab(tab).Session.Unlock()
 
 
-def upload(local, remote=""):
-    """A file to the server over the script tab's SFTP; `remote`: a name, a folder, or "" = home
-    (short for crt.FileTransfer.Upload)."""
-    return crt.FileTransfer.Upload(local, remote)
+def _transfer(tab):
+    """The tab's SFTP: ShagShell's for any tab; SecureCRT has only the script tab's."""
+    if tab is not None and _crt is not None and hasattr(_crt, "_FileTransfer"):
+        return _crt._FileTransfer(tab._tab)
+    return crt.FileTransfer
 
 
-def download(remote, local=""):
-    """A file from the server over the script tab's SFTP; `local` "" = ~/Downloads (short for
-    crt.FileTransfer.Download)."""
-    return crt.FileTransfer.Download(remote, local)
+def upload(local, remote="", tab=None):
+    """A file to the server over the tab's SFTP (the script's tab by default); `remote`: a name,
+    a folder, or "" = home (short for crt.FileTransfer.Upload)."""
+    return _transfer(tab).Upload(local, remote)
+
+
+def download(remote, local="", tab=None):
+    """A file from the server over the tab's SFTP (the script's tab by default); `local` "" =
+    ~/Downloads (short for crt.FileTransfer.Download)."""
+    return _transfer(tab).Download(remote, local)
 
 
 def pause(ms):
@@ -295,10 +303,14 @@ def pause(ms):
 
 
 def each_host(hosts, func, parallel=False, limit=10):
-    """For every saved session in `hosts`: connect (a new tab), `func(tab, host)`, disconnect.
+    """For every saved session in `hosts`: connect (a new tab), `func(host, tab)`, disconnect.
     `parallel`: at most `limit` hosts at the same time, each in a thread. A host that fails does
     not stop the others; the failed ones are returned as (host, error) and printed."""
     failed = []
+    try:  # a func written before 0.128 takes (tab, host)
+        old = list(inspect.signature(func).parameters)[:1] == ["tab"]
+    except (TypeError, ValueError):
+        old = False
     gate = threading.Semaphore(max(int(limit), 1) if parallel else 1)
     opening = threading.Lock()
 
@@ -314,7 +326,7 @@ def each_host(hosts, func, parallel=False, limit=10):
                 failed.append((host, str(e)))
                 return
             try:
-                func(tab, host)
+                func(tab, host) if old else func(host, tab)
             except Exception as e:
                 failed.append((host, str(e)))
             finally:

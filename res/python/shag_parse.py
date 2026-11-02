@@ -150,11 +150,12 @@ class Reader:
 
 
 def for_host(st, nxt):
-    """`def _host_N(tab, host): …` right before `each_host(<hosts>, _host_N, parallel=…, limit=…)`:
+    """`def _host_N(host, tab): …` (or `(tab, host)`, written before 0.128) right before
+    `each_host(<hosts>, _host_N, parallel=…, limit=…)`:
     the «for each host» block (without its body), else None."""
     a = getattr(st, "args", None)
     if not (isinstance(st, ast.FunctionDef) and re.fullmatch(r"_host_\d+", st.name) and not st.decorator_list
-            and not st.returns and [x.arg for x in a.args] == ["tab", "host"] and not a.defaults
+            and not st.returns and [x.arg for x in a.args] in (["host", "tab"], ["tab", "host"]) and not a.defaults
             and not (a.vararg or a.kwarg or a.kwonlyargs or a.posonlyargs)):
         return None
     if not (isinstance(nxt, ast.Expr) and isinstance(nxt.value, ast.Call) and nxt.lineno == st.end_lineno + 1):

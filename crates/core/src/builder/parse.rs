@@ -365,7 +365,7 @@ pub(crate) mod tests {
         if no_python() {
             return;
         }
-        let src = "def _host_1(tab, host):\n    run('uptime', tab=tab)\neach_host(hosts, _host_1, parallel=True, limit=5)\n";
+        let src = "def _host_1(host, tab):\n    run('uptime', tab=tab)\neach_host(hosts, _host_1, parallel=True, limit=5)\n";
         assert_eq!(
             parse(src).unwrap(),
             [Block::ForHost {
@@ -389,10 +389,14 @@ pub(crate) mod tests {
                 }],
             }]
         );
+        // Written before 0.128 as (tab, host): still the block, saved as (host, tab).
+        let old = parse("def _host_1(tab, host):\n    pass\neach_host(h, _host_1)\n").unwrap();
+        assert!(matches!(old[..], [Block::ForHost { .. }]), "{old:?}");
+        assert!(crate::builder::generate(&old).starts_with("def _host_1(host, tab):"));
         // Not the pair (another name, a line between): plain def and call.
-        let b = parse("def _host_1(tab, host):\n    pass\nx = 1\neach_host(h, _host_1)\n").unwrap();
+        let b = parse("def _host_1(host, tab):\n    pass\nx = 1\neach_host(h, _host_1)\n").unwrap();
         assert!(matches!(b[0], Block::Def { .. }), "{b:?}");
-        let b = parse("def f(tab, host):\n    pass\neach_host(h, f)\n").unwrap();
+        let b = parse("def f(host, tab):\n    pass\neach_host(h, f)\n").unwrap();
         assert!(matches!(b[0], Block::Def { .. }), "{b:?}");
     }
 }

@@ -31,7 +31,7 @@ while False:
     pass
 
 
-def _host_1(tab, host):
+def _host_1(host, tab):
     # per host
     run('uptime', tab=tab)
 each_host(hosts, _host_1, parallel=True, limit=5)

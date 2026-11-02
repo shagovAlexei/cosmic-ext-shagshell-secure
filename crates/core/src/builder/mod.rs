@@ -70,7 +70,7 @@ pub enum Block {
         params: String,
         body: Vec<Block>,
     },
-    /// «For each host»: the body as a function of (tab, host), called by `shag_blocks.each_host`
+    /// «For each host»: the body as a function of (host, tab), called by `shag_blocks.each_host`
     /// for every host (in threads when `parallel`, `limit` at a time).
     ForHost {
         hosts: String,
@@ -275,7 +275,7 @@ impl Writer {
                 limit,
                 body,
             } => {
-                self.line(level, &format!("def {func}(tab, host):"));
+                self.line(level, &format!("def {func}(host, tab):"));
                 self.body(body, level + 1, pos, 0);
                 let p = if *parallel { "True" } else { "False" };
                 self.mark(pos);
@@ -426,7 +426,7 @@ mod tests {
         };
         assert_eq!(
             generate(&[b]),
-            "def _host_1(tab, host):\n    run('uptime', tab=tab)\neach_host(hosts, _host_1, parallel=True, limit=10)\n"
+            "def _host_1(host, tab):\n    run('uptime', tab=tab)\neach_host(hosts, _host_1, parallel=True, limit=10)\n"
         );
     }
 
