@@ -928,3 +928,17 @@ as-close = Закрыть вкладку
 as-close-all = Закрыть все вкладки
 as-page-tree = Сессии
 as-page-active = Активные
+
+options-statusbar = Строка состояния
+status-add = Добавить
+status-seconds = Показывать секунды
+status-right = Выравнивать по правому краю
+status-item-state = Состояние соединения
+status-item-protocol = Протокол
+status-item-size = Размер (столбцы × строки)
+status-item-cursor = Позиция курсора
+status-item-up = Время соединения
+status-item-clock = Местное время
+status-item-log = Файл журнала
+status-item-recording = Запись скрипта
+status-reset = Сбросить строку состояния по умолчанию

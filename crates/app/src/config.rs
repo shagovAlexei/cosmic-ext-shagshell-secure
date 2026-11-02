@@ -223,6 +223,8 @@ pub struct Config {
     pub toolbar_buttons: Vec<shagshell_core::toolbar::ToolButton>,
     /// The tab bar under the tabs' content (SecureCRT's «tabs at the bottom»).
     pub tabs_bottom: bool,
+    /// Terminal → Appearance → Status Bar: the items, their order, seconds, alignment.
+    pub status_bar: shagshell_core::status_items::Layout,
     /// Notes' font family ("" = the system's monospace) and size, px (0 = 14; `note_font_px`).
     pub note_font_family: String,
     /// A note opens in a group of its own at the right (off: in the group in front).
@@ -384,6 +386,7 @@ impl Default for Config {
             confirm_disconnect: true,
             closed_dialog: false,
             tabs_bottom: false,
+            status_bar: Default::default(),
             note_buttons: shagshell_core::notes::default_buttons(),
             builder_buttons: shagshell_core::builder::bar::default_buttons(),
             menus: Vec::new(),
