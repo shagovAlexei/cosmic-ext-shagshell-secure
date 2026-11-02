@@ -26,7 +26,7 @@ if p.endswith(">"):                    # EN: user mode -> privileged / RU: по�
         run(None, password, until="#")
     except TimeoutError:
         printbox("enable failed / не удалось войти в enable")
-        crt.Quit()
+        stop()
 
 run(None, "terminal length 0")         # EN: no "--More--" / RU: без "--More--"
 config = run(None, "show running-config", timeout=120)

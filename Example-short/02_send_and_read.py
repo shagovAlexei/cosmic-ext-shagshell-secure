@@ -8,13 +8,13 @@
 #     отправляет команду и возвращает всё напечатанное до следующего приглашения.
 from shag_blocks import *
 
-if not active_tab().Session.Connected:
+if not connected():
     printbox("Open a connection first / Сначала откройте соединение")
-    crt.Quit()
+    stop()
 
 command = ask("Command / Команда:", "Example 02", "uname -a")
 if command == "":
-    crt.Quit()
+    stop()
 
 output = run(None, command)          # EN: None = the script's tab / RU: None = вкладка скрипта
 printbox(output or "(empty / пусто)", "Example 02: " + command)

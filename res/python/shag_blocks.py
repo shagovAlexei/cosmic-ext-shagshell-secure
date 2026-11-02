@@ -9,7 +9,10 @@ import threading
 import time
 
 __all__ = ["prompt", "run", "read_list", "log_to", "append_file", "to_clipboard", "from_clipboard",
-           "each_host", "printbox", "ask", "read_until", "connect", "active_tab", "disconnect"]
+           "each_host", "printbox", "ask", "read_until", "connect", "active_tab", "disconnect",
+           "send", "send_keys", "wait_for", "wait_any", "clear", "script_tab", "all_tabs", "connected",
+           "activate", "status", "log_text", "choose", "pick_file", "arg", "args", "stop", "last_error",
+           "new_session", "lock", "unlock", "upload", "download", "pause"]
 
 crt = getattr(builtins, "crt", None)
 if crt is None:  # imported before `crt` is defined (SecureCRT defines it as a builtin too)
@@ -143,6 +146,136 @@ def active_tab():
 def disconnect(tab=None):
     """Disconnects the tab (the script's own by default)."""
     _tab(tab).Session.Disconnect()
+
+
+def send(text, tab=None):
+    """Types a line and Enter, without waiting (short for tab.Screen.Send(text + "\\r"))."""
+    _tab(tab).Screen.Send(str(text) + "\r")
+
+
+def send_keys(text, tab=None):
+    """Types the text as it is, no Enter (short for tab.Screen.SendKeys)."""
+    _tab(tab).Screen.SendKeys(str(text))
+
+
+def wait_for(text, timeout=0, tab=None):
+    """Waits for `text`; False after `timeout` s, 0 = no limit (short for Screen.WaitForString)."""
+    return _tab(tab).Screen.WaitForString(text, timeout)
+
+
+def wait_any(texts, timeout=0, tab=None):
+    """Waits for one of `texts`; its number from 1, 0 after `timeout` s (short for
+    Screen.WaitForStrings)."""
+    return _tab(tab).Screen.WaitForStrings(list(texts), timeout)
+
+
+def clear(tab=None):
+    """Clears the tab's screen (short for Screen.Clear)."""
+    _tab(tab).Screen.Clear()
+
+
+def script_tab():
+    """The tab the script runs on (short for crt.GetScriptTab)."""
+    return crt.GetScriptTab()
+
+
+def all_tabs():
+    """Every tab, left to right (short for crt.GetTabCount + crt.GetTab)."""
+    return [crt.GetTab(i) for i in range(1, crt.GetTabCount() + 1)]
+
+
+def connected(tab=None):
+    """Whether the tab is connected (short for tab.Session.Connected)."""
+    return bool(_tab(tab).Session.Connected)
+
+
+def activate(tab):
+    """Brings the tab to the front (short for tab.Activate)."""
+    tab.Activate()
+
+
+def status(text, tab=None):
+    """Text in the status bar (short for Session.SetStatusText)."""
+    _tab(tab).Session.SetStatusText(str(text))
+
+
+def log_text(text, tab=None):
+    """Writes `text` into the tab's session log, starting the log (appending) if it is off;
+    returns the log file (short for Session.Log + Session.LogText)."""
+    s = _tab(tab).Session
+    if s.LogFileName == "":
+        s.Log(True, True)
+    s.LogText(str(text))
+    return s.LogFileName
+
+
+def choose(message, items, title="", default=0, multi=False):
+    """A list to choose from: the item, a list of items when `multi`, None if cancelled
+    (short for crt.Dialog.List)."""
+    return crt.Dialog.List(message, title, list(items), default, multi)
+
+
+def pick_file(title="", filter="", button="", default=""):
+    """A file chosen in a dialog, "" when cancelled; `filter`: "Text (*.txt)|*.txt|All (*.*)|*.*"
+    (short for crt.Dialog.FileOpenDialog)."""
+    return crt.Dialog.FileOpenDialog(title, button, default, filter)
+
+
+def arg(n, default=""):
+    """The script's argument `n` (from 0), `default` when there are fewer (short for
+    crt.Arguments[n])."""
+    a = list(crt.Arguments)
+    return a[n] if 0 <= n < len(a) else default
+
+
+def args():
+    """Every argument of the script (short for crt.Arguments)."""
+    return list(crt.Arguments)
+
+
+def stop():
+    """Ends the script here (short for crt.Quit)."""
+    crt.Quit()
+    raise SystemExit(0)  # SecureCRT's Quit may return; the script ends here all the same
+
+
+def last_error():
+    """The last error's text (short for crt.GetLastErrorMessage)."""
+    return crt.GetLastErrorMessage()
+
+
+def new_session(name, host, user="", port=22, folder=""):
+    """Saves a new SSH session (no password); its path, for connect() (short for
+    crt.Session.Create)."""
+    return crt.Session.Create(name, host, user, port, folder)
+
+
+def lock(tab=None):
+    """The user can no longer type into the tab, until unlock() or the script's end (short for
+    Session.Lock)."""
+    _tab(tab).Session.Lock()
+
+
+def unlock(tab=None):
+    """Lets the user type into the tab again (short for Session.Unlock)."""
+    _tab(tab).Session.Unlock()
+
+
+def upload(local, remote=""):
+    """A file to the server over the script tab's SFTP; `remote`: a name, a folder, or "" = home
+    (short for crt.FileTransfer.Upload)."""
+    return crt.FileTransfer.Upload(local, remote)
+
+
+def download(remote, local=""):
+    """A file from the server over the script tab's SFTP; `local` "" = ~/Downloads (short for
+    crt.FileTransfer.Download)."""
+    return crt.FileTransfer.Download(remote, local)
+
+
+def pause(ms):
+    """Waits `ms` milliseconds (short for crt.Sleep)."""
+    crt.Sleep(ms)
 
 
 def each_host(hosts, func, parallel=False, limit=10):

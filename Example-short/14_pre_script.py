@@ -10,7 +10,7 @@ import socket
 import sys
 from shag_blocks import *
 
-name, host = crt.Arguments[0], crt.Arguments[1]
+name, host = arg(0), arg(1)
 
 try:
     socket.create_connection((host, 22), timeout=3).close()
@@ -18,6 +18,6 @@ except OSError as e:
     answer = printbox(
         f"{host} does not answer on port 22 ({e}).\nConnect anyway?\n\n"
         f"{host} не отвечает на порту 22. Всё равно подключаться?",
-        name, BUTTON_YESNO | ICON_WARNING)
+        name, BUTTON_YESNO | ICON_WARN)
     if answer != IDYES:
         sys.exit(1)

@@ -1,8 +1,10 @@
 # 01_dialogs_and_arguments.py (short blocks / короткие блоки)
 #
-# EN: Example/01 with short blocks: ask() = crt.Dialog.Prompt, printbox() = crt.Dialog.MessageBox.
+# EN: Example/01 with short blocks: ask() = crt.Dialog.Prompt, printbox() = crt.Dialog.MessageBox,
+#     args() = crt.Arguments, stop() = crt.Quit.
 #     Asks for a name, shows what was typed, lists the script's arguments and asks Yes/No.
-# RU: Example/01 на коротких блоках: ask() = crt.Dialog.Prompt, printbox() = crt.Dialog.MessageBox.
+# RU: Example/01 на коротких блоках: ask() = crt.Dialog.Prompt, printbox() = crt.Dialog.MessageBox,
+#     args() = crt.Arguments, stop() = crt.Quit.
 #     Спрашивает имя, показывает введённое, перечисляет аргументы скрипта и задаёт вопрос Да/Нет.
 from shag_blocks import *
 
@@ -10,9 +12,9 @@ from shag_blocks import *
 # RU: ask(сообщение, заголовок, по умолчанию, пароль?) возвращает текст или "" при отмене.
 name = ask("Your name?", "Example 01", "world")
 if name == "":
-    crt.Quit()
+    stop()
 
-args = ", ".join(crt.Arguments) or "(none / нет)"
+args = ", ".join(args()) or "(none / нет)"
 printbox("Hello, %s!\nArguments: %s" % (name, args), "Example 01")
 
 # EN: printbox with buttons returns IDYES / IDNO / IDCANCEL...

@@ -1,11 +1,11 @@
 # 12_dialogs_gallery.py (short blocks / короткие блоки)
 #
-# EN: Example/12 with short blocks: printbox() and ask(); the list and file dialogs stay `crt`
-#     (Dialog.List, Dialog.FileOpenDialog: no blocks for them). Shows every dialog a script can use
-#     and prints what each returned into the last message. Flags: BUTTON_* + ICON_* + DEFBUTTON*.
-# RU: Example/12 на коротких блоках: printbox() и ask(); список и диалоги файлов остаются на `crt`
-#     (Dialog.List, Dialog.FileOpenDialog: блоков для них нет). Показывает все диалоги скрипта и в
-#     последнем окне выводит, что каждый вернул. Флаги: BUTTON_* + ICON_* + DEFBUTTON*.
+# EN: Example/12 with short blocks: printbox() = Dialog.MessageBox, ask() = Dialog.Prompt,
+#     choose() = Dialog.List, pick_file() = Dialog.FileOpenDialog. Shows every dialog a script can
+#     use and prints what each returned into the last message. Flags: BUTTON_* + ICON_* + DEFBUTTON*.
+# RU: Example/12 на коротких блоках: printbox() = Dialog.MessageBox, ask() = Dialog.Prompt,
+#     choose() = Dialog.List, pick_file() = Dialog.FileOpenDialog. Показывает все диалоги скрипта и
+#     в последнем окне выводит, что каждый вернул. Флаги: BUTTON_* + ICON_* + DEFBUTTON*.
 from shag_blocks import *
 
 results = []
@@ -30,16 +30,16 @@ results.append("ask -> %r" % text)
 secret = ask("Type a secret / Введите секрет", "Gallery 5", password=True)
 results.append("Password -> %d characters / символов" % len(secret))   # EN: never print secrets / RU: секрет не печатаем
 
-# EN: List: one item (a str) or, with multi=True, a list of items; None when cancelled.
-# RU: List: один пункт (str) или при multi=True список пунктов; None при отмене.
-one = crt.Dialog.List("Choose a server / Выберите сервер:", "Gallery 6", ["web-01", "web-02", "db-01"], 1)
-results.append("List -> %r" % (one,))
-many = crt.Dialog.List("Choose several / Выберите несколько:", "Gallery 7", ["a", "b", "c", "d"], 0, True)
-results.append("List (multi) -> %r" % (many,))
+# EN: choose: one item (a str) or, with multi=True, a list of items; None when cancelled.
+# RU: choose: один пункт (str) или при multi=True список пунктов; None при отмене.
+one = choose("Choose a server / Выберите сервер:", ["web-01", "web-02", "db-01"], "Gallery 6", 1)
+results.append("choose -> %r" % (one,))
+many = choose("Choose several / Выберите несколько:", ["a", "b", "c", "d"], "Gallery 7", multi=True)
+results.append("choose (multi) -> %r" % (many,))
 
-# EN: File dialogs return a path, or "" when cancelled. The filter is "Name|*.ext;*.ext2|Name|*.*".
-# RU: Диалоги файлов возвращают путь или "" при отмене. Фильтр: "Имя|*.расш;*.расш2|Имя|*.*".
-f = crt.Dialog.FileOpenDialog("Open a text file", "Open", "", "Text (*.txt;*.log)|*.txt;*.log|All (*.*)|*.*")
-results.append("FileOpenDialog -> %r" % f)
+# EN: pick_file returns a path, or "" when cancelled. The filter is "Name|*.ext;*.ext2|Name|*.*".
+# RU: pick_file возвращает путь или "" при отмене. Фильтр: "Имя|*.расш;*.расш2|Имя|*.*".
+f = pick_file("Open a text file", "Text (*.txt;*.log)|*.txt;*.log|All (*.*)|*.*", "Open")
+results.append("pick_file -> %r" % f)
 
 printbox("\n".join(results), "Gallery: results / результаты", ICON_INFO)

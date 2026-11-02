@@ -19,11 +19,11 @@ from shag_blocks import *
 
 COMMANDS = ["hostname", "uptime"]      # EN: change to yours / RU: подставьте свои
 
-if len(crt.Arguments) < 1:
+if not args():
     printbox("Usage: <hosts list file> [result file]")
-    crt.Quit()
-names = read_list(crt.Arguments[0])
-result_file = os.path.expanduser(crt.Arguments[1] if len(crt.Arguments) > 1 else "~/hosts_report.txt")
+    stop()
+names = read_list(arg(0))
+result_file = os.path.expanduser(arg(1, "~/hosts_report.txt"))
 open(result_file, "w").close()         # EN: start with an empty file / RU: начать с пустого файла
 
 
