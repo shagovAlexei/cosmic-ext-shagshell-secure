@@ -131,6 +131,8 @@ pub struct Launch {
     pub logon: Option<LogonSpec>,
     /// The terminal colour scheme of the session ("": the global one).
     pub scheme: String,
+    /// Terminal → Emulation of the session.
+    pub term: shagshell_core::term_env::Term,
     /// The session's tab label: shown instead of the program's title.
     pub label: String,
     /// The session's own icon (`Session::icon`); "": by protocol.
@@ -158,6 +160,7 @@ impl Launch {
             auto_reconnect: None,
             logon: None,
             scheme: String::new(),
+            term: Default::default(),
             label: String::new(),
             icon: String::new(),
             session: None,
@@ -1221,6 +1224,7 @@ impl Tabs {
             style,
             tap.clone(),
             self.scheme_of(launch),
+            &launch.term,
         )
         .inspect_err(|e| log::error!("start {}: {e}", launch.program))
         .ok()?;

@@ -44,6 +44,10 @@ pub struct Form {
     pub flow: Flow,
     pub logon: Vec<crate::logon::Step>,
     pub color_scheme: String,
+    pub term_kind: crate::term_env::Kind,
+    pub term_colors: crate::term_env::Colors,
+    /// Lines, "" = the default.
+    pub scrollback: String,
     pub label: String,
     pub icon: String,
     pub script: String,
@@ -60,6 +64,7 @@ pub enum FormError {
     /// The n-th forward.
     Forward(usize),
     Reconnect,
+    Scrollback,
     Device,
     Baud,
 }
@@ -142,6 +147,9 @@ impl Form {
             reconnect: s.reconnect,
             reconnect_delay: s.reconnect_delay.map(|n| n.to_string()).unwrap_or_default(),
             reconnect_tries: s.reconnect_tries.map(|n| n.to_string()).unwrap_or_default(),
+            term_kind: s.term.kind,
+            term_colors: s.term.colors,
+            scrollback: s.term.scrollback.map(|n| n.to_string()).unwrap_or_default(),
             device: s.serial.device.clone(),
             baud: s.serial.baud.map(|n| n.to_string()).unwrap_or_default(),
             data_bits: s.serial.data_bits.unwrap_or(8),
@@ -221,6 +229,18 @@ impl Form {
         };
         let (reconnect_delay, reconnect_tries) =
             (count(&self.reconnect_delay)?, count(&self.reconnect_tries)?);
+        let scrollback = match opt(&self.scrollback) {
+            None => None,
+            Some(n) => Some(
+                n.parse::<u32>()
+                    .ok()
+                    .filter(|n| {
+                        (crate::term_env::MIN_SCROLLBACK..=crate::term_env::MAX_SCROLLBACK)
+                            .contains(n)
+                    })
+                    .ok_or(FormError::Scrollback)?,
+            ),
+        };
         let extra = self.extra.trim().to_string();
         shlex::split(&extra).ok_or(FormError::Extra)?;
         Ok(Session {
@@ -251,6 +271,11 @@ impl Form {
                 .cloned()
                 .collect(),
             color_scheme: self.color_scheme.clone(),
+            term: crate::term_env::Term {
+                kind: self.term_kind,
+                colors: self.term_colors,
+                scrollback,
+            },
             label: self.label.trim().to_string(),
             icon: self.icon.clone(),
             script: self.script.trim().to_string(),
@@ -461,6 +486,24 @@ mod tests {
                 "{l} {h} {p}"
             );
         }
+        for n in ["x", "99", "2000000"] {
+            assert_eq!(
+                bad(Form {
+                    scrollback: n.into(),
+                    ..form("h")
+                }),
+                FormError::Scrollback
+            );
+        }
+        let f = Form {
+            term_kind: crate::term_env::Kind::Vt100,
+            scrollback: "5000".into(),
+            ..form("h")
+        };
+        let s = f.apply(&Session::default(), true).unwrap();
+        assert_eq!(s.term.kind, crate::term_env::Kind::Vt100);
+        assert_eq!(s.term.scrollback, Some(5000));
+        assert_eq!(Form::from_session("n", &s).scrollback, "5000");
         assert_eq!(
             bad(Form {
                 reconnect_tries: "x".into(),

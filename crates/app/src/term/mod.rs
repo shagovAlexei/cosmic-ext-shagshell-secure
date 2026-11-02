@@ -19,9 +19,6 @@ use tokio::sync::mpsc::UnboundedSender;
 pub type TabId = u64;
 pub type Events = UnboundedSender<(TabId, Event)>;
 
-/// Lines kept above the screen.
-pub(crate) const HISTORY: usize = 10_000;
-
 /// Start `program` with `args` in the home dir. `dark`: the COSMIC theme's colors; `bg`: the window's
 /// background (0xAARRGGBB), the terminal's own.
 #[allow(clippy::too_many_arguments)]
@@ -36,19 +33,22 @@ pub fn start(
     style: &style::Style,
     log: log::Tap,
     scheme: &str,
+    emulation: &shagshell_core::term_env::Term,
 ) -> std::io::Result<Terminal> {
     terminal::WINDOW_BG_COLOR.store(bg, Ordering::SeqCst);
     let colors = colors(dark, scheme);
     let options = tty::Options {
         shell: Some(tty::Shell::new(program.to_string(), args.to_vec())),
         working_directory: std::env::home_dir(),
-        env: std::iter::once(("TERM".to_string(), "xterm-256color".to_string()))
+        env: emulation
+            .env()
+            .into_iter()
             .chain(env.iter().cloned())
             .collect(),
         ..tty::Options::default()
     };
     let config = term::Config {
-        scrolling_history: HISTORY,
+        scrolling_history: emulation.history(),
         ..term::Config::default()
     };
     let mut t = Terminal::new(id, tx, config, options, style, colors, log)?;

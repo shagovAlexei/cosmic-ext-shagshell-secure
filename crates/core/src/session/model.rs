@@ -162,6 +162,9 @@ pub struct Session {
     /// Terminal colour scheme (a key of the built-in ones); empty: the global one.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub color_scheme: String,
+    /// Terminal → Emulation: `TERM` / colours / scrollback (`core::term_env`).
+    #[serde(skip_serializing_if = "crate::term_env::Term::is_default")]
+    pub term: crate::term_env::Term,
     /// Hosts to go through (`ssh -J`): `[user@]host[:port]`, comma between several.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub jump: String,

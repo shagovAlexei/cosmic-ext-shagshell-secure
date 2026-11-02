@@ -38,6 +38,7 @@ pub mod status_items;
 pub mod tab_icon;
 pub mod tablock;
 pub mod tabs;
+pub mod term_env;
 pub mod toolbar;
 pub mod update;
 pub mod uri;

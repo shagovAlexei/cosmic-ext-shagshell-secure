@@ -26,6 +26,8 @@ pub enum Target {
     Default,
 }
 
+use shagshell_core::term_env::{Colors, Kind};
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Category {
     Connection,
@@ -33,6 +35,7 @@ enum Category {
     Forward,
     Logon,
     Appearance,
+    Emulation,
     Log,
 }
 
@@ -55,6 +58,7 @@ pub enum Field {
     ReconnectTries,
     Device,
     Baud,
+    Scrollback,
 }
 
 #[derive(Clone, Debug)]
@@ -94,6 +98,8 @@ pub enum SoMsg {
     Password(Hidden),
     /// The colour scheme: 0 = the global one, else the n-th built-in.
     Scheme(usize),
+    TermKind(usize),
+    TermColors(usize),
     /// The icon: 0 = by protocol, else the n-th of `tab_icon::PICKABLE`.
     Icon(usize),
     /// «Забыть»: the session's saved secrets removed.
@@ -150,6 +156,7 @@ impl SessionOptions {
             .insert(|b| b.text(fl!("so-forward")).data(Category::Forward))
             .insert(|b| b.text(fl!("so-logon")).data(Category::Logon))
             .insert(|b| b.text(fl!("so-appearance")).data(Category::Appearance))
+            .insert(|b| b.text(fl!("so-emulation")).data(Category::Emulation))
             .insert(|b| b.text(fl!("so-log")).data(Category::Log))
             .build();
         let name = match &target {
@@ -231,6 +238,7 @@ impl SessionOptions {
                 fl!("so-bad-forward", n = n)
             }
             FormError::Reconnect => fl!("so-bad-reconnect"),
+            FormError::Scrollback => fl!("so-bad-scrollback"),
         });
         r.ok()
     }
@@ -254,6 +262,7 @@ impl SessionOptions {
                 Field::Jump => f.jump = v,
                 Field::Device => f.device = v,
                 Field::Baud => f.baud = v,
+                Field::Scrollback => f.scrollback = v,
                 Field::ReconnectDelay => f.reconnect_delay = v,
                 Field::ReconnectTries => f.reconnect_tries = v,
             },
@@ -270,6 +279,8 @@ impl SessionOptions {
                     .and_then(|i| shagshell_core::tab_icon::PICKABLE.get(i))
                     .map_or(String::new(), |(n, _)| n.to_string());
             }
+            SoMsg::TermKind(i) => f.term_kind = Kind::ALL.get(i).copied().unwrap_or_default(),
+            SoMsg::TermColors(i) => f.term_colors = Colors::ALL.get(i).copied().unwrap_or_default(),
             SoMsg::Scheme(i) => {
                 f.color_scheme = match i {
                     0 => String::new(),
@@ -480,6 +491,36 @@ impl SessionOptions {
                         })
                         .into(),
                     ),
+                ]
+            }
+            Some(Category::Emulation) => {
+                let kinds: Vec<String> = Kind::ALL.iter().map(|k| k.label().to_string()).collect();
+                let colors = vec![
+                    fl!("so-colors-mono"),
+                    fl!("so-colors-16"),
+                    fl!("so-colors-256"),
+                    fl!("so-colors-true"),
+                ];
+                let kind_at = Kind::ALL.iter().position(|k| *k == f.term_kind);
+                let colors_at = Colors::ALL.iter().position(|c| *c == f.term_colors);
+                vec![
+                    labelled(
+                        fl!("so-term-kind"),
+                        widget::dropdown(kinds, kind_at, move |i| m(SoMsg::TermKind(i))).into(),
+                    ),
+                    widget::text::caption(fl!("so-term-kind-hint")).into(),
+                    labelled(
+                        fl!("so-term-colors"),
+                        widget::dropdown(colors, colors_at, move |i| m(SoMsg::TermColors(i)))
+                            .into(),
+                    ),
+                    field(
+                        fl!("so-scrollback"),
+                        Field::Scrollback,
+                        &f.scrollback,
+                        false,
+                    ),
+                    widget::text::caption(fl!("so-scrollback-hint")).into(),
                 ]
             }
             Some(Category::Log) => vec![
