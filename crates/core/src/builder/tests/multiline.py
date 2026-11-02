@@ -33,5 +33,5 @@ while False:
 
 def _host_1(tab, host):
     # per host
-    run(tab, 'uptime')
+    run('uptime', tab=tab)
 each_host(hosts, _host_1, parallel=True, limit=5)

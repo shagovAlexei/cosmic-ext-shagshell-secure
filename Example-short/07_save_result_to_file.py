@@ -13,7 +13,7 @@ command = arg(0, "ls -l")
 folder = os.path.expanduser("~/ShagShellResults")
 os.makedirs(folder, exist_ok=True)
 
-output = run(None, command, timeout=60)
+output = run(command, timeout=60)
 
 # EN: keep letters and digits in the file name / RU: в имени файла оставляем буквы и цифры
 safe = re.sub(r"\W+", "_", command).strip("_") or "command"

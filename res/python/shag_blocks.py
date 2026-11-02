@@ -4,6 +4,7 @@ A script made with them starts with `from shag_blocks import *`. ShagShell keeps
 ~/.config/shagshell/scripts (and finds it from any folder); for SecureCRT put it next to the script.
 """
 import builtins
+import functools
 import os
 import threading
 import time
@@ -31,7 +32,20 @@ def _tab(tab):
     return crt.GetScriptTab() if tab is None else tab
 
 
-def prompt(tab=None, timeout=60):
+def _tab_first(f):
+    """`tab` went last in 0.127; a call written before, with the tab first (`run(None, cmd)`,
+    `run(tab, cmd)`, `log_to(tab, path)`, `prompt(tab)`), still works."""
+    @functools.wraps(f)
+    def g(*a, **kw):
+        if a and (a[0] is None or hasattr(a[0], "Screen")):
+            kw["tab"] = a[0]
+            a = a[1:]
+        return f(*a, **kw)
+    return g
+
+
+@_tab_first
+def prompt(timeout=60, tab=None):
     """The prompt the tab shows, once the login is over: text on the cursor's row and the cursor
     still for a second (askpass, host key, MOTD and slow links take time)."""
     s = _tab(tab).Screen
@@ -57,13 +71,14 @@ def _read(tab, text, timeout):
     return tab.Screen.ReadString(text, timeout) or None
 
 
-def run(tab, cmd, timeout=30, until=None):
+@_tab_first
+def run(cmd, timeout=30, until=None, tab=None):
     """Types `cmd` and Enter, waits for the prompt again; the output (without the echoed command
     and the prompt). Written to the tab's `log_to` file too. `tab` None: the script's tab.
     A command that changes the prompt (enable, conf t, cd): `until` is the text to wait for
     instead (`'#'`). Not seen in `timeout` s: TimeoutError (the host is left, not the next one)."""
     tab = _tab(tab)
-    p = prompt(tab, timeout)
+    p = prompt(timeout, tab)
     tab.Screen.Send(cmd + "\r")
     tab.Screen.WaitForString("\n", timeout)
     wait = until or p
@@ -83,7 +98,8 @@ def read_list(path):
         return [l.strip() for l in f if l.strip() and not l.lstrip().startswith("#")]
 
 
-def log_to(tab, path):
+@_tab_first
+def log_to(path, tab=None):
     """The commands `run` sends on this tab and their output go to `path` from now on.
     In the name: %S the tab's title, %Y %M %D the date, %h %m %s the time."""
     tab = _tab(tab)

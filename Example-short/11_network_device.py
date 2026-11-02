@@ -22,14 +22,14 @@ device = p.rstrip(">#") or "device"
 if p.endswith(">"):                    # EN: user mode -> privileged / RU: пользовательский -> привилегированный
     password = ask("enable password:", "Example 11", "", True)
     try:
-        run(None, "enable", until="assword:")
-        run(None, password, until="#")
+        run("enable", until="assword:")
+        run(password, until="#")
     except TimeoutError:
         printbox("enable failed / не удалось войти в enable")
         stop()
 
-run(None, "terminal length 0")         # EN: no "--More--" / RU: без "--More--"
-config = run(None, "show running-config", timeout=120)
+run("terminal length 0")               # EN: no "--More--" / RU: без "--More--"
+config = run("show running-config", timeout=120)
 
 path = os.path.expanduser("~/%s_%s.cfg" % (device, datetime.date.today().isoformat()))
 with open(path, "w", encoding="utf-8") as f:

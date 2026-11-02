@@ -9,7 +9,7 @@ from shag_blocks import *
 
 LIMIT = 80          # EN: percent / RU: проценты
 
-text = run(None, "df -h")
+text = run("df -h")
 
 # EN: A line looks like "/dev/sda1  50G  40G  10G  80% /". Group 1 = device, 2 = percent, 3 = mount.
 # RU: Строка выглядит как "/dev/sda1  50G  40G  10G  80% /". Группа 1 - устройство, 2 - проценты, 3 - точка монтирования.

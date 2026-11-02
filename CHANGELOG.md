@@ -2,6 +2,9 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.127.0 — 2026-11-03
+- feat: short blocks take `tab` last, `None` = the script's tab: `run(cmd, timeout=30, until=None, tab=None)`, `log_to(path, tab=None)`, `prompt(timeout=60, tab=None)` (`run('enable', until='assword:')`); a call with the tab first, written before (`run(None, cmd)`, `run(tab, cmd)`, `log_to(tab, path)`), still works; a block dropped into «For each host» gets `tab=tab`; examples and templates use the new order
+
 ## 0.126.0 — 2026-11-02
 - feat: 23 more short blocks for the long `crt` calls — `send`, `send_keys`, `wait_for`, `wait_any`, `clear`, `script_tab`, `all_tabs`, `connected`, `activate`, `status`, `log_text`, `choose`, `pick_file`, `arg`, `args`, `stop`, `last_error`, `new_session`, `lock`, `unlock`, `upload`, `download`, `pause`; in the Builder's palette and «Frequent» (`send` / `wait_for` / `pause` instead of `Screen.Send` / `WaitForString` / `Sleep`); `Example-short/` uses no `crt.…` call any more
 - fix: `examples/14_pre_script.py` used `ICON_WARNING` (crt.py has `ICON_WARN`): a host that did not answer ended the pre-script with a NameError instead of the question

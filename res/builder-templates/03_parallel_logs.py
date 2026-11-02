@@ -7,8 +7,8 @@ commands = read_list('~/commands.txt')
 
 
 def _host_1(tab, host):
-    log_to(tab, '~/logs/%S_%Y%M%D.log')
+    log_to('~/logs/%S_%Y%M%D.log', tab=tab)
     for cmd in commands:
-        run(tab, cmd)
+        run(cmd, tab=tab)
 each_host(hosts, _host_1, parallel=True, limit=10)
 crt.Dialog.MessageBox('Готово, логи в ~/logs / Done, the logs are in ~/logs')
