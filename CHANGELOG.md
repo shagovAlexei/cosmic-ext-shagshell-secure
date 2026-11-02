@@ -2,6 +2,9 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.124.0 — 2026-11-02
+- feat: Script Builder palette — «Big blocks» and «Short blocks» are one group, «Short blocks»: every `shag_blocks` command (run, prompt, read_list, log_to, append_file, printbox, ask, connect, each_host…)
+
 ## 0.123.1 — 2026-11-02
 - fix: File → Import from SecureCRT… — a `RUN` button's `C:\…` script not found under wine is looked for on a mounted Windows disk (`/media/$USER/*`, `/run/media/$USER/*`, `/mnt/*`), scripts found nowhere are named in the report; after the import the Button Bar keeps the bar that was picked (the new bars sorted before it showed another one)
 

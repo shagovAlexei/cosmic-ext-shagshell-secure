@@ -37,8 +37,7 @@ const FREQUENT: [&str; 15] = [
     "Screen.WaitForString",
     "Sleep",
 ];
-const GROUPS: [&str; 10] = [
-    "blocks",
+const GROUPS: [&str; 9] = [
     "Screen",
     "Session",
     "Dialog",
@@ -1376,7 +1375,7 @@ impl BuilderView {
             false => vec![],
         };
         col = col.extend(section("frequent", fl!("builder-frequent"), frequent));
-        let short: Vec<Item> = short_entries()
+        let short: Vec<Item> = catalog::short_blocks()
             .filter(|e| entry_hit(e))
             .map(Item::Entry)
             .collect();
@@ -1384,14 +1383,10 @@ impl BuilderView {
         for g in GROUPS {
             let items: Vec<Item> = CATALOG
                 .iter()
-                .filter(|e| e.group() == g && !e.is_short() && entry_hit(e))
+                .filter(|e| e.group() == g && entry_hit(e))
                 .map(Item::Entry)
                 .collect();
-            let title = match g {
-                "blocks" => fl!("builder-big"),
-                g => g.to_string(),
-            };
-            col = col.extend(section(g, title, items));
+            col = col.extend(section(g, g.to_string(), items));
         }
         let stmts: Vec<Item> = STATEMENTS
             .iter()
@@ -2079,13 +2074,6 @@ fn field_id(id: TabId, pos: &Pos, f: F) -> widget::Id {
     widget::Id::new(format!("builder-{id}-{pos:?}-{f:?}"))
 }
 
-/// A catalog entry as the palette and the tape name it: a big block by its words, a `crt`
-/// member by its path.
-/// The short blocks in `catalog::SHORT`'s order.
-fn short_entries() -> impl Iterator<Item = &'static Entry> {
-    (catalog::SHORT.iter()).filter_map(|p| CATALOG.iter().find(|e| e.path == *p))
-}
-
 fn found(q: &str, label: &str, help: &str) -> bool {
     q.is_empty() || label.to_lowercase().contains(q) || help.to_lowercase().contains(q)
 }
@@ -2102,12 +2090,10 @@ fn stmt_found(q: &str, k: &str) -> bool {
 /// What Enter in the search adds: the first item found, in the palette's order.
 fn first_found(q: &str) -> Option<Item> {
     let q = q.to_lowercase();
-    let short = short_entries();
-    let rest = GROUPS.iter().flat_map(|g| {
-        CATALOG
-            .iter()
-            .filter(move |e| e.group() == *g && !e.is_short())
-    });
+    let short = catalog::short_blocks();
+    let rest = GROUPS
+        .iter()
+        .flat_map(|g| CATALOG.iter().filter(move |e| e.group() == *g));
     (short
         .chain(rest)
         .find(|e| entry_found(&q, e))
@@ -2120,6 +2106,8 @@ fn first_found(q: &str) -> Option<Item> {
     })
 }
 
+/// A catalog entry as the palette and the tape name it: a big block by its words, a `crt`
+/// member by its path.
 fn entry_label(e: &Entry) -> String {
     match e.path {
         "blocks.prompt" => fl!("block-prompt"),
