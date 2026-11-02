@@ -106,8 +106,84 @@ pub const EXAMPLES: &[(&str, &str)] = &[
     ("README.md", include_str!("../../../Example/README.md")),
 ];
 
-/// Writes `LIB` into `scripts/.lib` (when it differs) and `EXAMPLES` into `scripts/examples`
-/// (when missing).
+/// `scripts/examples-short/`: `Example-short/` of the repository (the same scripts in short blocks).
+pub const EXAMPLES_SHORT: &[(&str, &str)] = &[
+    (
+        "01_dialogs_and_arguments.py",
+        include_str!("../../../Example-short/01_dialogs_and_arguments.py"),
+    ),
+    (
+        "02_send_and_read.py",
+        include_str!("../../../Example-short/02_send_and_read.py"),
+    ),
+    (
+        "03_connect_saved_session.py",
+        include_str!("../../../Example-short/03_connect_saved_session.py"),
+    ),
+    (
+        "04_many_hosts_to_file.py",
+        include_str!("../../../Example-short/04_many_hosts_to_file.py"),
+    ),
+    (
+        "05_parse_output.py",
+        include_str!("../../../Example-short/05_parse_output.py"),
+    ),
+    (
+        "06_output_to_clipboard.py",
+        include_str!("../../../Example-short/06_output_to_clipboard.py"),
+    ),
+    (
+        "07_save_result_to_file.py",
+        include_str!("../../../Example-short/07_save_result_to_file.py"),
+    ),
+    (
+        "08_send_to_all_tabs.py",
+        include_str!("../../../Example-short/08_send_to_all_tabs.py"),
+    ),
+    (
+        "09_auto_responder.py",
+        include_str!("../../../Example-short/09_auto_responder.py"),
+    ),
+    (
+        "10_comment_in_log.py",
+        include_str!("../../../Example-short/10_comment_in_log.py"),
+    ),
+    (
+        "11_network_device.py",
+        include_str!("../../../Example-short/11_network_device.py"),
+    ),
+    (
+        "12_dialogs_gallery.py",
+        include_str!("../../../Example-short/12_dialogs_gallery.py"),
+    ),
+    (
+        "13_pick_file_and_hosts.py",
+        include_str!("../../../Example-short/13_pick_file_and_hosts.py"),
+    ),
+    (
+        "14_pre_script.py",
+        include_str!("../../../Example-short/14_pre_script.py"),
+    ),
+    (
+        "15_new_session.py",
+        include_str!("../../../Example-short/15_new_session.py"),
+    ),
+    (
+        "16_scheduled.py",
+        include_str!("../../../Example-short/16_scheduled.py"),
+    ),
+    (
+        "17_transfer.py",
+        include_str!("../../../Example-short/17_transfer.py"),
+    ),
+    (
+        "README.md",
+        include_str!("../../../Example-short/README.md"),
+    ),
+];
+
+/// Writes `LIB` into `scripts/.lib` (when it differs), `EXAMPLES` / `EXAMPLES_SHORT` / `TEMPLATES`
+/// into their folders (when missing).
 pub fn install(scripts: &Path) -> std::io::Result<()> {
     let lib = scripts.join(".lib");
     std::fs::create_dir_all(&lib)?;
@@ -121,7 +197,11 @@ pub fn install(scripts: &Path) -> std::io::Result<()> {
     if std::fs::read_to_string(&blocks).ok().as_deref() != Some(BLOCKS) {
         std::fs::write(blocks, BLOCKS)?;
     }
-    for (dir, files) in [("examples", EXAMPLES), ("templates", TEMPLATES)] {
+    for (dir, files) in [
+        ("examples", EXAMPLES),
+        ("examples-short", EXAMPLES_SHORT),
+        ("templates", TEMPLATES),
+    ] {
         let d = scripts.join(dir);
         std::fs::create_dir_all(&d)?;
         for (name, text) in files {
@@ -192,13 +272,29 @@ mod tests {
 
     #[test]
     fn examples_cover_repo() {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../Example");
-        let mut repo: Vec<String> = std::fs::read_dir(dir)
-            .unwrap()
-            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
-            .collect();
-        repo.sort();
-        let ours: Vec<&str> = EXAMPLES.iter().map(|(n, _)| *n).collect();
-        assert_eq!(ours, repo);
+        for (dir, files) in [("Example", EXAMPLES), ("Example-short", EXAMPLES_SHORT)] {
+            let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../..")
+                .join(dir);
+            let mut repo: Vec<String> = std::fs::read_dir(dir)
+                .unwrap()
+                .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+                .collect();
+            repo.sort();
+            let ours: Vec<&str> = files.iter().map(|(n, _)| *n).collect();
+            assert_eq!(ours, repo);
+        }
+    }
+
+    #[test]
+    fn install_writes_short_examples() {
+        let d = tempfile::tempdir().unwrap();
+        install(d.path()).unwrap();
+        for (n, text) in EXAMPLES_SHORT {
+            assert_eq!(
+                std::fs::read_to_string(d.path().join("examples-short").join(n)).unwrap(),
+                *text
+            );
+        }
     }
 }

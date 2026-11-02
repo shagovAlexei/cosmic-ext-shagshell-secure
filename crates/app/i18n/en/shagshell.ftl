@@ -843,6 +843,7 @@ builder-no-sessions = No saved sessions
 builder-from-template = From a template ▾
 builder-group-templates = Templates
 builder-group-examples = Examples
+builder-group-examples-short = Examples (short blocks)
 builder-no-templates = No templates in ~/.config/shagshell/scripts/templates
 builder-save-template = Save as template…
 block-prompt = Wait for the prompt

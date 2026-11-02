@@ -8,6 +8,8 @@ Every script starts with a header: what it does, how to run it, what differs fro
 Hosts, paths and names in the examples are placeholders: change them to yours.
 Most examples need an open terminal tab (the script works on the tab it was started from) or a
 saved session (see `03_connect_saved_session.py`).
+The same scripts written with the Script Builder's short blocks (`run`, `ask`, `printbox`…) are in
+`examples-short/` next to this folder.
 
 **RU.** Python-скрипты для ShagShell Secure. Они используют тот же объект `crt`, что и SecureCRT,
 поэтому большинство запускается и в SecureCRT с небольшими правками (они указаны в шапке каждого
@@ -17,6 +19,8 @@ saved session (see `03_connect_saved_session.py`).
 Хосты, пути и имена в примерах условные: подставьте свои.
 Большинству примеров нужна открытая вкладка-терминал (скрипт работает с той вкладкой, из которой
 запущен) или сохранённая сессия (см. `03_connect_saved_session.py`).
+Те же скрипты на коротких блоках конструктора (`run`, `ask`, `printbox`…) лежат рядом, в папке
+`examples-short/`.
 
 | File | What it shows / Что показывает |
 |---|---|
