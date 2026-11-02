@@ -10,21 +10,21 @@
 #     Запуск: shagshell --script 03_connect_saved_session.py "Servers/web1"
 from shag_blocks import *
 
-name = crt.Arguments[0] if len(crt.Arguments) else ask("Session / Сессия:", "Example 03")
+name = arg(0) or ask("Session / Сессия:", "Example 03")
 if name == "":
-    crt.Quit()
+    stop()
 
 try:
     tab = connect(name)              # EN: a new tab / RU: новая вкладка
 except ScriptError:
-    printbox("Cannot open: " + crt.GetLastErrorMessage(), "Example 03")
-    crt.Quit()
+    printbox("Cannot open: " + last_error(), "Example 03")
+    stop()
 
 try:
     result = run(tab, "hostname; uptime", timeout=60)
 except TimeoutError:
     printbox("No prompt / Приглашения нет")
-    crt.Quit()
+    stop()
 printbox(result, "Example 03: " + name)
 
 disconnect(tab)

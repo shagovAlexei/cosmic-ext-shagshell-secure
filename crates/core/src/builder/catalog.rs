@@ -767,6 +767,261 @@ pub static CATALOG: &[Entry] = &[
         ],
         "each_host(hosts, check)",
     ),
+    m(
+        "blocks.send",
+        &[p("text", Text), d("tab", Expr, "None")],
+        "",
+        [
+            "Types a line and Enter, without waiting (short for Screen.Send(text + '\\r')).",
+            "Печатает строку и Enter, не ожидая (коротко от Screen.Send(text + '\\r')).",
+        ],
+        "send('ls -l')",
+    ),
+    m(
+        "blocks.send_keys",
+        &[p("text", Text), d("tab", Expr, "None")],
+        "",
+        [
+            "Types the text as it is, no Enter (short for Screen.SendKeys).",
+            "Печатает текст как есть, без Enter (коротко от Screen.SendKeys).",
+        ],
+        "send_keys('y')",
+    ),
+    m(
+        "blocks.wait_for",
+        &[
+            p("text", Text),
+            d("timeout", Number, "0"),
+            d("tab", Expr, "None"),
+        ],
+        "bool",
+        [
+            "Waits for text in the output; False after timeout s (0: no limit) (short for Screen.WaitForString).",
+            "Ждёт text в выводе; False через timeout с (0 — без предела) (коротко от Screen.WaitForString).",
+        ],
+        "wait_for('#', 10)",
+    ),
+    m(
+        "blocks.wait_any",
+        &[
+            p("texts", Expr),
+            d("timeout", Number, "0"),
+            d("tab", Expr, "None"),
+        ],
+        "int",
+        [
+            "Waits for one of the texts; its number from 1, 0 after timeout (short for Screen.WaitForStrings).",
+            "Ждёт одну из строк; её номер с 1, 0 — таймаут (коротко от Screen.WaitForStrings).",
+        ],
+        "n = wait_any(['$ ', '# '], 10)",
+    ),
+    m(
+        "blocks.clear",
+        &[d("tab", Expr, "None")],
+        "",
+        [
+            "Clears the tab's screen (short for Screen.Clear).",
+            "Очищает экран вкладки (коротко от Screen.Clear).",
+        ],
+        "clear()",
+    ),
+    m(
+        "blocks.script_tab",
+        &[],
+        "Tab",
+        [
+            "The tab the script runs on (short for GetScriptTab).",
+            "Вкладка, на которой запущен скрипт (коротко от GetScriptTab).",
+        ],
+        "tab = script_tab()",
+    ),
+    m(
+        "blocks.all_tabs",
+        &[],
+        "list",
+        [
+            "Every tab, left to right (short for GetTabCount + GetTab).",
+            "Все вкладки слева направо (коротко от GetTabCount + GetTab).",
+        ],
+        "for tab in all_tabs(): send('uptime', tab)",
+    ),
+    m(
+        "blocks.connected",
+        &[d("tab", Expr, "None")],
+        "bool",
+        [
+            "Whether the tab is connected (short for Session.Connected).",
+            "Подключена ли вкладка (коротко от Session.Connected).",
+        ],
+        "if connected(tab): send('exit', tab)",
+    ),
+    m(
+        "blocks.activate",
+        &[p("tab", Expr)],
+        "",
+        [
+            "Brings the tab to the front (short for Tab.Activate).",
+            "Делает вкладку активной (коротко от Tab.Activate).",
+        ],
+        "activate(tab)",
+    ),
+    m(
+        "blocks.status",
+        &[p("text", Text), d("tab", Expr, "None")],
+        "",
+        [
+            "Text in the status bar (short for Session.SetStatusText).",
+            "Текст в строке состояния (коротко от Session.SetStatusText).",
+        ],
+        "status('backup done')",
+    ),
+    m(
+        "blocks.log_text",
+        &[p("text", Text), d("tab", Expr, "None")],
+        "str",
+        [
+            "Writes text into the tab's session log, starting the log if it is off; the log file (short for Session.Log + LogText).",
+            "Пишет text в лог сессии вкладки, включая лог, если он выключен; возвращает файл лога (коротко от Session.Log + LogText).",
+        ],
+        "log_text('--- before the upgrade ---')",
+    ),
+    m(
+        "blocks.choose",
+        &[
+            p("message", Text),
+            p("items", Expr),
+            d("title", Text, "''"),
+            d("default", Number, "0"),
+            d("multi", Bool, "False"),
+        ],
+        "str",
+        [
+            "A list to choose from: the item, a list of items when multi, None if cancelled (short for Dialog.List).",
+            "Список для выбора: пункт, при multi — список пунктов, None — отмена (коротко от Dialog.List).",
+        ],
+        "host = choose('Server:', ['web-01', 'db-01'])",
+    ),
+    m(
+        "blocks.pick_file",
+        &[
+            d("title", Text, "''"),
+            d("filter", Text, "''"),
+            more(d("button", Text, "''")),
+            more(d("default", File, "''")),
+        ],
+        "str",
+        [
+            "A file chosen in a dialog, \"\" when cancelled; filter: 'Text (*.txt)|*.txt' (short for Dialog.FileOpenDialog).",
+            "Файл, выбранный в диалоге, \"\" — отмена; filter: 'Text (*.txt)|*.txt' (коротко от Dialog.FileOpenDialog).",
+        ],
+        "path = pick_file('Commands', 'Text (*.txt)|*.txt')",
+    ),
+    m(
+        "blocks.arg",
+        &[p("n", Number), d("default", Text, "''")],
+        "str",
+        [
+            "The script's argument n (from 0), default when there are fewer (short for crt.Arguments[n]).",
+            "Аргумент скрипта номер n (с 0), default — если их меньше (коротко от crt.Arguments[n]).",
+        ],
+        "host = arg(0, 'router1')",
+    ),
+    m(
+        "blocks.args",
+        &[],
+        "list",
+        [
+            "Every argument of the script (short for crt.Arguments).",
+            "Все аргументы скрипта (коротко от crt.Arguments).",
+        ],
+        "for host in args(): connect(host)",
+    ),
+    m(
+        "blocks.stop",
+        &[],
+        "",
+        [
+            "Ends the script here (short for crt.Quit).",
+            "Завершает скрипт здесь (коротко от crt.Quit).",
+        ],
+        "stop()",
+    ),
+    m(
+        "blocks.last_error",
+        &[],
+        "str",
+        [
+            "The last error's text (short for GetLastErrorMessage).",
+            "Текст последней ошибки (коротко от GetLastErrorMessage).",
+        ],
+        "printbox(last_error())",
+    ),
+    m(
+        "blocks.new_session",
+        &[
+            p("name", Text),
+            p("host", Text),
+            d("user", Text, "''"),
+            d("port", Number, "22"),
+            d("folder", Text, "''"),
+        ],
+        "str",
+        [
+            "Saves a new SSH session (no password); its path for connect (short for Session.Create).",
+            "Сохраняет новую SSH-сессию (без пароля); возвращает путь для connect (коротко от Session.Create).",
+        ],
+        "path = new_session('web1', '10.0.0.5', 'admin')",
+    ),
+    m(
+        "blocks.lock",
+        &[d("tab", Expr, "None")],
+        "",
+        [
+            "The user can no longer type into the tab until unlock or the script's end (short for Session.Lock).",
+            "Пользователь не может печатать во вкладку до unlock или конца скрипта (коротко от Session.Lock).",
+        ],
+        "lock()",
+    ),
+    m(
+        "blocks.unlock",
+        &[d("tab", Expr, "None")],
+        "",
+        [
+            "Lets the user type into the tab again (short for Session.Unlock).",
+            "Снова разрешает печатать во вкладку (коротко от Session.Unlock).",
+        ],
+        "unlock()",
+    ),
+    m(
+        "blocks.upload",
+        &[p("local", File), d("remote", Text, "''")],
+        "",
+        [
+            "A file to the server over the script tab's SFTP (remote: a name, a folder, or empty = home) (short for FileTransfer.Upload).",
+            "Файл на сервер по SFTP вкладки скрипта (remote: имя, папка или пусто — домашняя) (коротко от FileTransfer.Upload).",
+        ],
+        "upload('~/backup.cfg', '/tmp/')",
+    ),
+    m(
+        "blocks.download",
+        &[p("remote", Text), d("local", File, "''")],
+        "",
+        [
+            "A file from the server over the script tab's SFTP (local: empty = ~/Downloads) (short for FileTransfer.Download).",
+            "Файл с сервера по SFTP вкладки скрипта (local: пусто — ~/Downloads) (коротко от FileTransfer.Download).",
+        ],
+        "download('/etc/hostname')",
+    ),
+    m(
+        "blocks.pause",
+        &[p("ms", Number)],
+        "",
+        [
+            "Waits ms milliseconds (short for crt.Sleep).",
+            "Ждёт ms миллисекунд (коротко от crt.Sleep).",
+        ],
+        "pause(1000)",
+    ),
 ];
 
 /// The groups whose members are reached through any object holding them (`tab.Screen.Send`).
@@ -823,6 +1078,71 @@ mod tests {
         let all = CATALOG.iter().filter(|e| e.path.starts_with("blocks."));
         assert_eq!(short, all.map(|e| e.path).collect::<Vec<_>>());
         assert!(short.contains(&"blocks.run") && short.contains(&"blocks.printbox"));
+    }
+
+    #[test]
+    fn short_blocks_call_crt() {
+        use std::process::Command;
+        if Command::new("python3").arg("-V").output().is_err() {
+            return;
+        }
+        // A fake `crt` that records the calls; the short blocks must make the long ones.
+        const SNIPPET: &str = r##"
+import builtins, sys
+sys.path.insert(0, sys.argv[1])
+calls = []
+class Rec:
+    def __init__(self, name): self._n = name
+    def __getattr__(self, a):
+        return Rec(self._n + "." + a)
+    def __call__(self, *a):
+        calls.append((self._n,) + a)
+        return {"crt.GetTabCount": 2, "crt.Screen.WaitForStrings": 2}.get(self._n)
+class Tab:
+    def __init__(self, n):
+        self.Screen, self.Session = Rec("tab%d.Screen" % n), Rec("tab%d.Session" % n)
+        self.Session.LogFileName = ""
+        self.Session.Connected = n == 1
+class Crt(Rec):
+    Arguments = ["a", "b"]
+    def GetTab(self, n): return Tab(n)
+    def GetScriptTab(self): return Tab(0)
+crt = builtins.crt = Crt("crt")
+import shag_blocks as b
+b._crt = None
+t1 = crt.GetTab(1)
+b.send("ls"); b.send("ls", t1)
+assert ("tab0.Screen.Send", "ls\r") in calls and ("tab1.Screen.Send", "ls\r") in calls, calls
+assert [t.Session.Connected for t in b.all_tabs()] == [True, False]
+assert b.connected(t1) and not b.connected()
+assert b.arg(1) == "b" and b.arg(5, "x") == "x" and b.args() == ["a", "b"]
+b.log_text("hi")
+assert ("tab0.Session.Log", True, True) in calls and ("tab0.Session.LogText", "hi") in calls, calls
+calls.clear()
+b.wait_any(["$ ", "# "], 5)
+b.choose("m", ["x"]); b.pick_file("t", "f")
+b.new_session("n", "h"); b.upload("l"); b.download("r"); b.pause(10)
+assert calls == [
+    ("tab0.Screen.WaitForStrings", ["$ ", "# "], 5),
+    ("crt.Dialog.List", "m", "", ["x"], 0, False),
+    ("crt.Dialog.FileOpenDialog", "t", "", "", "f"),
+    ("crt.Session.Create", "n", "h", "", 22, ""),
+    ("crt.FileTransfer.Upload", "l", ""),
+    ("crt.FileTransfer.Download", "r", ""),
+    ("crt.Sleep", 10),
+], calls
+try:
+    b.stop()
+    assert False
+except SystemExit:
+    pass
+"##;
+        let o = Command::new("python3")
+            .args(["-I", "-c", SNIPPET])
+            .arg(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../res/python"))
+            .output()
+            .unwrap();
+        assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
     }
 
     #[test]

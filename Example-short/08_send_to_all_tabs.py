@@ -1,25 +1,26 @@
 # 08_send_to_all_tabs.py (short blocks / короткие блоки)
 #
 # EN: Example/08 with short blocks. Sends one command to every connected tab, after a
-#     confirmation. Going over the tabs stays `crt` (no block for it).
+#     confirmation. all_tabs() = crt.GetTabCount + crt.GetTab, connected(tab) =
+#     tab.Session.Connected, send(text, tab) = tab.Screen.Send(text + "\r").
 # RU: Example/08 на коротких блоках. Отправляет одну команду во все подключённые вкладки после
-#     подтверждения. Перебор вкладок остаётся на `crt` (блока для него нет).
+#     подтверждения. all_tabs() = crt.GetTabCount + crt.GetTab, connected(tab) =
+#     tab.Session.Connected, send(текст, tab) = tab.Screen.Send(текст + "\r").
 from shag_blocks import *
 
-initial = active_tab()
+initial = script_tab()
 command = ask("Command for ALL tabs / Команда во ВСЕ вкладки:", "Example 08", "ls -al")
 if command == "":
-    crt.Quit()
+    stop()
 if printbox("Send to all tabs? / Отправить во все вкладки?\n\n" + command,
             "Example 08", BUTTON_YESNO) != IDYES:
-    crt.Quit()
+    stop()
 
 skipped = []
-for i in range(1, crt.GetTabCount() + 1):
-    tab = crt.GetTab(i)
-    if tab.Session.Connected:
-        tab.Screen.Send(command + "\r")
+for i, tab in enumerate(all_tabs(), 1):
+    if connected(tab):
+        send(command, tab)
     else:
         skipped.append(str(i))         # EN: not connected / RU: не подключена
-initial.Activate()
+activate(initial)
 printbox("Sent. Skipped tabs / Пропущены вкладки: " + (", ".join(skipped) or "-"), "Example 08")

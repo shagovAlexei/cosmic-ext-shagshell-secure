@@ -9,7 +9,7 @@ import os
 import re
 from shag_blocks import *
 
-command = crt.Arguments[0] if len(crt.Arguments) else "ls -l"
+command = arg(0, "ls -l")
 folder = os.path.expanduser("~/ShagShellResults")
 os.makedirs(folder, exist_ok=True)
 

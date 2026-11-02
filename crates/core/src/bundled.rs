@@ -287,6 +287,44 @@ mod tests {
     }
 
     #[test]
+    fn regression_examples_use_only_known_names() {
+        // Example/14 used ICON_WARNING, which crt.py does not have (ICON_WARN): a NameError.
+        use std::process::Command;
+        if Command::new("python3").arg("-V").output().is_err() {
+            return;
+        }
+        const SNIPPET: &str = r#"
+import ast, builtins, glob, sys
+root = sys.argv[1]
+sys.path.insert(0, root + "/res/python")
+import shag_blocks, crt
+known = set(dir(builtins)) | set(shag_blocks.__all__) | {"crt", "ScriptError"}
+known |= {n for n in dir(crt) if n.isupper()}
+bad = []
+for f in sorted(glob.glob(root + "/Example*/*.py")):
+    t = ast.parse(open(f, encoding="utf-8").read())
+    have = {a.asname or a.name for n in ast.walk(t) if isinstance(n, (ast.Import, ast.ImportFrom)) for a in n.names}
+    for n in ast.walk(t):
+        if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store):
+            have.add(n.id)
+        elif isinstance(n, ast.FunctionDef):
+            have.add(n.name)
+            have |= {a.arg for a in n.args.args}
+        elif isinstance(n, ast.ExceptHandler) and n.name:
+            have.add(n.name)
+    used = {n.id for n in ast.walk(t) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)}
+    bad += ["%s: %s" % (f, u) for u in sorted(used - have - known)]
+assert not bad, bad
+"#;
+        let o = Command::new("python3")
+            .args(["-I", "-c", SNIPPET])
+            .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."))
+            .output()
+            .unwrap();
+        assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    }
+
+    #[test]
     fn install_writes_short_examples() {
         let d = tempfile::tempdir().unwrap();
         install(d.path()).unwrap();

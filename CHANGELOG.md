@@ -2,6 +2,10 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.126.0 — 2026-11-02
+- feat: 23 more short blocks for the long `crt` calls — `send`, `send_keys`, `wait_for`, `wait_any`, `clear`, `script_tab`, `all_tabs`, `connected`, `activate`, `status`, `log_text`, `choose`, `pick_file`, `arg`, `args`, `stop`, `last_error`, `new_session`, `lock`, `unlock`, `upload`, `download`, `pause`; in the Builder's palette and «Frequent» (`send` / `wait_for` / `pause` instead of `Screen.Send` / `WaitForString` / `Sleep`); `Example-short/` uses no `crt.…` call any more
+- fix: `examples/14_pre_script.py` used `ICON_WARNING` (crt.py has `ICON_WARN`): a host that did not answer ended the pre-script with a NameError instead of the question
+
 ## 0.125.0 — 2026-11-02
 - feat: example scripts in short blocks — `Example-short/` (written to `~/.config/shagshell/scripts/examples-short/`): the 17 examples rewritten with `run`, `ask`, `printbox`, `connect`, `each_host`, `log_to`…; the Script Builder lists them under From a template ▾ → «Examples (short blocks)»
 
