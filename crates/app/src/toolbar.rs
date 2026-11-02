@@ -439,22 +439,7 @@ pub fn icon_names() -> Vec<String> {
     static NAMES: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
     NAMES
         .get_or_init(|| {
-            let home = std::env::home_dir();
-            let data_home = std::env::var_os("XDG_DATA_HOME")
-                .map(std::path::PathBuf::from)
-                .or_else(|| home.as_ref().map(|h| h.join(".local/share")));
-            let data_dirs = std::env::var("XDG_DATA_DIRS")
-                .ok()
-                .filter(|d| !d.is_empty())
-                .unwrap_or_else(|| "/usr/local/share:/usr/share".into());
-            let roots: Vec<_> = (home.map(|h| h.join(".icons")).into_iter())
-                .chain(data_home.map(|d| d.join("icons")))
-                .chain(
-                    data_dirs
-                        .split(':')
-                        .map(|d| std::path::Path::new(d).join("icons")),
-                )
-                .collect();
+            let roots = shagshell_core::icons::roots();
             let theme = cosmic::icon_theme::default();
             let mut names =
                 shagshell_core::icons::symbolic(&roots, &[&theme, "Adwaita", "hicolor"]);

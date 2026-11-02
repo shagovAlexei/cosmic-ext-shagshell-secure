@@ -447,6 +447,13 @@ impl Application for App {
         {
             note_tasks.push(cosmic::iced::window::maximize(id, true));
         }
+        // `update` only retitles on a change: without this, X11 taskbars show «Untitled window».
+        if let Some(id) = app.core.main_window_id() {
+            let title = app.core.window.header_title.clone();
+            note_tasks.push(cosmic::ApplicationExt::set_window_title(
+                &mut app, title, id,
+            ));
+        }
         (app, Task::batch(note_tasks))
     }
 

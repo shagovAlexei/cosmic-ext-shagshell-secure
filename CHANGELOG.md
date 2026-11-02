@@ -2,6 +2,9 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.121.1 — 2026-11-02
+- fix: X11 / other desktops (checked on Linux Lite 7.8, XFCE): no crash on old GPUs whose OpenGL has the flag but not the device iced asks for (Radeon RV710, GL 3.3 — the renderer probe now requests that device and picks the software renderer); without the COSMIC icon theme the icons come from Adwaita (minimize / maximize and most toolbar icons drew blank); the window has its title from the start («Untitled window» in X11 taskbars); `.deb` recommends `lrzsz`
+
 ## 0.121.0 — 2026-11-02
 - feat: Button Bar like SecureCRT's (spec 45): one full menu for a button and for the empty space (New / Edit / Move / Delete button, Manage buttons…, Copy / Paste button, Copy button bar, New / Rename / Delete / Duplicate bar, Manage bars…); Button Manager and Button Bar Manager windows (changes only on OK, a bar's order, «Sort alphabetically» kept in `buttonbars.toml`); every deletion asks first
 
