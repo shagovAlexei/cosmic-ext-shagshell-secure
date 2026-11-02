@@ -224,6 +224,7 @@ pub struct Config {
     /// The tab bar under the tabs' content (SecureCRT's «tabs at the bottom»).
     pub tabs_bottom: bool,
     /// Terminal → Appearance → Status Bar: the items, their order, seconds, alignment.
+    pub tab_look: shagshell_core::tab_icon::Look,
     pub status_bar: shagshell_core::status_items::Layout,
     /// Notes' font family ("" = the system's monospace) and size, px (0 = 14; `note_font_px`).
     pub note_font_family: String,
@@ -386,6 +387,7 @@ impl Default for Config {
             confirm_disconnect: true,
             closed_dialog: false,
             tabs_bottom: false,
+            tab_look: Default::default(),
             status_bar: Default::default(),
             note_buttons: shagshell_core::notes::default_buttons(),
             builder_buttons: shagshell_core::builder::bar::default_buttons(),

@@ -315,6 +315,7 @@ impl Application for App {
         let mut tabs = Tabs::default();
         tabs.set_sftp_prefs(&config);
         tabs.note_buttons = shagshell_core::notes::BAR.clean(&config.note_buttons);
+        tabs.look = config.tab_look.clone();
         tabs.builder_buttons = shagshell_core::builder::bar::BAR.clean(&config.builder_buttons);
         tabs.set_note_font(&config.note_font_family, config.note_font_px());
         tabs.set_log_prefs(&config);
@@ -1221,6 +1222,10 @@ impl App {
                     self.refresh_scripts();
                 }
                 self.tabs.set_sftp_prefs(&self.config);
+                if self.tabs.look != self.config.tab_look {
+                    self.tabs.look = self.config.tab_look.clone();
+                    self.tabs.retitle_all();
+                }
                 self.tabs.note_buttons =
                     shagshell_core::notes::BAR.clean(&self.config.note_buttons);
                 self.tabs.builder_buttons =

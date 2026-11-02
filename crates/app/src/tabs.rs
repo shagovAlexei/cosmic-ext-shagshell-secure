@@ -252,8 +252,8 @@ impl Tab {
     }
 
     /// What it is, in the colour of its state.
-    fn icon(&self) -> widget::Icon {
-        use shagshell_core::tab_icon::{Glyph, State, state, svg};
+    fn icon(&self, look: &shagshell_core::tab_icon::Look) -> widget::Icon {
+        use shagshell_core::tab_icon::{Glyph, State};
         let glyph = match (&self.body, &self.launch.protocol) {
             (Body::Note(_), _) => Glyph::Note,
             (Body::Builder(_), _) => Glyph::Console,
@@ -273,16 +273,21 @@ impl Tab {
         let st = match &self.body {
             Body::Note(v) if v.locked => State::Locked,
             Body::Note(_) | Body::Builder(_) | Body::Console => State::Plain,
-            Body::Sftp(v) => state(
+            Body::Sftp(v) => look.state(
                 v.connected || v.connecting(),
                 v.connected,
                 false,
                 false,
                 false,
             ),
-            Body::Terminal(_) => state(self.live(), self.seen, self.unread, self.quiet, locked),
+            Body::Terminal(_) => {
+                look.state(self.live(), self.seen, self.unread, self.quiet, locked)
+            }
         };
-        widget::icon(widget::icon::from_svg_bytes(svg(glyph, st).into_bytes())).size(16)
+        widget::icon(widget::icon::from_svg_bytes(
+            look.svg(glyph, st).into_bytes(),
+        ))
+        .size(16)
     }
 
     /// Its program runs (a terminal), or it is connected (SFTP).
@@ -479,6 +484,8 @@ pub struct Tabs {
     lock_ask: Option<LockAsk>,
     /// Config: the buttons a note's bar shows.
     pub note_buttons: Vec<String>,
+    /// Config: how a tab shows its state (colours, which states).
+    pub look: shagshell_core::tab_icon::Look,
     /// The Script Builder bar (`Config.builder_buttons`, made sound).
     pub builder_buttons: Vec<String>,
     /// Config: the notes' font family ("" = the system's monospace) and size.
@@ -783,7 +790,7 @@ impl Tabs {
 
     /// The 1 s clock: unread output that stopped `QUIET_SECS` ago turns its tab «quiet».
     pub fn tick(&mut self) {
-        let quiet = std::time::Duration::from_secs(shagshell_core::tab_icon::QUIET_SECS);
+        let quiet = std::time::Duration::from_secs(self.look.quiet_secs);
         let ids: Vec<TabId> = (self.tabs.iter())
             .filter(|(_, t)| t.unread && !t.quiet && t.alive && t.last_output.elapsed() >= quiet)
             .map(|(id, _)| *id)
@@ -873,7 +880,7 @@ impl Tabs {
                     kind,
                     title: t.title(),
                 };
-                (row, t.icon())
+                (row, t.icon(&self.look))
             })
             .collect()
     }
@@ -1985,7 +1992,8 @@ impl Tabs {
     }
 
     fn retitle(&mut self, id: TabId) {
-        let Some((title, icon)) = self.tabs.get(&id).map(|t| (t.title(), t.icon())) else {
+        let Some((title, icon)) = self.tabs.get(&id).map(|t| (t.title(), t.icon(&self.look)))
+        else {
             return;
         };
         let title = match self.starred.contains(&id) {
@@ -2846,7 +2854,14 @@ impl Tabs {
                 .button_spacing(6)
                 // As wide as their text (SecureCRT's «fit to label»), a long name cut at the end.
                 .width(Length::Shrink)
-                .maximum_button_width(240)
+                .minimum_button_width(match config.tab_look.width {
+                    0 => 76,
+                    w => w,
+                })
+                .maximum_button_width(match config.tab_look.width {
+                    0 => 240,
+                    w => w,
+                })
                 .on_activate(m(TabsMsg::Activate))
                 .on_close(m(TabsMsg::Close))
                 .on_middle_press(m(TabsMsg::Close))

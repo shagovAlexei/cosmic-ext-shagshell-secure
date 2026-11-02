@@ -2,6 +2,8 @@
 //! SFTP, note, console), drawn in the colour of its state. Full-colour SVG, so it looks the same
 //! under any icon theme.
 
+use serde::{Deserialize, Serialize};
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Glyph {
     Ssh,
@@ -153,7 +155,11 @@ pub fn colour(s: State) -> &'static str {
 
 /// The 16×16 SVG of `g` in the colour of `s` (a locked tab: purple, with a padlock).
 pub fn svg(g: Glyph, s: State) -> String {
-    let c = colour(s);
+    svg_in(g, s, colour(s))
+}
+
+/// `svg` in the colour `c` (`#rrggbb`) instead of the state's own.
+pub fn svg_in(g: Glyph, s: State, c: &str) -> String {
     // A screen with a ">_" prompt.
     let screen = format!(
         r#"<rect x="1" y="2" width="14" height="12" rx="2" fill="none" stroke="{c}" stroke-width="1.5"/><path d="M4 6l2.5 2L4 10M8 10.5h4" fill="none" stroke="{c}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>"#
@@ -284,6 +290,83 @@ pub fn svg(g: Glyph, s: State) -> String {
     )
 }
 
+/// Global Options → Tabs: how a tab shows its state. `Default` is the stock look.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Look {
+    /// `#rrggbb` per state, in `State::STYLED` order; a bad or empty one is the stock colour.
+    pub colours: [String; 6],
+    /// Off: every tab's icon is grey whatever its state.
+    pub indicator: bool,
+    pub show_output: bool,
+    pub show_quiet: bool,
+    pub show_locked: bool,
+    /// Seconds without output before `Quiet`.
+    pub quiet_secs: u64,
+    /// Tab width, px; 0: as wide as its label.
+    pub width: u16,
+}
+
+impl Default for Look {
+    fn default() -> Self {
+        Look {
+            colours: Default::default(),
+            indicator: true,
+            show_output: true,
+            show_quiet: true,
+            show_locked: true,
+            quiet_secs: QUIET_SECS,
+            width: 0,
+        }
+    }
+}
+
+impl State {
+    /// The states whose colour is set (Plain is not: notes have no connection).
+    pub const STYLED: [State; 6] = [
+        State::Connecting,
+        State::Connected,
+        State::Output,
+        State::Quiet,
+        State::Disconnected,
+        State::Locked,
+    ];
+}
+
+fn is_hex(c: &str) -> bool {
+    c.len() == 7 && c.starts_with('#') && c[1..].bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+impl Look {
+    pub fn colour(&self, s: State) -> String {
+        if !self.indicator {
+            return colour(State::Plain).into();
+        }
+        (State::STYLED.iter().position(|x| *x == s))
+            .map(|i| &self.colours[i])
+            .filter(|c| is_hex(c))
+            .map_or_else(|| colour(s).into(), |c| c.clone())
+    }
+
+    /// `state`, with the states the user hid shown as the one under them.
+    pub fn state(&self, alive: bool, seen: bool, unread: bool, quiet: bool, locked: bool) -> State {
+        match state(
+            alive,
+            seen,
+            unread,
+            quiet && self.show_quiet,
+            locked && self.show_locked,
+        ) {
+            State::Output if !self.show_output => State::Connected,
+            s => s,
+        }
+    }
+
+    pub fn svg(&self, g: Glyph, s: State) -> String {
+        svg_in(g, s, &self.colour(s))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -340,5 +423,34 @@ mod tests {
             svg(Glyph::Ssh, State::Locked),
             svg(Glyph::Ssh, State::Connecting)
         );
+    }
+
+    #[test]
+    fn a_look_recolours_and_hides_states() {
+        let mut l = Look::default();
+        assert_eq!(l.colour(State::Connected), colour(State::Connected));
+        l.colours[1] = "#112233".into();
+        l.colours[2] = "red".into(); // not hex: stock
+        assert_eq!(l.colour(State::Connected), "#112233");
+        assert_eq!(l.colour(State::Output), colour(State::Output));
+        assert!(l.svg(Glyph::Local, State::Connected).contains("#112233"));
+        l.show_output = false;
+        assert_eq!(l.state(true, true, true, false, false), State::Connected);
+        l.show_quiet = false; // quiet: shown as output (hidden too: connected)
+        assert_eq!(l.state(true, true, true, true, false), State::Connected);
+        l.show_locked = false;
+        assert_eq!(l.state(true, true, false, false, true), State::Connected);
+        assert_eq!(
+            l.state(false, true, false, false, true),
+            State::Disconnected
+        );
+        l.indicator = false;
+        assert_eq!(l.colour(State::Disconnected), colour(State::Plain));
+    }
+
+    #[test]
+    fn a_look_survives_an_old_config() {
+        let l: Look = serde_json::from_str("{}").unwrap();
+        assert_eq!(l, Look::default());
     }
 }

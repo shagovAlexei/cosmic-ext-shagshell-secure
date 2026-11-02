@@ -7,6 +7,7 @@ use cosmic::app::context_drawer::{self, ContextDrawer};
 use cosmic::widget::{self, settings};
 use shagshell_core::highlight::{Colour, Rule, Rules};
 use shagshell_core::status_items::{Item, Layout};
+use shagshell_core::tab_icon::Look;
 
 /// `separate`: passwords in a keyring of their own (`None`: not known yet / being changed).
 /// `reset_ask`: «Reset the menu» pressed, Yes / No shown.
@@ -429,6 +430,7 @@ pub fn view<'a>(
                 .on_press(Message::Toolbar(crate::toolbar::TbMsg::Open)),
         ));
     let status = status_section(config);
+    let tabs = tabs_section(config);
     // The menu (Tools → Customize Menu…): back to the stock one, asked once inline.
     let menu = settings::section()
         .title(fl!("options-menu"))
@@ -507,6 +509,7 @@ pub fn view<'a>(
         sessions.into(),
         dialogs.into(),
         toolbar.into(),
+        tabs.into(),
         status.into(),
         menu.into(),
         terminal.into(),
@@ -661,4 +664,113 @@ fn status_section(config: &Config) -> settings::Section<'_, Message> {
             widget::button::standard(fl!("toolbar-reset"))
                 .on_press(edit(|l| *l = Layout::default())),
         ))
+}
+
+const QUIET_CHOICES: [u64; 8] = [3, 5, 10, 15, 30, 60, 120, 300];
+const WIDTH_CHOICES: [u16; 9] = [0, 80, 100, 120, 160, 200, 240, 300, 400];
+
+/// Terminal → Tabs: the state colours (hex, the icon beside shows it), which states show, width.
+fn tabs_section(config: &Config) -> settings::Section<'_, Message> {
+    use shagshell_core::tab_icon::{Glyph, State};
+    let look = &config.tab_look;
+    let toggle = |on: bool, f: fn(&mut Look, bool)| {
+        let c = config.clone();
+        widget::toggler(on).on_toggle(move |on| {
+            let mut c = c.clone();
+            f(&mut c.tab_look, on);
+            Message::SetConfig(c)
+        })
+    };
+    let mut section = settings::section()
+        .title(fl!("options-tabs"))
+        .add(settings::flex_item(
+            fl!("tabs-indicator"),
+            toggle(look.indicator, |l, on| l.indicator = on),
+        ))
+        .add(settings::flex_item(
+            fl!("tabs-show-output"),
+            toggle(look.show_output, |l, on| l.show_output = on),
+        ))
+        .add(settings::flex_item(
+            fl!("tabs-show-quiet"),
+            toggle(look.show_quiet, |l, on| l.show_quiet = on),
+        ))
+        .add(settings::flex_item(
+            fl!("tabs-show-locked"),
+            toggle(look.show_locked, |l, on| l.show_locked = on),
+        ))
+        .add(settings::flex_item(
+            fl!("tabs-quiet-secs"),
+            widget::dropdown(
+                QUIET_CHOICES.map(|n| n.to_string()).to_vec(),
+                QUIET_CHOICES.iter().position(|n| *n == look.quiet_secs),
+                {
+                    let c = config.clone();
+                    move |i| {
+                        let mut c = c.clone();
+                        c.tab_look.quiet_secs = QUIET_CHOICES[i];
+                        Message::SetConfig(c)
+                    }
+                },
+            ),
+        ))
+        .add(settings::flex_item(
+            fl!("tabs-width"),
+            widget::dropdown(
+                WIDTH_CHOICES
+                    .map(|w| {
+                        if w == 0 {
+                            fl!("tabs-width-fit")
+                        } else {
+                            w.to_string()
+                        }
+                    })
+                    .to_vec(),
+                WIDTH_CHOICES.iter().position(|w| *w == look.width),
+                {
+                    let c = config.clone();
+                    move |i| {
+                        let mut c = c.clone();
+                        c.tab_look.width = WIDTH_CHOICES[i];
+                        Message::SetConfig(c)
+                    }
+                },
+            ),
+        ));
+    let names = [
+        fl!("tabs-state-connecting"),
+        fl!("tabs-state-connected"),
+        fl!("tabs-state-output"),
+        fl!("tabs-state-quiet"),
+        fl!("tabs-state-disconnected"),
+        fl!("tabs-state-locked"),
+    ];
+    for (i, (state, name)) in State::STYLED.into_iter().zip(names).enumerate() {
+        let c = config.clone();
+        let hex = widget::text_input(look.colour(state), look.colours[i].clone())
+            .on_input(move |v| {
+                let mut c = c.clone();
+                c.tab_look.colours[i] = v;
+                Message::SetConfig(c)
+            })
+            .width(cosmic::iced::Length::Fixed(110.0));
+        let swatch = widget::icon(widget::icon::from_svg_bytes(
+            look.svg(Glyph::Local, state).into_bytes(),
+        ))
+        .size(16);
+        section = section.add(settings::flex_item(
+            name,
+            widget::row::with_children(vec![swatch.into(), hex.into()])
+                .spacing(8)
+                .align_y(cosmic::iced::Alignment::Center),
+        ));
+    }
+    section.add(settings::flex_item(
+        fl!("tabs-reset"),
+        widget::button::standard(fl!("toolbar-reset")).on_press({
+            let mut c = config.clone();
+            c.tab_look = Look::default();
+            Message::SetConfig(c)
+        }),
+    ))
 }
