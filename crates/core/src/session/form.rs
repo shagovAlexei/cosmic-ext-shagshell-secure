@@ -50,6 +50,10 @@ pub struct Form {
     pub delete: crate::term_env::Delete,
     /// Lines, "" = the default.
     pub scrollback: String,
+    pub fit: crate::term_env::Fit,
+    /// Logical columns / rows, "" = the default.
+    pub cols: String,
+    pub rows: String,
     pub label: String,
     pub icon: String,
     pub script: String,
@@ -67,6 +71,8 @@ pub enum FormError {
     Forward(usize),
     Reconnect,
     Scrollback,
+    /// Columns or rows.
+    Size,
     Device,
     Baud,
 }
@@ -153,6 +159,9 @@ impl Form {
             term_colors: s.term.colors,
             backspace: s.term.backspace,
             delete: s.term.delete,
+            fit: s.term.fit,
+            cols: s.term.cols.map(|n| n.to_string()).unwrap_or_default(),
+            rows: s.term.rows.map(|n| n.to_string()).unwrap_or_default(),
             scrollback: s.term.scrollback.map(|n| n.to_string()).unwrap_or_default(),
             device: s.serial.device.clone(),
             baud: s.serial.baud.map(|n| n.to_string()).unwrap_or_default(),
@@ -245,6 +254,13 @@ impl Form {
                     .ok_or(FormError::Scrollback)?,
             ),
         };
+        let cells = |v: &str| match opt(v) {
+            None => Ok(None),
+            Some(n) => crate::term_env::parse_cells(&n)
+                .map(Some)
+                .ok_or(FormError::Size),
+        };
+        let (cols, rows) = (cells(&self.cols)?, cells(&self.rows)?);
         let extra = self.extra.trim().to_string();
         shlex::split(&extra).ok_or(FormError::Extra)?;
         Ok(Session {
@@ -280,6 +296,9 @@ impl Form {
                 colors: self.term_colors,
                 backspace: self.backspace,
                 delete: self.delete,
+                fit: self.fit,
+                cols,
+                rows,
                 scrollback,
             },
             label: self.label.trim().to_string(),
@@ -510,6 +529,29 @@ mod tests {
         assert_eq!(s.term.kind, crate::term_env::Kind::Vt100);
         assert_eq!(s.term.scrollback, Some(5000));
         assert_eq!(Form::from_session("n", &s).scrollback, "5000");
+        for (cols, rows) in [("0", ""), ("", "501"), ("x", "")] {
+            assert_eq!(
+                bad(Form {
+                    cols: cols.into(),
+                    rows: rows.into(),
+                    ..form("h")
+                }),
+                FormError::Size
+            );
+        }
+        let f = Form {
+            fit: crate::term_env::Fit::Font,
+            cols: "132".into(),
+            rows: "43".into(),
+            ..form("h")
+        };
+        let s = f.apply(&Session::default(), true).unwrap();
+        assert_eq!(s.term.cells(), (132, 43));
+        let back = Form::from_session("n", &s);
+        assert_eq!(
+            (back.fit, back.cols.as_str()),
+            (crate::term_env::Fit::Font, "132")
+        );
         let f = Form {
             backspace: crate::term_env::Backspace::Ctrl,
             ..form("h")
