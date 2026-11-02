@@ -48,6 +48,7 @@ pub struct Form {
     pub term_colors: crate::term_env::Colors,
     pub backspace: crate::term_env::Backspace,
     pub delete: crate::term_env::Delete,
+    pub alt_plain: bool,
     /// Lines, "" = the default.
     pub scrollback: String,
     pub fit: crate::term_env::Fit,
@@ -159,6 +160,7 @@ impl Form {
             term_colors: s.term.colors,
             backspace: s.term.backspace,
             delete: s.term.delete,
+            alt_plain: s.term.alt_plain,
             fit: s.term.fit,
             cols: s.term.cols.map(|n| n.to_string()).unwrap_or_default(),
             rows: s.term.rows.map(|n| n.to_string()).unwrap_or_default(),
@@ -296,6 +298,7 @@ impl Form {
                 colors: self.term_colors,
                 backspace: self.backspace,
                 delete: self.delete,
+                alt_plain: self.alt_plain,
                 fit: self.fit,
                 cols,
                 rows,
@@ -563,6 +566,7 @@ mod tests {
         );
         let f = Form {
             delete: crate::term_env::Delete::Del,
+            alt_plain: true,
             ..form("d")
         };
         let s = f.apply(&Session::default(), true).unwrap();
@@ -570,6 +574,7 @@ mod tests {
             Form::from_session("n", &s).delete,
             crate::term_env::Delete::Del
         );
+        assert!(Form::from_session("n", &s).alt_plain);
         assert_eq!(
             bad(Form {
                 reconnect_tries: "x".into(),

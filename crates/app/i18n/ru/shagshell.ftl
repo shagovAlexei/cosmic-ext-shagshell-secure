@@ -968,6 +968,7 @@ so-colors-true = Truecolor
 so-backspace = Backspace посылает
 so-backspace-del = Delete (^?)
 so-backspace-ctrl = Ctrl+H (^H)
+so-alt-meta = Alt как Meta (посылает ESC перед клавишей)
 so-delete = Delete посылает
 so-delete-esc = Escape-последовательность (ESC [ 3 ~)
 so-delete-del = Delete (^?)

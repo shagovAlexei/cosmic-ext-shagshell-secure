@@ -969,6 +969,7 @@ so-colors-true = True colour
 so-backspace = Backspace sends
 so-backspace-del = Delete (^?)
 so-backspace-ctrl = Ctrl+H (^H)
+so-alt-meta = Alt works as Meta (sends ESC before the key)
 so-delete = Delete sends
 so-delete-esc = Escape sequence (ESC [ 3 ~)
 so-delete-del = Delete (^?)
