@@ -106,6 +106,7 @@ pub enum SoMsg {
     Fit(usize),
     Delete(usize),
     AltMeta(bool),
+    MappedKeys,
     /// The icon: 0 = by protocol, else the n-th of `tab_icon::PICKABLE`.
     Icon(usize),
     /// «Забыть»: the session's saved secrets removed.
@@ -136,6 +137,8 @@ pub struct SessionOptions {
     parities: Vec<String>,
     flows: Vec<String>,
     first_id: widget::Id,
+    /// The Mapped Keys editor, shown in this window in place of the page.
+    pub mapped: Option<crate::keymap_editor::Editor>,
 }
 
 impl SessionOptions {
@@ -177,6 +180,7 @@ impl SessionOptions {
             error: None,
             password: Hidden(String::new()),
             first_id: widget::Id::unique(),
+            mapped: None,
             sets,
             labels,
             bars,
@@ -250,6 +254,20 @@ impl SessionOptions {
         r.ok()
     }
 
+    /// A Mapped Keys editor message: the keys go to the form as they change, Close ends it.
+    pub fn mapped_update(&mut self, m: crate::keymap_editor::KmMsg) {
+        let Some(ed) = self.mapped.as_mut() else {
+            return;
+        };
+        let out = ed.update(m);
+        if out.save {
+            self.form.term_keys = ed.keymap.keys.clone();
+        }
+        if out.close {
+            self.mapped = None;
+        }
+    }
+
     pub fn update(&mut self, msg: SoMsg) {
         let f = &mut self.form;
         match msg {
@@ -291,6 +309,11 @@ impl SessionOptions {
             SoMsg::TermKind(i) => f.term_kind = Kind::ALL.get(i).copied().unwrap_or_default(),
             SoMsg::Fit(i) => f.fit = Fit::ALL.get(i).copied().unwrap_or_default(),
             SoMsg::AltMeta(v) => f.alt_plain = !v,
+            SoMsg::MappedKeys => {
+                self.mapped = Some(crate::keymap_editor::Editor::for_session(
+                    f.term_keys.clone(),
+                ));
+            }
             SoMsg::Delete(i) => f.delete = Delete::ALL.get(i).copied().unwrap_or_default(),
             SoMsg::Backspace(i) => f.backspace = Backspace::ALL.get(i).copied().unwrap_or_default(),
             SoMsg::TermColors(i) => f.term_colors = Colors::ALL.get(i).copied().unwrap_or_default(),
@@ -545,6 +568,9 @@ impl SessionOptions {
                     widget::checkbox(!f.alt_plain)
                         .label(fl!("so-alt-meta"))
                         .on_toggle(move |v| m(SoMsg::AltMeta(v)))
+                        .into(),
+                    widget::button::standard(fl!("so-mapped-keys"))
+                        .on_press(m(SoMsg::MappedKeys))
                         .into(),
                     field(fl!("so-cols"), Field::Cols, &f.cols, false),
                     field(fl!("so-rows"), Field::Rows, &f.rows, false),

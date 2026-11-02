@@ -49,6 +49,8 @@ pub struct Form {
     pub backspace: crate::term_env::Backspace,
     pub delete: crate::term_env::Delete,
     pub alt_plain: bool,
+    /// Mapped Keys (edited in their own window, kept whole).
+    pub term_keys: Vec<crate::keymap::Binding>,
     /// Lines, "" = the default.
     pub scrollback: String,
     pub fit: crate::term_env::Fit,
@@ -161,6 +163,7 @@ impl Form {
             backspace: s.term.backspace,
             delete: s.term.delete,
             alt_plain: s.term.alt_plain,
+            term_keys: s.term.keys.clone(),
             fit: s.term.fit,
             cols: s.term.cols.map(|n| n.to_string()).unwrap_or_default(),
             rows: s.term.rows.map(|n| n.to_string()).unwrap_or_default(),
@@ -303,6 +306,7 @@ impl Form {
                 cols,
                 rows,
                 scrollback,
+                keys: crate::keymap::sanitize(&self.term_keys),
             },
             label: self.label.trim().to_string(),
             icon: self.icon.clone(),

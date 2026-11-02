@@ -432,6 +432,9 @@ ku-bad-host = The session's host name starts with “-”: not uploaded
 km-builtin-title = Built-in keys (✎ = changed)
 km-reset = Default key
 km-title = Keymap Editor
+km-session-title = Mapped Keys
+km-session-hint = Keys of this session only: they work in its tabs and win over the Keymap Editor's. Each runs what a Button Bar button runs; the terminal's keys (Ctrl+C…) cannot be taken.
+so-mapped-keys = Mapped Keys…
 km-edit-title = Key
 km-hint = Your own keys: each runs what a Button Bar button runs. Built-in keys (below) can be given another key; the terminal's (Ctrl+C…) cannot be taken.
 km-empty = No keys yet

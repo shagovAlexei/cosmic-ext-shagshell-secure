@@ -102,6 +102,8 @@ pub struct App {
     menu_reset_ask: bool,
     /// Each session's own Button Bar (`shown_bar`), emptied when sessions change.
     bar_cache: std::cell::RefCell<std::collections::HashMap<String, Option<String>>>,
+    /// The session whose Mapped Keys are in force (`keymap_editor::set_session`).
+    keys_for: Option<String>,
     /// Help → About is shown (a dialog: the context drawer is at least 344 px wide).
     about: bool,
     /// Help → Changelog shows.
@@ -376,6 +378,7 @@ impl Application for App {
             menu_edit: None,
             menu_reset_ask: false,
             bar_cache: Default::default(),
+            keys_for: None,
             restore: Vec::new(),
             about: false,
             changelog: false,
@@ -443,6 +446,18 @@ impl Application for App {
         // import…): its Button Bar is read again then, not on every frame.
         if !matches!(message, Message::Term(..)) {
             self.bar_cache.get_mut().clear();
+            // The active tab's session keys: when the tab changes or Session Options saved.
+            let active = self.tabs.active_session();
+            if active != self.keys_for
+                || matches!(message, Message::SessionOptions(SoMsg::Saved(..)))
+            {
+                let keys = (active.as_ref())
+                    .and_then(|id| self.sessions.store.get(id).ok())
+                    .map(|s| s.term.keys)
+                    .unwrap_or_default();
+                crate::keymap_editor::set_session(&keys);
+                self.keys_for = active;
+            }
         }
         self.sessions.right = self.config.session_manager_side == crate::config::Side::Right;
         self.sessions.cmd_right = self.config.command_manager_side == crate::config::Side::Right;
@@ -662,7 +677,10 @@ impl Application for App {
     fn view_window(&self, id: cosmic::iced::window::Id) -> Element<'_, Message> {
         let focused = self.core.focused_window() == Some(id);
         if let Some(o) = self.options.as_ref().filter(|o| o.window == id) {
-            return o.view(focused);
+            return match &o.mapped {
+                Some(ed) => ed.view(),
+                None => o.view(focused),
+            };
         }
         if self.scripts.win == Some(id)
             && let Some(v) = self.scripts.window_view(focused)
@@ -1700,7 +1718,19 @@ impl App {
             }
             // Esc in Session Options (no field took it): Cancel, as SecureCRT's dialogs.
             Message::Input(w, m) if self.options.as_ref().is_some_and(|o| o.window == w) => {
+                if matches!(*m, Message::KeyMap(_)) {
+                    return self.update(*m);
+                }
                 if is_escape(&m) {
+                    let editing = (self.options.as_ref())
+                        .and_then(|o| o.mapped.as_ref())
+                        .map(|k| k.editing());
+                    if let Some(editing) = editing {
+                        return self.keymap_dialog(match editing {
+                            true => crate::keymap_editor::KmMsg::Cancel,
+                            false => crate::keymap_editor::KmMsg::Close,
+                        });
+                    }
                     return self.session_options(SoMsg::Cancel);
                 }
             }
@@ -2732,6 +2762,13 @@ impl App {
 
     /// Tools → Keymap Editor…: the editor's messages; a change is saved and put in force.
     fn keymap_dialog(&mut self, m: crate::keymap_editor::KmMsg) -> Task<Message> {
+        // A session's Mapped Keys, open in its Session Options window: they go to that form.
+        if let Some(o) = self.options.as_mut()
+            && o.mapped.is_some()
+        {
+            o.mapped_update(m);
+            return Task::none();
+        }
         let Some(ed) = self.keymap.as_mut() else {
             return Task::none();
         };

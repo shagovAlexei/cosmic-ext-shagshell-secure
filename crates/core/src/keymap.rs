@@ -149,6 +149,17 @@ pub struct Binding {
     pub button: Button,
 }
 
+/// What may be in force: the bindings whose chord `check` accepts, the first of a repeated chord.
+pub fn sanitize(keys: &[Binding]) -> Vec<Binding> {
+    let mut ok: Vec<Binding> = Vec::new();
+    for b in keys {
+        if b.keys.check().is_ok() && !ok.iter().any(|o| o.keys == b.keys) {
+            ok.push(b.clone());
+        }
+    }
+    ok
+}
+
 /// The program's own keys: (function, default chord). The function names are those of the
 /// Button Bar's menu functions (`menu::NAMED`). Alt+1…9 (tab N) are not in the list: fixed.
 pub const BUILTIN: [(&str, &str); 17] = [
@@ -340,6 +351,20 @@ mod tests {
 
     fn chord(s: &str) -> Chord {
         s.parse().unwrap()
+    }
+
+    #[test]
+    fn sanitize_drops_refused_and_repeated_chords() {
+        let keys = [
+            bind("Ctrl+Alt+F5", "a"),
+            bind("Ctrl+KeyC", "b"),
+            bind("Ctrl+Alt+F5", "c"),
+            bind("Ctrl+Alt+F6", "d"),
+        ];
+        let ok = sanitize(&keys);
+        assert_eq!(ok.len(), 2);
+        assert_eq!(ok[0].button.arg, "a");
+        assert_eq!(ok[1].button.arg, "d");
     }
 
     fn bind(k: &str, arg: &str) -> Binding {
