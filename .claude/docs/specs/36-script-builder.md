@@ -81,11 +81,11 @@
 ## Часть 3: как сделано (2026-10-27)
 - **«Для каждого хоста»** — блок `Block::ForHost { hosts, func, parallel, limit, body }`; в коде это функция и её вызов (настоящий Python, работает и без конструктора):
   ```python
-  def _host_1(tab, host):
+  def _host_1(host, tab):
       ...тело...
   each_host(hosts, _host_1, parallel=True, limit=10)
   ```
-  `shag_parse.py` узнаёт пару «`def _host_N(tab, host)` + сразу за ней `each_host(<список>, _host_N, …)`» и отдаёт один блок; иначе — обычные `def` и вызов. Внутри тела `tab` — вкладка хоста, `host` — его имя.
+  `shag_parse.py` узнаёт пару «`def _host_N(host, tab)` (или старое `(tab, host)`) + сразу за ней `each_host(<список>, _host_N, …)`» и отдаёт один блок; иначе — обычные `def` и вызов. Внутри тела `tab` — вкладка хоста, `host` — его имя.
 - Параллельно: `each_host` запускает тело в потоке на хост (не больше `limit` сразу); `crt.py` держит соединение с программой на поток (`threading.local`), программа принимает несколько соединений одного запуска.
 - Остальные крупные блоки — функции `shag_blocks.py` в каталоге (группа `blocks`, тест сверяет с модулем): `run(cmd, timeout, until, tab)`, `read_list(path)`, `log_to(template, tab)`, `append_file(path, text)`, `to_clipboard(text)`. Первый такой блок вставляет в начало скрипта строку `from shag_blocks import *` (обычный блок «Свой Python», её видно).
 - `shag_blocks.py` пишется в `~/.config/shagshell/scripts/` (`core::bundled`, переписывается, если отличается; в меню Script не показывается). `crt.py` добавляет в путь импорта папку скрипта и `scripts/`.

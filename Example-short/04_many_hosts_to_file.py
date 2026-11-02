@@ -27,7 +27,7 @@ result_file = os.path.expanduser(arg(1, "~/hosts_report.txt"))
 open(result_file, "w").close()         # EN: start with an empty file / RU: начать с пустого файла
 
 
-def one_host(tab, host):
+def one_host(host, tab):
     append_file(result_file, "=== %s ===" % host)
     log_to(result_file, tab=tab)
     for cmd in COMMANDS:

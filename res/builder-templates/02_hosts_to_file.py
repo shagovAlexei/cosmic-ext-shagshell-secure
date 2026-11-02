@@ -7,7 +7,7 @@ commands = ['hostname', 'uptime']
 report = '~/hosts_report.txt'
 
 
-def _host_1(tab, host):
+def _host_1(host, tab):
     append_file(report, '=== ' + host + ' ===')
     for cmd in commands:
         out = run(cmd, tab=tab)

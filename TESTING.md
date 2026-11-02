@@ -1616,6 +1616,31 @@ done = True
   4. В палитре наведите на «Выполнить команду» и посмотрите подсказку и поля блока.
   Должно быть: в шаге 2 окно `new: <имя хоста>`, `old: <пользователь>`; в `~/tab_order.log` строка приглашения с `uptime` и вывод; в шаге 3 в коде `run('uptime', tab=tab)`; в шаге 4 у блока поля по порядку: cmd, timeout, tab (until — под «ещё ▸»).
 
+### «Для каждого хоста»: (host, tab), upload на вкладке хоста (v0.128.0)
+
+- [ ] **`def _host_1(host, tab)`, старые `(tab, host)` работают, `upload(..., tab=tab)` (v0.128.0)**
+  1. Подготовка: удалите `~/.config/shagshell/scripts/templates` и `~/.config/shagshell/scripts/examples-short`, перезапустите программу. Файл `~/hosts.txt` с именем тестовой сессии `router1` в одной строке; файл `~/up.txt` с любым текстом.
+  2. Создайте `~/.config/shagshell/scripts/host_tab.py`:
+     ```python
+     import os
+     from shag_blocks import *
+
+     def new(host, tab):
+         upload('~/up.txt', 'up_from_shagshell.txt', tab=tab)
+         append_file('~/host_tab.txt', 'new %s: %s' % (host, run('hostname', tab=tab)))
+
+     def old(tab, host):
+         append_file('~/host_tab.txt', 'old %s: %s' % (host, run('whoami', tab=tab)))
+
+     each_host(read_list('~/hosts.txt'), new)
+     each_host(read_list('~/hosts.txt'), old)
+     printbox(open(os.path.expanduser('~/host_tab.txt')).read())
+     ```
+     Запустите: «Сценарий → Запустить…» (с любой вкладки, например локальной оболочки).
+  3. «Сценарий → Конструктор скриптов…» → «Из шаблона ▾ → Шаблоны → 02_hosts_to_file», раскройте «Код».
+  4. В конструкторе: «Открыть…» и выберите `host_tab.py`.
+  Должно быть: в шаге 2 окно со строками `new router1: <имя хоста>` и `old router1: <пользователь>`, на сервере в домашней папке появился `up_from_shagshell.txt`; в шаге 3 в коде `def _host_1(host, tab):`; в шаге 4 скрипт открылся без ошибок.
+
 ### Импорт Button Bar из SecureCRT (v0.123.1)
 
 - [ ] **Скрипты кнопок RUN с диска Windows, выбранная панель после импорта (v0.123.1)**
