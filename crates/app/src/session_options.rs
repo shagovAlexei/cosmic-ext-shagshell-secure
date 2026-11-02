@@ -26,7 +26,7 @@ pub enum Target {
     Default,
 }
 
-use shagshell_core::term_env::{Backspace, Colors, Kind};
+use shagshell_core::term_env::{Backspace, Colors, Delete, Kind};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Category {
@@ -101,6 +101,7 @@ pub enum SoMsg {
     TermKind(usize),
     TermColors(usize),
     Backspace(usize),
+    Delete(usize),
     /// The icon: 0 = by protocol, else the n-th of `tab_icon::PICKABLE`.
     Icon(usize),
     /// «Забыть»: the session's saved secrets removed.
@@ -281,6 +282,7 @@ impl SessionOptions {
                     .map_or(String::new(), |(n, _)| n.to_string());
             }
             SoMsg::TermKind(i) => f.term_kind = Kind::ALL.get(i).copied().unwrap_or_default(),
+            SoMsg::Delete(i) => f.delete = Delete::ALL.get(i).copied().unwrap_or_default(),
             SoMsg::Backspace(i) => f.backspace = Backspace::ALL.get(i).copied().unwrap_or_default(),
             SoMsg::TermColors(i) => f.term_colors = Colors::ALL.get(i).copied().unwrap_or_default(),
             SoMsg::Scheme(i) => {
@@ -504,6 +506,8 @@ impl SessionOptions {
                     fl!("so-colors-true"),
                 ];
                 let backspaces = vec![fl!("so-backspace-del"), fl!("so-backspace-ctrl")];
+                let deletes = vec![fl!("so-delete-esc"), fl!("so-delete-del")];
+                let delete_at = Delete::ALL.iter().position(|d| *d == f.delete);
                 let backspace_at = Backspace::ALL.iter().position(|b| *b == f.backspace);
                 let kind_at = Kind::ALL.iter().position(|k| *k == f.term_kind);
                 let colors_at = Colors::ALL.iter().position(|c| *c == f.term_colors);
@@ -522,6 +526,10 @@ impl SessionOptions {
                         fl!("so-backspace"),
                         widget::dropdown(backspaces, backspace_at, move |i| m(SoMsg::Backspace(i)))
                             .into(),
+                    ),
+                    labelled(
+                        fl!("so-delete"),
+                        widget::dropdown(deletes, delete_at, move |i| m(SoMsg::Delete(i))).into(),
                     ),
                     field(
                         fl!("so-scrollback"),

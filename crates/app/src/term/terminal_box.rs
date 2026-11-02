@@ -1010,7 +1010,10 @@ where
                 let mod_no = calculate_modifier_number(state);
                 let escape_code = match named {
                     Named::Insert => csi("2", "~", mod_no),
-                    Named::Delete => csi("3", "~", mod_no),
+                    Named::Delete => match terminal.delete.plain() {
+                        Some(b) if mod_no == 1 => Some(b.to_vec()),
+                        _ => csi("3", "~", mod_no),
+                    },
                     Named::PageUp => {
                         if modifiers.shift() {
                             terminal.scroll(TerminalScroll::PageUp);
