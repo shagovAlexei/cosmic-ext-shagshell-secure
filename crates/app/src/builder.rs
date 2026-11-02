@@ -19,24 +19,23 @@ use std::time::{Duration, Instant};
 
 const FONT: f32 = 13.0;
 
-/// The palette's «Frequent» members.
-/// The palette's «Frequent»: the big blocks first (`stmt:` = a statement).
+/// The palette's «Frequent»: the big and short blocks first (`stmt:` = a statement).
 const FREQUENT: [&str; 15] = [
     "blocks.run",
     "stmt:for_host",
     "blocks.read_list",
     "blocks.log_to",
     "blocks.append_file",
+    "blocks.printbox",
+    "blocks.ask",
+    "blocks.read_until",
+    "blocks.connect",
+    "blocks.disconnect",
     "blocks.to_clipboard",
+    "blocks.from_clipboard",
     "Screen.Send",
     "Screen.WaitForString",
-    "Screen.ReadString",
-    "Session.Connect",
-    "Session.Disconnect",
-    "Dialog.MessageBox",
-    "Dialog.Prompt",
     "Sleep",
-    "Clipboard.Text",
 ];
 const GROUPS: [&str; 10] = [
     "blocks",
@@ -81,7 +80,13 @@ pub enum Drag {
 #[derive(Clone, Debug)]
 pub enum BuilderMsg {
     Search(String),
+    /// Enter in the search: add the first item found.
+    SearchAdd,
     Fold(&'static str),
+    /// The ▾ next to a session field: list the saved sessions (again: close).
+    SessionsOpen(Pos, F),
+    /// The app's answer to `Out::Sessions`.
+    SessionList(Pos, F, Vec<String>),
     Add(Item),
     Select(Pos),
     Field(Pos, F, String),
@@ -152,6 +157,8 @@ pub enum Out {
     Run(PathBuf, Option<Option<TabId>>, Option<Arc<Debugger>>),
     /// Stop that run.
     Stop(u64),
+    /// The saved sessions' ids, for the list next to a session field.
+    Sessions(Pos, F),
 }
 
 /// A run from the tab (or the last one: its marks stay until the next edit).
@@ -214,6 +221,8 @@ pub struct BuilderView {
     targets_open: bool,
     /// «From a template ▾» open: its files (templates, then examples).
     templates: Option<Vec<PathBuf>>,
+    /// The saved sessions listed next to this session field.
+    sessions: Option<(Pos, F, Vec<String>)>,
     /// Where Run runs: `None` = the first terminal tab, `Some(None)` = no tab.
     target: Option<Option<TabId>>,
     error: Option<String>,
@@ -314,6 +323,7 @@ impl BuilderView {
             drag: None,
             over: None,
             targets_open: false,
+            sessions: None,
             templates: None,
             target: None,
             error: None,
@@ -596,6 +606,24 @@ impl BuilderView {
     pub fn update(&mut self, msg: BuilderMsg) -> Out {
         match msg {
             BuilderMsg::Search(s) => self.search = s,
+            BuilderMsg::SearchAdd => {
+                if let Some(item) = (!self.search.trim().is_empty())
+                    .then(|| first_found(self.search.trim()))
+                    .flatten()
+                {
+                    return self.update(BuilderMsg::Add(item));
+                }
+            }
+            BuilderMsg::SessionsOpen(p, f) => {
+                let again = self
+                    .sessions
+                    .take()
+                    .is_some_and(|(q, g, _)| (q, g) == (p.clone(), f));
+                if !again {
+                    return Out::Sessions(p, f);
+                }
+            }
+            BuilderMsg::SessionList(p, f, ids) => self.sessions = Some((p, f, ids)),
             BuilderMsg::Fold(g) => {
                 if !self.open.remove(g) {
                     self.open.insert(g);
@@ -617,7 +645,10 @@ impl BuilderView {
                 self.selected = Some(p);
                 self.picked = None;
             }
-            BuilderMsg::Field(p, f, t) => self.field(p, f, t),
+            BuilderMsg::Field(p, f, t) => {
+                self.sessions = None;
+                self.field(p, f, t)
+            }
             BuilderMsg::AddBranch(p) => {
                 // Bodies after it shift: typed-field state keyed by place is stale.
                 self.forget_typing();
@@ -1308,24 +1339,21 @@ impl BuilderView {
 
     fn palette<'a>(&self, m: impl Fn(BuilderMsg) -> Message + Copy + 'a) -> Element<'a, Message> {
         let q = self.search.to_lowercase();
-        let hit = |label: &str, help: &str| {
-            q.is_empty() || label.to_lowercase().contains(&q) || help.to_lowercase().contains(&q)
-        };
         let mut col = widget::column::with_capacity(40).spacing(2).push(
             widget::search_input(fl!("builder-search"), self.search.clone())
                 .id(search_id())
                 .on_focus(Message::FocusField(search_id()))
                 .on_input(move |s| m(BuilderMsg::Search(s)))
+                .on_submit(move |_| m(BuilderMsg::SearchAdd))
                 .on_clear(m(BuilderMsg::Search(String::new()))),
         );
-        let entry_hit = |e: &Entry| hit(e.path, e.help[0]) || hit(e.path, e.help[1]);
+        let entry_hit = |e: &Entry| entry_found(&q, e);
         let section =
             |key: &'static str, title: String, items: Vec<Item>| -> Vec<Element<'a, Message>> {
                 if items.is_empty() {
                     return vec![];
                 }
-                // Searching: everything found is shown; else a group shows when unfolded.
-                let open = !q.is_empty() || key == "frequent" || self.open.contains(key);
+                let open = catalog::group_open(key, self.open.contains(key), !q.is_empty());
                 let arrow = if open { "▾" } else { "▸" };
                 let mut out: Vec<Element<'a, Message>> = vec![
                     widget::button::text(format!("{arrow} {title}"))
@@ -1348,10 +1376,15 @@ impl BuilderView {
             false => vec![],
         };
         col = col.extend(section("frequent", fl!("builder-frequent"), frequent));
+        let short: Vec<Item> = short_entries()
+            .filter(|e| entry_hit(e))
+            .map(Item::Entry)
+            .collect();
+        col = col.extend(section("short", fl!("builder-short"), short));
         for g in GROUPS {
             let items: Vec<Item> = CATALOG
                 .iter()
-                .filter(|e| e.group() == g && entry_hit(e))
+                .filter(|e| e.group() == g && !e.is_short() && entry_hit(e))
                 .map(Item::Entry)
                 .collect();
             let title = match g {
@@ -1362,7 +1395,7 @@ impl BuilderView {
         }
         let stmts: Vec<Item> = STATEMENTS
             .iter()
-            .filter(|k| hit(&stmt_name(k), &stmt_help(k)))
+            .filter(|k| stmt_found(&q, k))
             .map(|k| Item::Stmt(k))
             .collect();
         col = col.extend(section("other", fl!("builder-other"), stmts));
@@ -1579,7 +1612,13 @@ impl BuilderView {
                 })
                 .into()
             }
-            ty => self.input(id, pos, f, ty, value, p.default.unwrap_or("").to_string()),
+            ty => {
+                let field = self.input(id, pos, f, ty, value, p.default.unwrap_or("").to_string());
+                match field::session_pick(p, "") {
+                    Some(_) => self.session_list(pos, f, p, field, m),
+                    None => field,
+                }
+            }
         };
         widget::row::with_children(vec![
             widget::text::caption(p.name.trim_start_matches('*')).into(),
@@ -1588,6 +1627,47 @@ impl BuilderView {
         .spacing(4)
         .align_y(Alignment::Center)
         .into()
+    }
+
+    /// A session field with ▾: the saved sessions, a click types one in.
+    fn session_list<'a>(
+        &self,
+        pos: &Pos,
+        f: F,
+        p: &'static catalog::Param,
+        field: Element<'a, Message>,
+        m: impl Fn(BuilderMsg) -> Message + Copy + 'a,
+    ) -> Element<'a, Message> {
+        let more = widget::button::text("▾").on_press(m(BuilderMsg::SessionsOpen(pos.clone(), f)));
+        let mut pop = widget::popover(more)
+            .position(widget::popover::Position::Bottom)
+            .on_close(m(BuilderMsg::SessionsOpen(pos.clone(), f)));
+        if let Some((_, _, ids)) = (self.sessions.as_ref()).filter(|(q, g, _)| q == pos && *g == f)
+        {
+            let rows: Vec<Element<'a, Message>> = match ids.is_empty() {
+                true => vec![widget::text::caption(fl!("builder-no-sessions")).into()],
+                false => (ids.iter())
+                    .map(|s| {
+                        let v = field::session_pick(p, s).unwrap_or_default();
+                        widget::button::text(s.clone())
+                            .on_press(m(BuilderMsg::Field(pos.clone(), f, v)))
+                            .into()
+                    })
+                    .collect(),
+            };
+            pop = pop.popup(
+                widget::container(widget::scrollable(
+                    widget::column::with_children(rows).spacing(2),
+                ))
+                .max_height(420)
+                .padding(8)
+                .class(theme::Container::Dropdown),
+            );
+        }
+        widget::row::with_children(vec![field, pop.into()])
+            .spacing(2)
+            .align_y(Alignment::Center)
+            .into()
     }
 
     fn block<'a>(
@@ -1780,6 +1860,10 @@ impl BuilderView {
                 head.push(label(fl!("stmt-raw")));
                 extra.push(widget::text::monotext(code.clone()).into());
                 extra.push(widget::text::caption(fl!("builder-raw-multi")).into());
+            }
+            // The line the short / big blocks need: not a field to break by a stray key.
+            Block::Raw { code } if code.trim() == IMPORT => {
+                head.push(word(fl!("builder-import")));
             }
             Block::Raw { .. } => {
                 head.push(label(fl!("stmt-raw")));
@@ -1997,6 +2081,45 @@ fn field_id(id: TabId, pos: &Pos, f: F) -> widget::Id {
 
 /// A catalog entry as the palette and the tape name it: a big block by its words, a `crt`
 /// member by its path.
+/// The short blocks in `catalog::SHORT`'s order.
+fn short_entries() -> impl Iterator<Item = &'static Entry> {
+    (catalog::SHORT.iter()).filter_map(|p| CATALOG.iter().find(|e| e.path == *p))
+}
+
+fn found(q: &str, label: &str, help: &str) -> bool {
+    q.is_empty() || label.to_lowercase().contains(q) || help.to_lowercase().contains(q)
+}
+
+/// `q` lowercase; a command is found by its path, its name as shown, or its help.
+fn entry_found(q: &str, e: &Entry) -> bool {
+    found(q, e.path, e.help[0]) || found(q, &entry_label(e), e.help[1])
+}
+
+fn stmt_found(q: &str, k: &str) -> bool {
+    found(q, &stmt_name(k), &stmt_help(k))
+}
+
+/// What Enter in the search adds: the first item found, in the palette's order.
+fn first_found(q: &str) -> Option<Item> {
+    let q = q.to_lowercase();
+    let short = short_entries();
+    let rest = GROUPS.iter().flat_map(|g| {
+        CATALOG
+            .iter()
+            .filter(move |e| e.group() == *g && !e.is_short())
+    });
+    (short
+        .chain(rest)
+        .find(|e| entry_found(&q, e))
+        .map(Item::Entry))
+    .or_else(|| {
+        STATEMENTS
+            .iter()
+            .find(|k| stmt_found(&q, k))
+            .map(|k| Item::Stmt(k))
+    })
+}
+
 fn entry_label(e: &Entry) -> String {
     match e.path {
         "blocks.prompt" => fl!("block-prompt"),

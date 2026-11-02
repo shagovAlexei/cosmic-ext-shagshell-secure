@@ -3221,6 +3221,11 @@ impl App {
                 move |p| cosmic::Action::App(Message::Builder(id, BuilderMsg::SaveAs(p))),
             ),
             Out::Clipboard(t) => cosmic::iced::clipboard::write(t),
+            Out::Sessions(p, f) => {
+                let ids = self.sessions.session_ids();
+                let out = (self.tabs).on_builder(id, BuilderMsg::SessionList(p, f, ids));
+                self.builder_out(id, out)
+            }
             Out::Run(path, tab, dbg) => {
                 let tab = (tab.unwrap_or_else(|| self.tabs.terminal_list().first().map(|t| t.0)))
                     .unwrap_or(u64::MAX);

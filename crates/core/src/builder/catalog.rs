@@ -52,6 +52,30 @@ impl Entry {
     pub fn group(&self) -> &'static str {
         self.path.split_once('.').map_or("crt", |(g, _)| g)
     }
+
+    /// A short block: a one-word stand-in for a long `crt` call (the palette's «Short blocks»).
+    pub fn is_short(&self) -> bool {
+        SHORT.contains(&self.path)
+    }
+}
+
+/// The big blocks that only shorten a `crt` call (`printbox` = `crt.Dialog.MessageBox`…).
+pub const SHORT: [&str; 8] = [
+    "blocks.printbox",
+    "blocks.ask",
+    "blocks.read_until",
+    "blocks.connect",
+    "blocks.active_tab",
+    "blocks.disconnect",
+    "blocks.to_clipboard",
+    "blocks.from_clipboard",
+];
+
+/// Whether a palette group shows its items: «Frequent» and «Short blocks» start unfolded, the
+/// rest folded; `toggled` = the user clicked its title (an odd number of times). Searching
+/// shows everything found.
+pub fn group_open(key: &str, toggled: bool, searching: bool) -> bool {
+    searching || (matches!(key, "frequent" | "short") != toggled)
 }
 
 const fn p(name: &'static str, ty: Ty) -> Param {
@@ -791,6 +815,29 @@ pub fn lookup(func: &str) -> Option<&'static Entry> {
 mod tests {
     use super::*;
     use std::collections::BTreeMap;
+
+    #[test]
+    fn regression_frequent_folds() {
+        // «Frequent» was always open: its title did nothing.
+        assert!(group_open("frequent", false, false));
+        assert!(!group_open("frequent", true, false));
+        assert!(group_open("short", false, false));
+        assert!(!group_open("short", true, false));
+        assert!(!group_open("Screen", false, false));
+        assert!(group_open("Screen", true, false));
+        assert!(group_open("frequent", true, true));
+    }
+
+    #[test]
+    fn short_blocks_are_big_blocks() {
+        for p in SHORT {
+            let e = CATALOG.iter().find(|e| e.path == p).expect(p);
+            assert_eq!(e.group(), "blocks", "{p}");
+            assert!(e.is_short());
+        }
+        let run = CATALOG.iter().find(|e| e.path == "blocks.run").unwrap();
+        assert!(!run.is_short());
+    }
 
     #[test]
     fn catalog_matches_crt_py() {

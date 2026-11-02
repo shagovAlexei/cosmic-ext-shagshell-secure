@@ -838,6 +838,9 @@ builder-parallel = in parallel
 builder-limit = at most
 builder-host-hint = (inside: tab = the host's tab, host = its name)
 builder-big = Big blocks
+builder-short = Short blocks
+builder-import = Short blocks are on (from shag_blocks import *)
+builder-no-sessions = No saved sessions
 builder-from-template = From a template ▾
 builder-group-templates = Templates
 builder-group-examples = Examples

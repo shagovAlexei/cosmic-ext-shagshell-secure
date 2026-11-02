@@ -2,6 +2,9 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.123.0 — 2026-11-02
+- feat: Script Builder palette — a «Short blocks» group (printbox, ask, read_until, connect, active_tab, disconnect, to / from clipboard), open by default; «Frequent» lists the short blocks instead of the long `crt` calls and folds now (it was always open); search finds a block by its shown name too, Enter adds the first one found; the `from shag_blocks import *` line is a muted line, not an editable field; a ▾ next to a session field picks a saved session
+
 ## 0.122.0 — 2026-11-02
 - feat: performance pass, measured on a release build (menus, 50 tabs, fast terminal output: a frame's `view` stays ≤ 2 ms, left as is); the Session Manager draws only the rows in view, so 600 open sessions cost ≈1 ms a frame instead of ≈9 ms
 
