@@ -52,6 +52,7 @@ pub fn start(
         ..term::Config::default()
     };
     let mut t = Terminal::new(id, tx, config, options, style, colors, log)?;
+    t.backspace = emulation.backspace;
     t.set_config(style, &colors);
     Ok(t)
 }

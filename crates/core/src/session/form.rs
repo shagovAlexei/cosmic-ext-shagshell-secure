@@ -46,6 +46,7 @@ pub struct Form {
     pub color_scheme: String,
     pub term_kind: crate::term_env::Kind,
     pub term_colors: crate::term_env::Colors,
+    pub backspace: crate::term_env::Backspace,
     /// Lines, "" = the default.
     pub scrollback: String,
     pub label: String,
@@ -149,6 +150,7 @@ impl Form {
             reconnect_tries: s.reconnect_tries.map(|n| n.to_string()).unwrap_or_default(),
             term_kind: s.term.kind,
             term_colors: s.term.colors,
+            backspace: s.term.backspace,
             scrollback: s.term.scrollback.map(|n| n.to_string()).unwrap_or_default(),
             device: s.serial.device.clone(),
             baud: s.serial.baud.map(|n| n.to_string()).unwrap_or_default(),
@@ -274,6 +276,7 @@ impl Form {
             term: crate::term_env::Term {
                 kind: self.term_kind,
                 colors: self.term_colors,
+                backspace: self.backspace,
                 scrollback,
             },
             label: self.label.trim().to_string(),
@@ -504,6 +507,15 @@ mod tests {
         assert_eq!(s.term.kind, crate::term_env::Kind::Vt100);
         assert_eq!(s.term.scrollback, Some(5000));
         assert_eq!(Form::from_session("n", &s).scrollback, "5000");
+        let f = Form {
+            backspace: crate::term_env::Backspace::Ctrl,
+            ..form("h")
+        };
+        let s = f.apply(&Session::default(), true).unwrap();
+        assert_eq!(
+            Form::from_session("n", &s).backspace,
+            crate::term_env::Backspace::Ctrl
+        );
         assert_eq!(
             bad(Form {
                 reconnect_tries: "x".into(),

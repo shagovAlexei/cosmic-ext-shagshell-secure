@@ -1102,7 +1102,7 @@ where
                 let alt_prefix = if modifiers.alt() { "\x1B" } else { "" };
                 match named {
                     Named::Backspace => {
-                        let code = if modifiers.control() { "\x08" } else { "\x7f" };
+                        let code = terminal.backspace.byte(modifiers.control()) as char;
                         terminal.input_scroll(format!("{alt_prefix}{code}").into_bytes());
                         shell.capture_event();
                     }
