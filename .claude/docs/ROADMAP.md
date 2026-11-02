@@ -132,7 +132,7 @@
   - размер: логические строки × столбцы и «При изменении окна»: подгонять размер / масштабировать шрифт / сохранять размер и шрифт;
   - прокрутка (scrollback): число строк;
   - уточнить на брейншторме: «альтернативная эмуляция клавиатуры» и Modes / Emacs / Mapped Keys / Advanced — что из этого нужно (Alt как Meta для Emacs, Backspace = ^H / ^?, Delete).
-- [ ] **Цветовые схемы терминала: правка и свои схемы, как в SecureCRT** (Session Options → Appearance → «Current color scheme» + «Edit…» / «New…»). Выбор уже есть (Global Options и Session Options), но только из 8 встроенных схем (`term/terminal_theme.rs`: Solarized Dark / Light, Dracula, Nord, Gruvbox Dark, Monokai, Classic, Tango Light). Добавить:
+- [x] **(v0.120.0, спека 44; без атрибутных цветов, выделения и других форматов) Цветовые схемы терминала: правка и свои схемы, как в SecureCRT** (Session Options → Appearance → «Current color scheme» + «Edit…» / «New…»). Выбор уже есть (Global Options и Session Options), но только из 8 встроенных схем (`term/terminal_theme.rs`: Solarized Dark / Light, Dracula, Nord, Gruvbox Dark, Monokai, Classic, Tango Light). Добавить:
   - ~~больше встроенных схем~~ (0.119.0: 10 штук; Monochrome, Traditional, Solarized Darcula не добавлены) —   - больше встроенных схем (из списка SecureCRT: White / Black, Black / Cyan, Black / Floral White, Yellow / Black, Monochrome, Traditional, Windows, Tomorrow, Zenburn, Solarized Darcula, Chalkboard, Espresso, Desert…);
   - «Новая…» / «Изменить…»: фон, текст, курсор, выделение и 16 цветов ANSI, предпросмотр; свои схемы в файле под `~/.config/shagshell`;
   - уточнить на брейншторме: импорт схем SecureCRT (`Config/` под wine) и / или других форматов (iTerm2 / Alacritty); удаление и переименование своих схем.

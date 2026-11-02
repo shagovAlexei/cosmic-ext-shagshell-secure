@@ -2,6 +2,9 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.120.0 — 2026-11-02
+- feat: terminal colour schemes like SecureCRT's (spec 44): the built-in list is SecureCRT 9.7's 23 schemes with their real colours plus ours; Session Options → Appearance → «Новая…» / «Изменить…» / «Удалить» (an editor with the 16 ANSI colours, text, background, cursor and a preview; own schemes in `color_schemes.toml`, a built-in one can be replaced and restored); File → Import from SecureCRT… reads the schemes from `Global.ini` and maps the sessions' `Color Scheme`
+
 ## 0.119.0 — 2026-11-02
 - feat: 10 more built-in terminal colour schemes (Windows, White / Black, Black / White, Yellow / Black, Black / Cyan, Tomorrow Night, Zenburn, Espresso, Chalkboard, Desert); editing and own schemes are still on the roadmap
 

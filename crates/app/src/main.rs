@@ -5,6 +5,7 @@ mod askpass;
 mod bar_picker;
 mod builder;
 mod button_bar;
+mod color_scheme_editor;
 mod command_manager;
 mod command_window;
 mod config;

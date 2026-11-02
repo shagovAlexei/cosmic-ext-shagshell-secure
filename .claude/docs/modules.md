@@ -45,6 +45,7 @@ We do **not** implement SSH. The system OpenSSH does it; we drive it.
   - `bookmarks.rs` — SFTP bookmarks (`bookmarks.toml`, per place); `uri.rs` — `text/uri-list` of dropped files → paths;
   - `panel.rs` — a file panel (listing, cursor, marks, targets) and size / time text, after shagoff-commander;
   - `logfile.rs` — log name templates `%H %S %Y %M %D %h %m %s %P %U`, `Cleaner` (output → plain text), `Logger`; the app copies a PTY's output to it through `term::log::TeePty`;
+  - `color_scheme.rs` — terminal colour schemes: built-ins (`color_scheme/data.rs`: SecureCRT's and ours), `Schemes` = the user's own in `color_schemes.toml` (an own one with a built-in's key replaces it); app: `term/terminal_theme.rs` holds them in force, `color_scheme_editor.rs` is the editor shown in the Session Options window;
   - `securecrt.rs` — import from SecureCRT's `Config/` (sessions `.ini`, `ButtonBarV5.ini`); reading only, what can't come across is reported;
   - `logon.rs` — Logon Actions (expect → send automaton over the session's output; `%user%` / `%password%`); the app feeds it from the PTY reader (`term::log::Tap`) and types the answers in;
   - `macros.rs` — Button Bar / Command Window escapes (`\r \n \t \e \\ \p`);

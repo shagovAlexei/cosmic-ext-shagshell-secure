@@ -988,3 +988,16 @@ so-bad-size = Columns and rows: a number from 1 to 500
 so-scrollback = Scrollback (lines)
 so-scrollback-hint = 100…1000000; empty: 10000
 so-bad-scrollback = Scrollback: a number from 100 to 1000000
+
+scheme-new = New…
+scheme-edit = Edit…
+scheme-delete = Delete
+scheme-restore = Restore built-in
+scheme-title = Colour scheme
+scheme-name = Name
+scheme-text = Text
+scheme-background = Background
+scheme-cursor = Cursor
+scheme-bad-color = Use #RRGGBB
+sc-schemes = Colour schemes
+sc-report-schemes = Colour schemes added: { $added } (already there: { $existing }).

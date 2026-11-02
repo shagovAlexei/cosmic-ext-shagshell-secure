@@ -7,6 +7,7 @@ pub mod builder;
 pub mod bundled;
 pub mod buttonbar;
 pub mod check;
+pub mod color_scheme;
 pub mod commands;
 pub mod connect_bar;
 pub mod credentials;
