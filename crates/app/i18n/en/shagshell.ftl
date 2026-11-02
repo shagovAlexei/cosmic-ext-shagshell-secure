@@ -921,3 +921,11 @@ groups-hint = Sessions that name no group are in Default. Add groups in Session 
 groups-delete-confirm = Delete group “{ $name }”? The sessions stay; they only leave the group.
 so-groups = Groups (comma between; empty: Default)
 so-groups-hint = A new name makes a new group. Open a group in Window → Session Groups…; its tabs show [group].
+
+as-sessions = Sessions
+as-editors = Editors
+as-empty = No open tabs
+as-close = Close tab
+as-close-all = Close all tabs
+as-page-tree = Sessions
+as-page-active = Active

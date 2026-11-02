@@ -1,3 +1,4 @@
+pub mod active_tabs;
 pub mod askpass;
 pub mod backup;
 pub mod bar;
