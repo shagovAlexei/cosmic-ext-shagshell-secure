@@ -15,6 +15,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 /// The chords in force, read by `app::key_action` on every key.
 static BINDINGS: RwLock<Vec<Binding>> = RwLock::new(Vec::new());
+/// The active tab's session's own keys: looked up before `BINDINGS`.
+static SESSION: RwLock<Vec<Binding>> = RwLock::new(Vec::new());
+/// An `Action::Bound` index at or above this is in `SESSION`.
+const SESSION_BASE: usize = 0x8000;
 /// The built-in keys in force: (chord, function name). Starts with the defaults.
 static IN_FORCE: std::sync::LazyLock<RwLock<Vec<(Chord, &'static str)>>> =
     std::sync::LazyLock::new(|| RwLock::new(chords_of(&Keymap::default())));
@@ -25,13 +29,12 @@ static CAPTURING: AtomicBool = AtomicBool::new(false);
 /// a key twice: those are left out here (the file is not changed).
 pub fn set_bindings(k: &Keymap) {
     *IN_FORCE.write().unwrap_or_else(|e| e.into_inner()) = chords_of(k);
-    let mut ok: Vec<Binding> = Vec::new();
-    for b in &k.keys {
-        if b.keys.check().is_ok() && !ok.iter().any(|o| o.keys == b.keys) {
-            ok.push(b.clone());
-        }
-    }
-    *BINDINGS.write().unwrap_or_else(|e| e.into_inner()) = ok;
+    *BINDINGS.write().unwrap_or_else(|e| e.into_inner()) =
+        shagshell_core::keymap::sanitize(&k.keys);
+}
+
+pub fn set_session(keys: &[Binding]) {
+    *SESSION.write().unwrap_or_else(|e| e.into_inner()) = shagshell_core::keymap::sanitize(keys);
 }
 
 fn chords_of(k: &Keymap) -> Vec<(Chord, &'static str)> {
@@ -73,17 +76,25 @@ pub fn is_modifier(key: &cosmic::iced::keyboard::key::Physical) -> bool {
 /// Which binding a pressed key is (an index into the list `set_bindings` was given).
 pub fn lookup(mods: cosmic::iced::keyboard::Modifiers, code: &str) -> Option<usize> {
     let g = BINDINGS.read().unwrap_or_else(|e| e.into_inner());
+    let own = SESSION.read().unwrap_or_else(|e| e.into_inner());
     // Every key press asks: nothing to look for is the usual answer. Super is the compositor's.
-    if g.is_empty() || mods.logo() {
+    if (g.is_empty() && own.is_empty()) || mods.logo() {
         return None;
     }
     let want = Chord::new(mods.control(), mods.alt(), mods.shift(), code);
-    g.iter().position(|b| b.keys == want)
+    (own.iter().position(|b| b.keys == want))
+        .map(|i| SESSION_BASE + i)
+        .or_else(|| g.iter().position(|b| b.keys == want))
 }
 
 pub fn binding(i: usize) -> Option<Button> {
-    let g = BINDINGS.read().unwrap_or_else(|e| e.into_inner());
-    g.get(i).map(|b| b.button.clone())
+    let g = match i.checked_sub(SESSION_BASE) {
+        Some(_) => SESSION.read(),
+        None => BINDINGS.read(),
+    }
+    .unwrap_or_else(|e| e.into_inner());
+    g.get(i.saturating_sub(SESSION_BASE))
+        .map(|b| b.button.clone())
 }
 
 /// A key's action as an icon: send a string, a menu function, a program, a script.
@@ -151,6 +162,8 @@ struct Edit {
 
 pub struct Editor {
     pub keymap: Keymap,
+    /// A session's Mapped Keys: no built-in keys, another title.
+    session: bool,
     selected: Option<usize>,
     selected_builtin: Option<usize>,
     edit: Option<Edit>,
@@ -174,6 +187,7 @@ impl Editor {
     pub fn new(keymap: Keymap) -> Self {
         Self {
             keymap,
+            session: false,
             selected: None,
             selected_builtin: None,
             edit: None,
@@ -193,6 +207,16 @@ impl Editor {
                 .map(|n| crate::menu::function_choice(n))
                 .collect(),
         }
+    }
+
+    /// The editor for one session's own keys.
+    pub fn for_session(keys: Vec<Binding>) -> Self {
+        let mut e = Self::new(Keymap {
+            keys,
+            ..Keymap::default()
+        });
+        e.session = true;
+        e
     }
 
     /// An edit is open (Esc closes that first).
@@ -398,8 +422,10 @@ impl Editor {
                     });
                     list = list.push(btn);
                 }
-                list = list.push(widget::text::caption(fl!("km-builtin-title")));
-                for (i, (id, _)) in BUILTIN.iter().enumerate() {
+                if !self.session {
+                    list = list.push(widget::text::caption(fl!("km-builtin-title")));
+                }
+                for (i, (id, _)) in BUILTIN.iter().enumerate().filter(|_| !self.session) {
                     let Some(chord) = self.keymap.chord_of(id) else {
                         continue;
                     };
@@ -435,14 +461,21 @@ impl Editor {
                 ])
                 .spacing(8);
                 let body = widget::column::with_children(vec![
-                    widget::text::caption(fl!("km-hint")).into(),
+                    widget::text::caption(match self.session {
+                        true => fl!("km-session-hint"),
+                        false => fl!("km-hint"),
+                    })
+                    .into(),
                     widget::scrollable(list).height(Length::Fixed(320.0)).into(),
                     row.into(),
                 ])
                 .spacing(10);
                 widget::dialog()
                     .icon(crate::dialog_icons::Kind::Keyboard.icon(48))
-                    .title(fl!("km-title"))
+                    .title(match self.session {
+                        true => fl!("km-session-title"),
+                        false => fl!("km-title"),
+                    })
                     .control(body)
                     .primary_action(
                         widget::button::standard(fl!("sftp-close")).on_press(m(KmMsg::Close)),

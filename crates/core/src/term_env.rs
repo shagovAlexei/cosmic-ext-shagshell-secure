@@ -147,6 +147,9 @@ pub struct Term {
     /// Lines kept above the screen; none: `DEFAULT_SCROLLBACK`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scrollback: Option<u32>,
+    /// Mapped Keys: this session's own keys, looked up before the global ones.
+    #[serde(rename = "key", skip_serializing_if = "Vec::is_empty")]
+    pub keys: Vec<crate::keymap::Binding>,
 }
 
 fn is_default<T: Default + PartialEq>(v: &T) -> bool {
@@ -197,6 +200,25 @@ mod tests {
 
     fn term_of(t: &Term) -> String {
         t.env()[0].1.clone()
+    }
+
+    #[test]
+    fn mapped_keys_round_trip_and_default_stays_empty() {
+        let t = Term {
+            keys: vec![crate::keymap::Binding {
+                keys: "Ctrl+Alt+F5".parse().unwrap(),
+                button: crate::buttonbar::Button {
+                    kind: crate::buttonbar::Kind::Send,
+                    arg: "exit\\r".into(),
+                    ..Default::default()
+                },
+            }],
+            ..Term::default()
+        };
+        let text = toml::to_string(&t).unwrap();
+        assert!(text.contains("[[key]]"), "{text}");
+        assert_eq!(toml::from_str::<Term>(&text).unwrap(), t);
+        assert_eq!(toml::to_string(&Term::default()).unwrap(), "");
     }
 
     #[test]
@@ -283,6 +305,7 @@ mod tests {
             fit: Fit::Font,
             cols: Some(100),
             rows: Some(30),
+            keys: Vec::new(),
         };
         let back: Term = toml::from_str(&toml::to_string(&t).unwrap()).unwrap();
         assert_eq!(back, t);
