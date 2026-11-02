@@ -51,7 +51,7 @@ Column **Phase** = ROADMAP phase where we implement it (— = not planned).
 
 - Emulation: VT100/102/220/320, Linux, Xterm, ANSI, Wyse, TN3270/5250; 256-colour + true colour; UTF-8. **Ours: xterm (alacritty) only.**
 - Scrollback up to 128k+ lines; clear on clear-screen; scroll to bottom on output/key.
-- Colour schemes (named, per session) + tab colour. Phase 9.
+- Colour schemes (named, per session) + tab colour. Phase 9. Stored in `Global.ini`: `Z:"Color Schemes"` (name, `010101`, 8 fg + 8 bg `RRGGBB00`, palette name) and `Z:"ANSI Color Palettes"` (name + 16 colours); session `S:"Color Scheme"=<name>` (spec 44).
 - Fonts: normal + narrow/Unicode, line spacing, cursor style/blink.
 - Keyword highlighting: named lists, colour/style per keyword, regex, per session. Phase 9.
 - Logging: name template `%H` host, `%S` session, `%Y %M %D %h %m %s` date/time, `%P` port, `%U` user; start on connect; append/overwrite; new file per session/day; custom text at start/end/each line (timestamps); raw log. Phase 7.

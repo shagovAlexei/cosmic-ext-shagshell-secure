@@ -156,12 +156,12 @@ pub fn view<'a>(
     let mut names = vec![fl!("options-system")];
     names.extend(
         crate::term::terminal_theme::schemes()
-            .iter()
-            .map(|(_, n)| (*n).to_string()),
+            .into_iter()
+            .map(|(_, n)| n),
     );
-    let keys: Vec<&'static str> = crate::term::terminal_theme::schemes()
-        .iter()
-        .map(|(k, _)| *k)
+    let keys: Vec<String> = crate::term::terminal_theme::schemes()
+        .into_iter()
+        .map(|(k, _)| k)
         .collect();
     let scheme = keys
         .iter()
@@ -175,9 +175,7 @@ pub fn view<'a>(
                 let c = config.clone();
                 move |i| {
                     let mut c = c.clone();
-                    c.color_scheme = i
-                        .checked_sub(1)
-                        .map_or(String::new(), |i| keys[i].to_string());
+                    c.color_scheme = i.checked_sub(1).map_or(String::new(), |i| keys[i].clone());
                     Message::SetConfig(c)
                 }
             }),

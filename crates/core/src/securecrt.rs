@@ -152,7 +152,51 @@ pub fn session_from_ini(
         }
     }
     s.button_bar = some(ini.text("User Button Bar Name"));
+    // SecureCRT's name; `import` turns it into a key (or drops it).
+    s.color_scheme = ini.text("Color Scheme").trim().to_string();
     Ok(s)
+}
+
+/// The colour schemes in `Global.ini`: each one's plain text and background and the 16 colours of
+/// its ANSI palette (`Standard` when the palette is missing). The 7 other attribute pairs are left.
+pub fn read_color_schemes(ini: &Ini) -> Vec<crate::color_scheme::Scheme> {
+    use crate::color_scheme::{Scheme, slug};
+    let colour = |s: &str| u32::from_str_radix(s.get(..6)?, 16).ok();
+    let palettes: HashMap<&str, [u32; 16]> = ini
+        .lists
+        .get("ANSI Color Palettes")
+        .into_iter()
+        .flatten()
+        .filter_map(|l| {
+            let mut p = l.split(',');
+            let name = p.next()?;
+            let ansi: Vec<u32> = p.filter_map(colour).collect();
+            Some((name, ansi.try_into().ok()?))
+        })
+        .collect();
+    let standard = palettes.get("Standard").copied();
+    ini.lists
+        .get("Color Schemes")
+        .into_iter()
+        .flatten()
+        .filter_map(|l| {
+            let p: Vec<&str> = l.split(',').collect();
+            let (name, fg, bg) = (p.first()?.trim(), colour(p.get(2)?)?, colour(p.get(10)?)?);
+            let ansi = p
+                .get(18)
+                .and_then(|n| palettes.get(n.trim()).copied())
+                .or(standard)?;
+            Some(Scheme {
+                key: slug(name),
+                name: name.to_string(),
+                fg,
+                bg,
+                cursor: None,
+                ansi,
+            })
+        })
+        .filter(|s| !s.key.is_empty())
+        .collect()
 }
 
 /// A name as a file name of ours: no `/`, no leading dot.
@@ -525,6 +569,10 @@ pub struct Report {
     pub bars_existing: usize,
     /// `RUN` and other buttons that need SecureCRT itself.
     pub buttons_skipped: usize,
+    /// Colour schemes to add or to put over a built-in one (the app merges them into its file).
+    pub schemes: Vec<crate::color_scheme::Scheme>,
+    /// Same as a scheme we have already.
+    pub schemes_existing: usize,
 }
 
 /// The default places of SecureCRT's `Config` folder: under wine (the user's `AppData`), and a
@@ -550,6 +598,7 @@ pub fn find_config(home: &Path) -> Option<std::path::PathBuf> {
 /// Import from `root` (`Config/`): sessions into `store` (the folder tree kept, existing names left
 /// alone), the Button Bar as `Report::bars` (new names only). A session names its bar only if that
 /// bar exists (`have_bars`, or imported now).
+#[allow(clippy::too_many_arguments)] // ponytail: the four "what to import" flags; a struct when a fifth comes
 pub fn import(
     root: &Path,
     store: &crate::session::Store,
@@ -557,8 +606,27 @@ pub fn import(
     sessions: bool,
     bars: bool,
     commands: bool,
+    have_schemes: &crate::color_scheme::Schemes,
+    schemes: bool,
 ) -> std::io::Result<Report> {
     let mut r = Report::default();
+    // The schemes after this import: the sessions' scheme names are looked up in them.
+    let mut merged = have_schemes.clone();
+    if schemes && let Ok(text) = std::fs::read(root.join("Global.ini")) {
+        for s in read_color_schemes(&parse_ini(&String::from_utf8_lossy(&text))) {
+            // Ours (maybe edited) stay; the same colours are not a change.
+            if merged.is_own(&s.key)
+                || merged
+                    .get(&s.key)
+                    .is_some_and(|h| (h.fg, h.bg, h.ansi) == (s.fg, s.bg, s.ansi))
+            {
+                r.schemes_existing += 1;
+            } else {
+                merged.put(s.clone());
+                r.schemes.push(s);
+            }
+        }
+    }
     if commands {
         (r.commands, r.commands_skipped) = read_commands(&root.join("Commands"));
     }
@@ -586,6 +654,7 @@ pub fn import(
         let f = read_sessions(&root.join("Sessions"));
         r.sessions_skipped = f.skipped.len();
         for (folder, name, mut s) in f.sessions {
+            s.color_scheme = merged.key_of_name(&s.color_scheme).unwrap_or_default();
             if s.button_bar.as_ref().is_some_and(|n| !known.contains(n)) {
                 s.button_bar = None;
             }
@@ -881,8 +950,19 @@ mod tests {
         )
         .unwrap();
         let store = crate::session::Store::new(out.path().to_path_buf());
+        let none = crate::color_scheme::Schemes::default();
         // «Mine» exists already: not imported again
-        let r = import(cfg.path(), &store, &["Mine".to_string()], true, true, true).unwrap();
+        let r = import(
+            cfg.path(),
+            &store,
+            &["Mine".to_string()],
+            true,
+            true,
+            true,
+            &none,
+            false,
+        )
+        .unwrap();
         assert_eq!(
             (
                 r.sessions_added,
@@ -904,6 +984,8 @@ mod tests {
             true,
             false,
             false,
+            &none,
+            false,
         )
         .unwrap();
         assert_eq!((again.sessions_added, again.sessions_existing), (0, 1));
@@ -913,8 +995,40 @@ mod tests {
             SSH.replace("Kube", "Nowhere"),
         )
         .unwrap();
-        import(cfg.path(), &store, &[], true, false, false).unwrap();
+        import(cfg.path(), &store, &[], true, false, false, &none, false).unwrap();
         assert_eq!(store.get("n").unwrap().button_bar, None);
         assert_eq!(find_config(cfg.path()), None);
+    }
+
+    const SCHEMES: &str = "Z:\"Color Schemes\"=00000003\r\n Plain,010101,00FF0000,00FF0000,00FF0000,00FF0000,00FF0000,00FF0000,00FF0000,00FF0000,10203000,10203000,10203000,10203000,10203000,10203000,10203000,10203000,Mine\r\n Nord,010101,11111100,11111100,11111100,11111100,11111100,11111100,11111100,11111100,22222200,22222200,22222200,22222200,22222200,22222200,22222200,22222200,Standard\r\n White / Black,010101,FFFFFF00,FFFFFF00,FFFFFF00,FFFFFF00,FFFFFF00,FFFFFF00,FFFFFF00,FFFFFF00,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,Standard\r\nZ:\"ANSI Color Palettes\"=00000002\r\n Standard,00000000,A0000000,00A00000,A0A00000,0000A000,A000A000,00A0A000,C0C0C000,80808000,FF000000,00FF0000,FFFF0000,0000FF00,FF00FF00,00FFFF00,FFFFFF00\r\n Mine,01010100,02020200,03030300,04040400,05050500,06060600,07070700,08080800,09090900,0A0A0A00,0B0B0B00,0C0C0C00,0D0D0D00,0E0E0E00,0F0F0F00,10101000\r\n";
+
+    #[test]
+    fn color_schemes_are_read_and_sessions_get_their_key() {
+        let l = read_color_schemes(&parse_ini(SCHEMES));
+        assert_eq!(l.len(), 3);
+        assert_eq!(
+            (l[0].key.as_str(), l[0].fg, l[0].bg),
+            ("plain", 0x00FF00, 0x102030)
+        );
+        assert_eq!(l[0].ansi[0], 0x010101);
+        assert_eq!(l[1].ansi[1], 0xA00000); // palette Standard
+
+        let (cfg, out) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        std::fs::create_dir_all(cfg.path().join("Sessions")).unwrap();
+        std::fs::write(cfg.path().join("Global.ini"), SCHEMES).unwrap();
+        let with = |n: &str| format!("{SSH}S:\"Color Scheme\"={n}\r\n");
+        for (f, n) in [("a", "Plain"), ("b", "White / Black"), ("c", "Gone")] {
+            std::fs::write(cfg.path().join(format!("Sessions/{f}.ini")), with(n)).unwrap();
+        }
+        let store = crate::session::Store::new(out.path().to_path_buf());
+        let have = crate::color_scheme::Schemes::default();
+        let r = import(cfg.path(), &store, &[], true, false, false, &have, true).unwrap();
+        // Plain is new, Nord differs from ours (an override), White / Black is the same as ours
+        let keys: Vec<&str> = r.schemes.iter().map(|s| s.key.as_str()).collect();
+        assert_eq!(keys, ["plain", "nord"]);
+        assert_eq!(r.schemes_existing, 1);
+        assert_eq!(store.get("a").unwrap().color_scheme, "plain");
+        assert_eq!(store.get("b").unwrap().color_scheme, "white-black");
+        assert_eq!(store.get("c").unwrap().color_scheme, "");
     }
 }

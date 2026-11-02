@@ -987,3 +987,16 @@ so-bad-size = Столбцы и строки: число от 1 до 500
 so-scrollback = Прокрутка (строк)
 so-scrollback-hint = 100…1000000; пусто: 10000
 so-bad-scrollback = Прокрутка: число от 100 до 1000000
+
+scheme-new = Новая…
+scheme-edit = Изменить…
+scheme-delete = Удалить
+scheme-restore = Вернуть встроенную
+scheme-title = Цветовая схема
+scheme-name = Название
+scheme-text = Текст
+scheme-background = Фон
+scheme-cursor = Курсор
+scheme-bad-color = Нужно #RRGGBB
+sc-schemes = Цветовые схемы
+sc-report-schemes = Цветовых схем добавлено: { $added } (уже были: { $existing }).

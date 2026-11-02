@@ -73,6 +73,10 @@ pub enum SoMsg {
     /// The file chooser's pick (`None`: cancelled), for the window that asked.
     Browsed(window::Id, Option<String>),
     Drag,
+    /// «Новая…» / «Изменить…» / «Удалить» next to the colour scheme.
+    SchemeNew,
+    SchemeEdit,
+    SchemeDelete,
     /// The keyring looked up for this window's session: a password or passphrase is saved.
     Saved(window::Id, bool),
     /// «Учётные данные»: 0 = none, else the n-th set.
@@ -118,7 +122,7 @@ pub enum SoMsg {
 pub struct SessionOptions {
     pub window: window::Id,
     pub target: Target,
-    form: Form,
+    pub form: Form,
     categories: segmented_button::SingleSelectModel,
     pub error: Option<String>,
     /// A password typed for Logon Actions (empty: the saved one is left as it is); it goes to
@@ -139,6 +143,8 @@ pub struct SessionOptions {
     first_id: widget::Id,
     /// The Mapped Keys editor, shown in this window in place of the page.
     pub mapped: Option<crate::keymap_editor::Editor>,
+    /// The colour scheme editor, likewise.
+    pub scheme_ed: Option<crate::color_scheme_editor::Editor>,
 }
 
 impl SessionOptions {
@@ -181,6 +187,7 @@ impl SessionOptions {
             password: Hidden(String::new()),
             first_id: widget::Id::unique(),
             mapped: None,
+            scheme_ed: None,
             sets,
             labels,
             bars,
@@ -309,6 +316,17 @@ impl SessionOptions {
             SoMsg::TermKind(i) => f.term_kind = Kind::ALL.get(i).copied().unwrap_or_default(),
             SoMsg::Fit(i) => f.fit = Fit::ALL.get(i).copied().unwrap_or_default(),
             SoMsg::AltMeta(v) => f.alt_plain = !v,
+            SoMsg::SchemeNew | SoMsg::SchemeEdit => {
+                let schemes = crate::term::terminal_theme::current();
+                let from = schemes
+                    .get(&f.color_scheme)
+                    .or_else(|| schemes.get("white-black"));
+                if let Some(s) = from {
+                    let edit = matches!(msg, SoMsg::SchemeEdit);
+                    self.scheme_ed = Some(crate::color_scheme_editor::Editor::new(&s, edit));
+                }
+            }
+            SoMsg::SchemeDelete => {}
             SoMsg::MappedKeys => {
                 self.mapped = Some(crate::keymap_editor::Editor::for_session(
                     f.term_keys.clone(),
@@ -322,7 +340,7 @@ impl SessionOptions {
                     0 => String::new(),
                     i => crate::term::terminal_theme::schemes()
                         .get(i - 1)
-                        .map(|(k, _)| (*k).to_string())
+                        .map(|(k, _)| k.clone())
                         .unwrap_or_default(),
                 }
             }
@@ -494,7 +512,7 @@ impl SessionOptions {
                 let schemes = crate::term::terminal_theme::schemes();
                 let at = schemes.iter().position(|(k, _)| *k == f.color_scheme);
                 let mut names = vec![fl!("so-scheme-global")];
-                names.extend(schemes.iter().map(|(_, n)| (*n).to_string()));
+                names.extend(schemes.iter().map(|(_, n)| n.clone()));
                 // The icons as they will look in the tree (the tab adds its state's colour).
                 use shagshell_core::tab_icon::{Glyph, PICKABLE, State, svg};
                 let handle = |g| {
@@ -527,6 +545,30 @@ impl SessionOptions {
                         })
                         .into(),
                     ),
+                    {
+                        // A scheme's own copy can go (a built-in one comes back); the global
+                        // choice ("") has nothing to edit.
+                        let chosen = !f.color_scheme.is_empty() && at.is_some();
+                        let own = crate::term::terminal_theme::current().is_own(&f.color_scheme);
+                        let builtin =
+                            shagshell_core::color_scheme::Schemes::is_builtin(&f.color_scheme);
+                        widget::row::with_children(vec![
+                            widget::button::standard(fl!("scheme-new"))
+                                .on_press(m(SoMsg::SchemeNew))
+                                .into(),
+                            widget::button::standard(fl!("scheme-edit"))
+                                .on_press_maybe(chosen.then(|| m(SoMsg::SchemeEdit)))
+                                .into(),
+                            widget::button::destructive(match builtin {
+                                true => fl!("scheme-restore"),
+                                false => fl!("scheme-delete"),
+                            })
+                            .on_press_maybe(own.then(|| m(SoMsg::SchemeDelete)))
+                            .into(),
+                        ])
+                        .spacing(8)
+                        .into()
+                    },
                 ]
             }
             Some(Category::Emulation) => {

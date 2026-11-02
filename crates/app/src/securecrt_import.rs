@@ -17,6 +17,7 @@ pub enum ScMsg {
     Sessions(bool),
     Bars(bool),
     Commands(bool),
+    Schemes(bool),
     Run,
     /// The import is over: the report, or why not.
     Done(Result<ReportView, String>),
@@ -30,6 +31,8 @@ pub struct ReportView {
     pub bars: Vec<shagshell_core::buttonbar::Bar>,
     /// The Command Manager's folders found (merged by the app).
     pub commands: shagshell_core::commands::Folder,
+    /// Colour schemes to add (merged by the app).
+    pub schemes: Vec<shagshell_core::color_scheme::Scheme>,
 }
 
 impl ReportView {
@@ -59,10 +62,20 @@ impl ReportView {
                 skipped = i64::try_from(r.commands_skipped).unwrap_or(0)
             ));
         }
+        if !r.schemes.is_empty() || r.schemes_existing > 0 {
+            text.push(' ');
+            let (added, existing) = (r.schemes.len() as i64, r.schemes_existing as i64);
+            text.push_str(&fl!(
+                "sc-report-schemes",
+                added = added,
+                existing = existing
+            ));
+        }
         Self {
             text,
             bars: r.bars,
             commands: r.commands,
+            schemes: r.schemes,
         }
     }
 }
@@ -72,6 +85,7 @@ pub struct ScImport {
     sessions: bool,
     bars: bool,
     commands: bool,
+    schemes: bool,
     busy: bool,
     /// What happened last: the report or the error.
     result: Option<(bool, String)>,
@@ -89,6 +103,7 @@ impl ScImport {
             sessions: true,
             bars: true,
             commands: true,
+            schemes: true,
             busy: false,
             result: None,
             input_id: widget::Id::unique(),
@@ -99,8 +114,8 @@ impl ScImport {
         std::path::PathBuf::from(self.path.trim())
     }
 
-    pub fn wants(&self) -> (bool, bool, bool) {
-        (self.sessions, self.bars, self.commands)
+    pub fn wants(&self) -> (bool, bool, bool, bool) {
+        (self.sessions, self.bars, self.commands, self.schemes)
     }
 
     /// `true`: start the import.
@@ -111,8 +126,9 @@ impl ScImport {
             ScMsg::Sessions(on) => self.sessions = on,
             ScMsg::Bars(on) => self.bars = on,
             ScMsg::Commands(on) => self.commands = on,
+            ScMsg::Schemes(on) => self.schemes = on,
             ScMsg::Run => {
-                let any = self.sessions || self.bars || self.commands;
+                let any = self.sessions || self.bars || self.commands || self.schemes;
                 let ok = !self.busy && any && self.path().is_dir();
                 if !self.path().is_dir() {
                     self.result = Some((false, fl!("sc-no-folder")));
@@ -170,6 +186,11 @@ impl ScImport {
                 widget::checkbox(self.commands)
                     .label(fl!("sc-commands"))
                     .on_toggle(move |v| m(ScMsg::Commands(v))),
+            )
+            .push(
+                widget::checkbox(self.schemes)
+                    .label(fl!("sc-schemes"))
+                    .on_toggle(move |v| m(ScMsg::Schemes(v))),
             );
         if self.busy {
             col = col.push(widget::text::body(fl!("sc-working")));

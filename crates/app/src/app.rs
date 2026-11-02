@@ -192,6 +192,7 @@ pub enum Message {
     KeyGen(crate::keygen::KgMsg),
     CommandManager(crate::command_manager::CmMsg),
     KeyMap(crate::keymap_editor::KmMsg),
+    SchemeEd(crate::color_scheme_editor::SeMsg),
     SessionOptions(SoMsg),
     /// Keys and the pointer: acted on only when from the main window (not Session Options).
     Input(cosmic::iced::window::Id, Box<Message>),
@@ -390,6 +391,13 @@ impl Application for App {
             sched_win: None,
         };
         let mut sched_error = None;
+        let mut schemes_error = None;
+        match shagshell_core::color_scheme::Schemes::load(
+            &shagshell_core::color_scheme::Schemes::default_path(),
+        ) {
+            Ok(s) => crate::term::terminal_theme::set_schemes(s),
+            Err(e) => schemes_error = Some(format!("color_schemes.toml: {e}")),
+        }
         match shagshell_core::schedule::Schedule::load(
             &shagshell_core::schedule::Schedule::default_path(),
         ) {
@@ -411,7 +419,8 @@ impl Application for App {
         app.sessions.notice = (app.buttons.broken().map(String::from))
             .or(hl_error)
             .or(keys_error)
-            .or(sched_error);
+            .or(sched_error)
+            .or(schemes_error);
         app.tabs.set_looks(&app.config, &app.hl, &look(&app.config));
         app.startup = startup.or_else(|| {
             let p = shagshell_core::script::expand_home(std::path::Path::new(
@@ -677,6 +686,9 @@ impl Application for App {
     fn view_window(&self, id: cosmic::iced::window::Id) -> Element<'_, Message> {
         let focused = self.core.focused_window() == Some(id);
         if let Some(o) = self.options.as_ref().filter(|o| o.window == id) {
+            if let Some(ed) = &o.scheme_ed {
+                return ed.view();
+            }
             return match &o.mapped {
                 Some(ed) => ed.view(),
                 None => o.view(focused),
@@ -1627,6 +1639,13 @@ impl App {
                         {
                             self.sessions.notice = Some(format!("commands.toml: {e}"));
                         }
+                        if !v.schemes.is_empty() {
+                            let mut schemes = crate::term::terminal_theme::current();
+                            for s in v.schemes.iter().cloned() {
+                                schemes.put(s);
+                            }
+                            self.store_schemes(schemes);
+                        }
                         self.sessions.reload();
                     }
                     ScMsg::Done(Err(_)) => self.sessions.reload(),
@@ -1636,14 +1655,22 @@ impl App {
                     return Task::none();
                 };
                 if d.update(m) {
-                    let (root, (sessions, bars, commands)) = (d.path(), d.wants());
+                    let (root, (sessions, bars, commands, schemes)) = (d.path(), d.wants());
+                    let have_schemes = crate::term::terminal_theme::current();
                     let store_root = shagshell_core::session::store::default_root();
                     let have = self.buttons.names();
                     return off_ui(
                         move || {
                             let store = shagshell_core::session::Store::new(store_root);
                             shagshell_core::securecrt::import(
-                                &root, &store, &have, sessions, bars, commands,
+                                &root,
+                                &store,
+                                &have,
+                                sessions,
+                                bars,
+                                commands,
+                                &have_schemes,
+                                schemes,
                             )
                             .map(ReportView::of)
                             .map_err(|e| e.to_string())
@@ -1705,6 +1732,7 @@ impl App {
             Message::KeyGen(m) => return self.key_dialog(m),
             Message::CommandManager(m) => return self.command_manager(m),
             Message::KeyMap(m) => return self.keymap_dialog(m),
+            Message::SchemeEd(m) => return self.scheme_dialog(m),
             Message::QuickConnect(QcMsg::Cancel) => self.quick = None,
             Message::QuickConnect(m) => {
                 let Some(req) = self.quick.as_mut().and_then(|q| q.update(m)) else {
@@ -1722,6 +1750,9 @@ impl App {
                     return self.update(*m);
                 }
                 if is_escape(&m) {
+                    if (self.options.as_ref()).is_some_and(|o| o.scheme_ed.is_some()) {
+                        return self.scheme_dialog(crate::color_scheme_editor::SeMsg::Cancel);
+                    }
                     let editing = (self.options.as_ref())
                         .and_then(|o| o.mapped.as_ref())
                         .map(|k| k.editing());
@@ -3910,9 +3941,52 @@ impl App {
                     }
                 };
             }
+            SoMsg::SchemeDelete => {
+                let key = o.form.color_scheme.clone();
+                let mut schemes = crate::term::terminal_theme::current();
+                if schemes.remove(&key) {
+                    // Our own one is gone for good: the session falls back to the global one.
+                    if !shagshell_core::color_scheme::Schemes::is_builtin(&key) {
+                        o.form.color_scheme.clear();
+                    }
+                    self.store_schemes(schemes);
+                }
+            }
             m => o.update(m),
         }
         Task::none()
+    }
+
+    /// The colour scheme editor's messages; OK saves the scheme and puts it in force.
+    fn scheme_dialog(&mut self, m: crate::color_scheme_editor::SeMsg) -> Task<Message> {
+        let Some(o) = self.options.as_mut() else {
+            return Task::none();
+        };
+        let Some(ed) = o.scheme_ed.as_mut() else {
+            return Task::none();
+        };
+        let out = ed.update(m);
+        if out.close {
+            o.scheme_ed = None;
+        }
+        if let Some((key, mut scheme)) = out.save {
+            let mut schemes = crate::term::terminal_theme::current();
+            scheme.key = key.unwrap_or_else(|| schemes.new_key(&scheme.name));
+            o.form.color_scheme = scheme.key.clone();
+            schemes.put(scheme);
+            self.store_schemes(schemes);
+        }
+        Task::none()
+    }
+
+    /// Puts `schemes` in force and in `color_schemes.toml`; the open tabs repaint.
+    fn store_schemes(&mut self, schemes: shagshell_core::color_scheme::Schemes) {
+        let saved = schemes.save(&shagshell_core::color_scheme::Schemes::default_path());
+        crate::term::terminal_theme::set_schemes(schemes);
+        self.tabs.restyle(&look(&self.config));
+        if let (Err(e), Some(o)) = (saved, self.options.as_mut()) {
+            o.error = Some(format!("color_schemes.toml: {e}"));
+        }
     }
 
     /// OK: the session written where the window's target says.
