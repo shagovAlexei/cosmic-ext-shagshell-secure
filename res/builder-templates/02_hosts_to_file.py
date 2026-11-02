@@ -10,7 +10,7 @@ report = '~/hosts_report.txt'
 def _host_1(tab, host):
     append_file(report, '=== ' + host + ' ===')
     for cmd in commands:
-        out = run(tab, cmd)
+        out = run(cmd, tab=tab)
         append_file(report, '$ ' + cmd)
         append_file(report, out)
 each_host(hosts, _host_1, parallel=False, limit=10)

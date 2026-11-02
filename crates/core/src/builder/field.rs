@@ -706,6 +706,22 @@ mod tests {
     }
 
     #[test]
+    fn short_block_tab_goes_last_by_name() {
+        let mut b = new_block(lookup("run").unwrap());
+        let i = lookup("run")
+            .unwrap()
+            .params
+            .iter()
+            .position(|p| p.name == "tab");
+        assert!(set(&mut b, F::Arg(i.unwrap()), "tab"));
+        assert!(set(&mut b, F::Arg(0), "'uptime'"));
+        assert_eq!(
+            super::super::generate(std::slice::from_ref(&b)),
+            "run('uptime', tab=tab)\n"
+        );
+    }
+
+    #[test]
     fn field_varargs_and_kw() {
         let mut b = new_block(lookup("crt.Screen.WaitForStrings").unwrap());
         assert!(set(&mut b, F::Arg(0), "'#', '>'"));

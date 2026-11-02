@@ -8,7 +8,7 @@ from shag_blocks import *
 
 COMMANDS = ["date", "whoami", "pwd"]
 
-parts = ["$ %s\n%s" % (cmd, run(None, cmd)) for cmd in COMMANDS]
+parts = ["$ %s\n%s" % (cmd, run(cmd)) for cmd in COMMANDS]
 
 to_clipboard("\n\n".join(parts))
 printbox("In the clipboard / В буфере обмена:\n\n" + from_clipboard(), "Example 06")

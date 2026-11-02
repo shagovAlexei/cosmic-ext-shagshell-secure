@@ -29,9 +29,9 @@ open(result_file, "w").close()         # EN: start with an empty file / RU: на
 
 def one_host(tab, host):
     append_file(result_file, "=== %s ===" % host)
-    log_to(tab, result_file)
+    log_to(result_file, tab=tab)
     for cmd in COMMANDS:
-        run(tab, cmd, timeout=60)
+        run(cmd, timeout=60, tab=tab)
 
 
 failed = each_host(names, one_host)

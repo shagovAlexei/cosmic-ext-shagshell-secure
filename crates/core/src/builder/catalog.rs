@@ -612,28 +612,28 @@ pub static CATALOG: &[Entry] = &[
     // blocks: `res/python/shag_blocks.py` (`from shag_blocks import *`)
     m(
         "blocks.prompt",
-        &[d("tab", Expr, "None"), d("timeout", Number, "60")],
+        &[d("timeout", Number, "60"), d("tab", Expr, "None")],
         "str",
         [
             "The prompt the tab shows, once the login is over.",
             "Приглашение, которое показывает вкладка, когда вход закончен.",
         ],
-        "p = prompt(tab)",
+        "p = prompt()",
     ),
     m(
         "blocks.run",
         &[
-            p("tab", Expr),
             p("cmd", Text),
             d("timeout", Number, "30"),
             more(d("until", Text, "None")),
+            d("tab", Expr, "None"),
         ],
         "str",
         [
             "Runs a command: types it and Enter, waits for the prompt; its output (also into the tab's log_to file). tab None: the script's tab.",
             "Выполняет команду: печатает её и Enter, ждёт приглашения; возвращает вывод (и пишет в файл log_to вкладки). tab None — вкладка скрипта.",
         ],
-        "out = run(tab, 'show version')",
+        "out = run('show version')",
     ),
     m(
         "blocks.read_list",
@@ -647,13 +647,13 @@ pub static CATALOG: &[Entry] = &[
     ),
     m(
         "blocks.log_to",
-        &[p("tab", Expr), p("path", File)],
+        &[p("path", File), d("tab", Expr, "None")],
         "str",
         [
             "From now on run writes this tab's commands and output to path (%S tab title, %Y %M %D date, %h %m %s time).",
             "Дальше run пишет команды и вывод этой вкладки в path (%S заголовок вкладки, %Y %M %D дата, %h %m %s время).",
         ],
-        "log_to(tab, '~/logs/%S_%Y%M%D.log')",
+        "log_to('~/logs/%S_%Y%M%D.log')",
     ),
     m(
         "blocks.append_file",
@@ -1099,7 +1099,9 @@ class Rec:
         calls.append((self._n,) + a)
         return {"crt.GetTabCount": 2, "crt.Screen.WaitForStrings": 2}.get(self._n)
 class Tab:
+    Caption = "t"
     def __init__(self, n):
+        self.Index = n
         self.Screen, self.Session = Rec("tab%d.Screen" % n), Rec("tab%d.Session" % n)
         self.Session.LogFileName = ""
         self.Session.Connected = n == 1
@@ -1136,6 +1138,20 @@ try:
     assert False
 except SystemExit:
     pass
+# `tab` goes last; scripts written before (run(None, cmd), run(tab, cmd), log_to(tab, path),
+# prompt(tab)) still work.
+got = []
+b.prompt = lambda timeout=60, tab=None: got.append(("prompt", timeout, tab)) or "$"
+b._read = lambda tab, text, timeout: "out"
+b.log_to("/tmp/x", t1); b.log_to(t1, "/tmp/y")
+assert b._logs[1] == "/tmp/y", b._logs
+b._logs.clear()
+calls.clear()
+b.run("ls", until="#"); b.run(None, "pwd"); b.run(t1, "id", 5); b.run("w", tab=t1)
+assert [c for c in calls if c[0].endswith("Send")] == [
+    ("tab0.Screen.Send", "ls\r"), ("tab0.Screen.Send", "pwd\r"),
+    ("tab1.Screen.Send", "id\r"), ("tab1.Screen.Send", "w\r")], calls
+assert [g[1] for g in got] == [30, 30, 5, 30], got
 "##;
         let o = Command::new("python3")
             .args(["-I", "-c", SNIPPET])

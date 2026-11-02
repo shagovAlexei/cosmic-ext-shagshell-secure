@@ -12,7 +12,7 @@ In SecureCRT put `shag_blocks.py` (from `~/.config/shagshell/scripts`) next to t
 
 | Block / Блок | Long form / Длинная запись |
 |---|---|
-| `run(tab, cmd)` | find the prompt, `Screen.Send(cmd + "\r")`, `WaitForString("\n")`, `ReadString(prompt)` |
+| `run(cmd, timeout, until, tab)` | find the prompt, `Screen.Send(cmd + "\r")`, `WaitForString("\n")`, `ReadString(prompt)` |
 | `prompt()` | wait for the login to end, the text left of the cursor / ждать конца входа, текст левее курсора |
 | `ask(msg, title, default, password)` | `crt.Dialog.Prompt(...)` |
 | `printbox(text, title, buttons)` | `crt.Dialog.MessageBox(...)` |
@@ -20,7 +20,7 @@ In SecureCRT put `shag_blocks.py` (from `~/.config/shagshell/scripts`) next to t
 | `disconnect(tab)` | `tab.Session.Disconnect()` |
 | `active_tab()` | `crt.GetActiveTab()` |
 | `read_list(path)` | `open(...)`, lines without empty ones and `#` / строки без пустых и `#` |
-| `log_to(tab, path)` + `run` | every command and its output into a file / каждая команда с выводом в файл |
+| `log_to(path, tab)` + `run` | every command and its output into a file / каждая команда с выводом в файл |
 | `append_file(path, text)` | `open(path, "a").write(text + "\n")` |
 | `to_clipboard(t)` / `from_clipboard()` | `crt.Clipboard.Text = t` / `crt.Clipboard.Text` |
 | `each_host(hosts, func)` | connect, `func(tab, host)`, disconnect for every host; a failed one does not stop the rest / для каждого хоста; ошибка одного не останавливает остальных |

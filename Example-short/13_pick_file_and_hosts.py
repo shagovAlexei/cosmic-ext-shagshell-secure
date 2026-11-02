@@ -27,5 +27,5 @@ if not chosen:
 for name in chosen:
     tab = connect(name)
     for cmd in commands:
-        run(tab, cmd, timeout=60)
+        run(cmd, timeout=60, tab=tab)
 printbox("Sent to %d sessions / Отправлено в %d сессий" % (len(chosen), len(chosen)), "Example 13", ICON_INFO)

@@ -365,7 +365,7 @@ pub(crate) mod tests {
         if no_python() {
             return;
         }
-        let src = "def _host_1(tab, host):\n    run(tab, 'uptime')\neach_host(hosts, _host_1, parallel=True, limit=5)\n";
+        let src = "def _host_1(tab, host):\n    run('uptime', tab=tab)\neach_host(hosts, _host_1, parallel=True, limit=5)\n";
         assert_eq!(
             parse(src).unwrap(),
             [Block::ForHost {
@@ -378,11 +378,11 @@ pub(crate) mod tests {
                     args: vec![
                         Arg {
                             name: None,
-                            value: s("tab")
+                            value: s("'uptime'")
                         },
                         Arg {
-                            name: None,
-                            value: s("'uptime'")
+                            name: Some(s("tab")),
+                            value: s("tab")
                         }
                     ],
                     assign: None,

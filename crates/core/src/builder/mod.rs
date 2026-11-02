@@ -422,11 +422,11 @@ mod tests {
             func: s("_host_1"),
             parallel: true,
             limit: s("10"),
-            body: vec![call("run", &["tab", "'uptime'"])],
+            body: vec![call("run", &["'uptime'", "tab=tab"])],
         };
         assert_eq!(
             generate(&[b]),
-            "def _host_1(tab, host):\n    run(tab, 'uptime')\neach_host(hosts, _host_1, parallel=True, limit=10)\n"
+            "def _host_1(tab, host):\n    run('uptime', tab=tab)\neach_host(hosts, _host_1, parallel=True, limit=10)\n"
         );
     }
 

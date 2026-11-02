@@ -499,7 +499,7 @@ impl BuilderView {
         });
         if fresh
             && in_host
-            && let Block::Call { func, args, .. } = &mut b
+            && let Block::Call { func, .. } = &mut b
         {
             // `crt.Screen.Send` would type into the script's tab: the host's is `tab`.
             for obj in ["Screen", "Session", "FileTransfer"] {
@@ -507,19 +507,11 @@ impl BuilderView {
                     *func = format!("tab.{obj}.{rest}");
                 }
             }
-            if catalog::lookup(func)
-                .is_some_and(|e| e.params.first().is_some_and(|p| p.name == "tab"))
-            {
-                match args.first_mut() {
-                    Some(a) if a.name.is_none() => a.value = "tab".into(),
-                    _ => args.insert(
-                        0,
-                        shagshell_core::builder::Arg {
-                            name: None,
-                            value: "tab".into(),
-                        },
-                    ),
-                }
+            // A short block's `tab` (its last parameter): `run('ls', tab=tab)`.
+            let at =
+                catalog::lookup(func).and_then(|e| e.params.iter().position(|p| p.name == "tab"));
+            if let Some(i) = at {
+                field::set(&mut b, F::Arg(i), "tab");
             }
         }
         // After the leading comments (`# $language = "python3"`) and `from __future__`.

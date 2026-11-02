@@ -21,7 +21,7 @@ except ScriptError:
     stop()
 
 try:
-    result = run(tab, "hostname; uptime", timeout=60)
+    result = run("hostname; uptime", timeout=60, tab=tab)
 except TimeoutError:
     printbox("No prompt / Приглашения нет")
     stop()
