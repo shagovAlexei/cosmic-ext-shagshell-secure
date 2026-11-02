@@ -880,7 +880,12 @@ impl ButtonBar {
                 }
                 self.bars = draft;
                 self.selected = name.and_then(|n| self.bars.index_of(&n)).unwrap_or(0);
-                self.relink.extend(renamed);
+                // A bar deleted and made again under its name keeps its sessions.
+                self.relink.extend(
+                    renamed
+                        .into_iter()
+                        .filter(|(old, new)| new.is_some() || self.bars.index_of(old).is_none()),
+                );
                 self.save()
             }
         }
