@@ -5,6 +5,9 @@ use serde::{Deserialize, Serialize};
 pub const DEFAULT_SCROLLBACK: usize = 10_000;
 pub const MIN_SCROLLBACK: u32 = 100;
 pub const MAX_SCROLLBACK: u32 = 1_000_000;
+pub const DEFAULT_COLS: u16 = 80;
+pub const DEFAULT_ROWS: u16 = 24;
+pub const MAX_CELLS: u16 = 500;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -95,9 +98,41 @@ impl Delete {
     }
 }
 
+/// What a window change does to the terminal (SecureCRT: «On resize»).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Fit {
+    /// More or fewer rows and columns.
+    #[default]
+    Window,
+    /// The logical size stays; the font grows or shrinks to fill the window.
+    Font,
+    /// The logical size and the font stay.
+    Keep,
+}
+
+impl Fit {
+    pub const ALL: [Fit; 3] = [Fit::Window, Fit::Font, Fit::Keep];
+}
+
+/// The logical size in columns, rows: a parsed form value is `1..=MAX_CELLS`.
+pub fn parse_cells(s: &str) -> Option<u16> {
+    s.trim()
+        .parse()
+        .ok()
+        .filter(|n| (1..=MAX_CELLS).contains(n))
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Term {
+    #[serde(skip_serializing_if = "is_default")]
+    pub fit: Fit,
+    /// Logical columns / rows for `Fit::Font` and `Fit::Keep`; none: 80 × 24.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cols: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rows: Option<u16>,
     #[serde(skip_serializing_if = "is_default")]
     pub delete: Delete,
     #[serde(skip_serializing_if = "is_default")]
@@ -136,6 +171,14 @@ impl Term {
             env.push(("COLORTERM".to_string(), "truecolor".to_string()));
         }
         env
+    }
+
+    /// The logical (columns, rows).
+    pub fn cells(&self) -> (u16, u16) {
+        (
+            self.cols.unwrap_or(DEFAULT_COLS),
+            self.rows.unwrap_or(DEFAULT_ROWS),
+        )
     }
 
     pub fn history(&self) -> usize {
@@ -185,6 +228,24 @@ mod tests {
     }
 
     #[test]
+    fn logical_size() {
+        assert_eq!(parse_cells(" 132 "), Some(132));
+        for bad in ["", "0", "501", "x", "-1"] {
+            assert_eq!(parse_cells(bad), None, "{bad}");
+        }
+        assert_eq!(Term::default().cells(), (80, 24));
+        let t = Term {
+            fit: Fit::Keep,
+            cols: Some(132),
+            rows: Some(50),
+            ..Term::default()
+        };
+        assert_eq!(t.cells(), (132, 50));
+        let back: Term = toml::from_str(&toml::to_string(&t).unwrap()).unwrap();
+        assert_eq!(back, t);
+    }
+
+    #[test]
     fn backspace_bytes() {
         assert_eq!(Backspace::Del.byte(false), 0x7f);
         assert_eq!(Backspace::Del.byte(true), 0x08);
@@ -215,6 +276,9 @@ mod tests {
             scrollback: Some(500),
             backspace: Backspace::Ctrl,
             delete: Delete::Del,
+            fit: Fit::Font,
+            cols: Some(100),
+            rows: Some(30),
         };
         let back: Term = toml::from_str(&toml::to_string(&t).unwrap()).unwrap();
         assert_eq!(back, t);

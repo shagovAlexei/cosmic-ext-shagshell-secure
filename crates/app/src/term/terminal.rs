@@ -204,6 +204,9 @@ pub struct Terminal {
     pub backspace: shagshell_core::term_env::Backspace,
     /// What the Delete key sends.
     pub delete: shagshell_core::term_env::Delete,
+    /// What a window change does (Session Options → Terminal → Emulation) and the logical size.
+    pub fit: shagshell_core::term_env::Fit,
+    pub cells: (u16, u16),
 }
 
 /// The words of the keyword rules in `text` painted over what the cells already say.
@@ -339,6 +342,8 @@ impl Terminal {
             zoom_adj: Default::default(),
             history,
             backspace: Default::default(),
+            fit: Default::default(),
+            cells: (80, 24),
             delete: Default::default(),
             locked: false,
             is_focused: true,
@@ -522,6 +527,32 @@ impl Terminal {
             // task to solve in a general way), we'll just replace line breaks (windows and unix
             // style) with a single carriage return (\r, which is what the Enter key produces).
             self.send_scroll(value.replace("\r\n", "\r").replace('\n', "\r").into_bytes());
+        }
+    }
+
+    /// The pixel size the grid gets in a `width` × `height` view, by the «On window change» mode.
+    pub fn fit_size(&mut self, width: u32, height: u32) -> (u32, u32) {
+        use shagshell_core::term_env::Fit;
+        let (cols, rows) = (f32::from(self.cells.0), f32::from(self.cells.1));
+        if self.fit == Fit::Font {
+            let now = self.buffer.metrics();
+            let k = (width as f32 / (cols * self.size.cell_width))
+                .min(height as f32 / (rows * self.size.cell_height));
+            // Half-pixel steps, rounded down so the grid always fits.
+            let size = ((now.font_size * k).clamp(6.0, 48.0) * 2.0).floor() / 2.0;
+            if (size - now.font_size).abs() >= 0.5 {
+                self.with_buffer_mut(|b| {
+                    b.set_metrics(cosmic_text::Metrics::new(size, (size * 1.4).ceil()))
+                });
+                self.update_cell_size();
+            }
+        }
+        match self.fit {
+            Fit::Window => (width, height),
+            _ => (
+                (cols * self.size.cell_width).ceil() as u32,
+                (rows * self.size.cell_height).ceil() as u32,
+            ),
         }
     }
 

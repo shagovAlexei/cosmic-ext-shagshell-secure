@@ -499,7 +499,8 @@ where
         let mut terminal = self.terminal.lock().unwrap_or_else(|e| e.into_inner());
 
         // Ensure terminal is the right size
-        terminal.resize(view_w as u32, view_h as u32);
+        let (w, h) = terminal.fit_size(view_w as u32, view_h as u32);
+        terminal.resize(w, h);
 
         // Update if needed
         if terminal.needs_update {

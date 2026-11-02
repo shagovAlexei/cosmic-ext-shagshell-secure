@@ -26,7 +26,7 @@ pub enum Target {
     Default,
 }
 
-use shagshell_core::term_env::{Backspace, Colors, Delete, Kind};
+use shagshell_core::term_env::{Backspace, Colors, Delete, Fit, Kind};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Category {
@@ -59,6 +59,8 @@ pub enum Field {
     Device,
     Baud,
     Scrollback,
+    Cols,
+    Rows,
 }
 
 #[derive(Clone, Debug)]
@@ -101,6 +103,7 @@ pub enum SoMsg {
     TermKind(usize),
     TermColors(usize),
     Backspace(usize),
+    Fit(usize),
     Delete(usize),
     /// The icon: 0 = by protocol, else the n-th of `tab_icon::PICKABLE`.
     Icon(usize),
@@ -241,6 +244,7 @@ impl SessionOptions {
             }
             FormError::Reconnect => fl!("so-bad-reconnect"),
             FormError::Scrollback => fl!("so-bad-scrollback"),
+            FormError::Size => fl!("so-bad-size"),
         });
         r.ok()
     }
@@ -265,6 +269,8 @@ impl SessionOptions {
                 Field::Device => f.device = v,
                 Field::Baud => f.baud = v,
                 Field::Scrollback => f.scrollback = v,
+                Field::Cols => f.cols = v,
+                Field::Rows => f.rows = v,
                 Field::ReconnectDelay => f.reconnect_delay = v,
                 Field::ReconnectTries => f.reconnect_tries = v,
             },
@@ -282,6 +288,7 @@ impl SessionOptions {
                     .map_or(String::new(), |(n, _)| n.to_string());
             }
             SoMsg::TermKind(i) => f.term_kind = Kind::ALL.get(i).copied().unwrap_or_default(),
+            SoMsg::Fit(i) => f.fit = Fit::ALL.get(i).copied().unwrap_or_default(),
             SoMsg::Delete(i) => f.delete = Delete::ALL.get(i).copied().unwrap_or_default(),
             SoMsg::Backspace(i) => f.backspace = Backspace::ALL.get(i).copied().unwrap_or_default(),
             SoMsg::TermColors(i) => f.term_colors = Colors::ALL.get(i).copied().unwrap_or_default(),
@@ -506,6 +513,8 @@ impl SessionOptions {
                     fl!("so-colors-true"),
                 ];
                 let backspaces = vec![fl!("so-backspace-del"), fl!("so-backspace-ctrl")];
+                let fits = vec![fl!("so-fit-window"), fl!("so-fit-font"), fl!("so-fit-keep")];
+                let fit_at = Fit::ALL.iter().position(|x| *x == f.fit);
                 let deletes = vec![fl!("so-delete-esc"), fl!("so-delete-del")];
                 let delete_at = Delete::ALL.iter().position(|d| *d == f.delete);
                 let backspace_at = Backspace::ALL.iter().position(|b| *b == f.backspace);
@@ -530,6 +539,13 @@ impl SessionOptions {
                     labelled(
                         fl!("so-delete"),
                         widget::dropdown(deletes, delete_at, move |i| m(SoMsg::Delete(i))).into(),
+                    ),
+                    field(fl!("so-cols"), Field::Cols, &f.cols, false),
+                    field(fl!("so-rows"), Field::Rows, &f.rows, false),
+                    widget::text::caption(fl!("so-size-hint")).into(),
+                    labelled(
+                        fl!("so-fit"),
+                        widget::dropdown(fits, fit_at, move |i| m(SoMsg::Fit(i))).into(),
                     ),
                     field(
                         fl!("so-scrollback"),

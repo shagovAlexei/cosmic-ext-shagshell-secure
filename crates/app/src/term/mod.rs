@@ -54,6 +54,8 @@ pub fn start(
     let mut t = Terminal::new(id, tx, config, options, style, colors, log)?;
     t.backspace = emulation.backspace;
     t.delete = emulation.delete;
+    t.fit = emulation.fit;
+    t.cells = emulation.cells();
     t.set_config(style, &colors);
     Ok(t)
 }
