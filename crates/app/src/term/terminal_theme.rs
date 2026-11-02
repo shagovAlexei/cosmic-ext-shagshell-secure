@@ -143,7 +143,7 @@ struct Scheme {
     bright: [u32; 8],
 }
 
-const SCHEMES: [Scheme; 8] = [
+const SCHEMES: [Scheme; 18] = [
     Scheme {
         key: "solarized-dark",
         name: "Solarized Dark",
@@ -240,6 +240,126 @@ const SCHEMES: [Scheme; 8] = [
             0x555753, 0xEF2929, 0x8AE234, 0xFCE94F, 0x729FCF, 0xAD7FA8, 0x34E2E2, 0xEEEEEC,
         ],
     },
+    Scheme {
+        key: "windows",
+        name: "Windows",
+        fg: 0xC0C0C0,
+        bg: 0x000000,
+        normal: [
+            0x000000, 0x800000, 0x008000, 0x808000, 0x000080, 0x800080, 0x008080, 0xC0C0C0,
+        ],
+        bright: [
+            0x808080, 0xFF0000, 0x00FF00, 0xFFFF00, 0x0000FF, 0xFF00FF, 0x00FFFF, 0xFFFFFF,
+        ],
+    },
+    Scheme {
+        key: "white-black",
+        name: "White / Black",
+        fg: 0xFFFFFF,
+        bg: 0x000000,
+        normal: [
+            0x000000, 0x800000, 0x008000, 0x808000, 0x000080, 0x800080, 0x008080, 0xC0C0C0,
+        ],
+        bright: [
+            0x808080, 0xFF0000, 0x00FF00, 0xFFFF00, 0x0000FF, 0xFF00FF, 0x00FFFF, 0xFFFFFF,
+        ],
+    },
+    Scheme {
+        key: "black-white",
+        name: "Black / White",
+        fg: 0x000000,
+        bg: 0xFFFFFF,
+        normal: [
+            0x000000, 0x800000, 0x008000, 0x808000, 0x000080, 0x800080, 0x008080, 0xC0C0C0,
+        ],
+        bright: [
+            0x808080, 0xFF0000, 0x00FF00, 0xFFFF00, 0x0000FF, 0xFF00FF, 0x00FFFF, 0xFFFFFF,
+        ],
+    },
+    Scheme {
+        key: "yellow-black",
+        name: "Yellow / Black",
+        fg: 0xFFFF00,
+        bg: 0x000000,
+        normal: [
+            0x000000, 0x800000, 0x008000, 0x808000, 0x000080, 0x800080, 0x008080, 0xC0C0C0,
+        ],
+        bright: [
+            0x808080, 0xFF0000, 0x00FF00, 0xFFFF00, 0x0000FF, 0xFF00FF, 0x00FFFF, 0xFFFFFF,
+        ],
+    },
+    Scheme {
+        key: "black-cyan",
+        name: "Black / Cyan",
+        fg: 0x000000,
+        bg: 0x00FFFF,
+        normal: [
+            0x000000, 0x800000, 0x008000, 0x808000, 0x000080, 0x800080, 0x008080, 0xC0C0C0,
+        ],
+        bright: [
+            0x808080, 0xFF0000, 0x00FF00, 0xFFFF00, 0x0000FF, 0xFF00FF, 0x00FFFF, 0xFFFFFF,
+        ],
+    },
+    Scheme {
+        key: "tomorrow-night",
+        name: "Tomorrow Night",
+        fg: 0xC5C8C6,
+        bg: 0x1D1F21,
+        normal: [
+            0x1D1F21, 0xCC6666, 0xB5BD68, 0xF0C674, 0x81A2BE, 0xB294BB, 0x8ABEB7, 0xC5C8C6,
+        ],
+        bright: [
+            0x969896, 0xCC6666, 0xB5BD68, 0xF0C674, 0x81A2BE, 0xB294BB, 0x8ABEB7, 0xFFFFFF,
+        ],
+    },
+    Scheme {
+        key: "zenburn",
+        name: "Zenburn",
+        fg: 0xDCDCCC,
+        bg: 0x3F3F3F,
+        normal: [
+            0x3F3F3F, 0xCC9393, 0x7F9F7F, 0xE3CEAB, 0x8CD0D3, 0xDC8CC3, 0x93E0E3, 0xDCDCCC,
+        ],
+        bright: [
+            0x709080, 0xDCA3A3, 0xBFEBBF, 0xF0DFAF, 0x94BFF3, 0xEC93D3, 0x93E0E3, 0xFFFFFF,
+        ],
+    },
+    Scheme {
+        key: "espresso",
+        name: "Espresso",
+        fg: 0xFFFFFF,
+        bg: 0x323232,
+        normal: [
+            0x353535, 0xD25252, 0xA5C261, 0xFFC66D, 0x6C99BB, 0xD197D9, 0xBED6FF, 0xEEEEEC,
+        ],
+        bright: [
+            0x535353, 0xF00C0C, 0xC2E075, 0xE1E48B, 0x8AB7D9, 0xEFB5F7, 0xDCF4FF, 0xFFFFFF,
+        ],
+    },
+    Scheme {
+        key: "chalkboard",
+        name: "Chalkboard",
+        fg: 0xD9E6F2,
+        bg: 0x29262F,
+        normal: [
+            0x000000, 0xC37372, 0x72C373, 0xC2C372, 0x7372C3, 0xC372C2, 0x72C2C3, 0xD9D9D9,
+        ],
+        bright: [
+            0x323232, 0xDBAAAA, 0xAADBAA, 0xDBDAAA, 0xAAAADB, 0xDBAADA, 0xAADADB, 0xFFFFFF,
+        ],
+    },
+    Scheme {
+        key: "desert",
+        name: "Desert",
+        fg: 0xFFFFFF,
+        bg: 0x333333,
+        normal: [
+            0x4D4D4D, 0xFF2B2B, 0x98FB98, 0xF0E68C, 0xCD853F, 0xFFDEAD, 0xFFA0A0, 0xF5DEB3,
+        ],
+        bright: [
+            0x626262, 0xFF5555, 0x55FF55, 0xFFFF55, 0x87CEFF, 0xFF55FF, 0xFFD700, 0xFFFFFF,
+        ],
+    },
 ];
 
 /// `(key, name)` of the built-in schemes, for the pickers.
@@ -289,4 +409,18 @@ pub fn scheme(key: &str) -> Option<Colors> {
     colors[BrightForeground] = rgb(s.bright[7]);
     colors[DimForeground] = colors[DimWhite];
     Some(colors)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_scheme_resolves_and_keys_are_unique() {
+        let list = schemes();
+        for (key, _) in &list {
+            assert!(scheme(key).is_some(), "{key}");
+            assert_eq!(list.iter().filter(|(k, _)| k == key).count(), 1, "{key}");
+        }
+    }
 }
