@@ -62,6 +62,13 @@ impl ReportView {
                 skipped = i64::try_from(r.commands_skipped).unwrap_or(0)
             ));
         }
+        if !r.scripts_missing.is_empty() {
+            text.push(' ');
+            text.push_str(&fl!(
+                "sc-report-missing",
+                files = r.scripts_missing.join(", ")
+            ));
+        }
         if !r.schemes.is_empty() || r.schemes_existing > 0 {
             text.push(' ');
             let (added, existing) = (r.schemes.len() as i64, r.schemes_existing as i64);

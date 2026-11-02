@@ -1003,6 +1003,7 @@ scheme-background = Background
 scheme-cursor = Cursor
 scheme-bad-color = Use #RRGGBB
 sc-schemes = Colour schemes
+sc-report-missing = Scripts of buttons not found on this computer (fix the path in the button): { $files }.
 sc-report-schemes = Colour schemes added: { $added } (already there: { $existing }).
 bb-edit-button = Edit button…
 bb-delete-button = Delete button…

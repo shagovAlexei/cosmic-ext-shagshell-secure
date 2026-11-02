@@ -128,6 +128,21 @@ impl Bars {
         }
     }
 
+    /// Bars brought in by an import whose names are not here yet; whether any came, and where
+    /// the bar at `selected` is now.
+    pub fn merge(&mut self, new: Vec<Bar>, selected: usize) -> (bool, usize) {
+        let picked = self.bars.get(selected).map(|b| b.name.clone());
+        let before = self.bars.len();
+        for b in new {
+            if self.index_of(&b.name).is_none() {
+                self.bars.push(b);
+            }
+        }
+        self.resort();
+        let at = picked.and_then(|n| self.index_of(&n)).unwrap_or(selected);
+        (self.bars.len() > before, at)
+    }
+
     /// Where `name` is now (after a `resort`).
     fn place(&mut self, name: &str) -> usize {
         self.resort();
@@ -408,6 +423,23 @@ mod tests {
         // sorted: a new bar lands in its place
         let i = b.add("a2").unwrap();
         assert_eq!((i, names(&b)[1].as_str()), (1, "a2"));
+    }
+
+    #[test]
+    fn regression_merge_keeps_the_picked_bar() {
+        let mut b = Bars {
+            sort: true,
+            ..Bars::default()
+        };
+        b.add("m").unwrap();
+        let bar = |n: &str| Bar {
+            name: n.into(),
+            buttons: Vec::new(),
+        };
+        // "m" is picked (0); imported "a" sorts before it, "m" comes again and is not doubled.
+        assert_eq!(b.merge(vec![bar("a"), bar("m")], 0), (true, 1));
+        assert_eq!(b.bars.len(), 2);
+        assert_eq!(b.merge(vec![bar("a")], 1), (false, 1));
     }
 
     #[test]
