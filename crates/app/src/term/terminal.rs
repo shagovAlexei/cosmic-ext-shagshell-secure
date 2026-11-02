@@ -198,6 +198,8 @@ pub struct Terminal {
     size: Size,
     use_bright_bold: bool,
     zoom_adj: i8,
+    /// Lines kept above the screen (Session Options → Terminal → Emulation).
+    history: usize,
 }
 
 /// The words of the keyword rules in `text` painted over what the cells already say.
@@ -291,6 +293,7 @@ impl Terminal {
             cell_width,
             cell_height,
         };
+        let history = config.scrolling_history;
         let event_proxy = EventProxy(id, event_tx);
         let term = Arc::new(FairMutex::new(Term::new(
             config,
@@ -330,6 +333,7 @@ impl Terminal {
             term,
             use_bright_bold,
             zoom_adj: Default::default(),
+            history,
             locked: false,
             is_focused: true,
         })
@@ -406,7 +410,7 @@ impl Terminal {
         self.term
             .lock()
             .set_options(alacritty_terminal::term::Config {
-                scrolling_history: super::HISTORY,
+                scrolling_history: self.history,
                 default_cursor_style: alacritty_terminal::vte::ansi::CursorStyle {
                     shape,
                     blinking: false,

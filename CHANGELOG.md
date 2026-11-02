@@ -2,6 +2,9 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.112.0 — 2026-11-02
+- feat: Session Options → Emulation — the `TERM` the server is told (Xterm / VT100 / VT220 / Linux / ANSI), colour depth (mono / 16 / 256 / true colour → `TERM` / `COLORTERM`) and scrollback lines (100–1 000 000); size, Modes and key mapping are not done yet
+
 ## 0.111.0 — 2026-11-02
 - feat: Global Options → Tabs — colour of each tab state (hex), grey icons for no indicator, show/hide «new output», «idle» (after 3–300 s) and «script running / locked», tab width by label or fixed (80–400 px); background fill and left stripe are not possible with libcosmic's tab bar
 
