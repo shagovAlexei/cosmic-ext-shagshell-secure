@@ -51,9 +51,35 @@ impl Colors {
     pub const ALL: [Colors; 4] = [Colors::Mono, Colors::Ansi16, Colors::Ansi256, Colors::True];
 }
 
+/// What the Backspace key sends (SecureCRT: Modes → «Backspace sends»).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Backspace {
+    /// `^?` (DEL), what xterm and Linux expect.
+    #[default]
+    Del,
+    /// `^H`, for older gear.
+    Ctrl,
+}
+
+impl Backspace {
+    pub const ALL: [Backspace; 2] = [Backspace::Del, Backspace::Ctrl];
+
+    /// The byte for Backspace; Ctrl+Backspace sends the other one.
+    pub fn byte(self, ctrl: bool) -> u8 {
+        match self == Backspace::Ctrl {
+            true if !ctrl => 0x08,
+            false if ctrl => 0x08,
+            _ => 0x7f,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Term {
+    #[serde(skip_serializing_if = "is_default")]
+    pub backspace: Backspace,
     #[serde(skip_serializing_if = "is_default")]
     pub kind: Kind,
     #[serde(skip_serializing_if = "is_default")]
@@ -120,7 +146,7 @@ mod tests {
         let t = |kind, colors| Term {
             kind,
             colors,
-            scrollback: None,
+            ..Term::default()
         };
         assert_eq!(term_of(&t(Kind::Vt100, Colors::True)), "vt100");
         assert_eq!(term_of(&t(Kind::Xterm, Colors::Ansi16)), "xterm-16color");
@@ -128,6 +154,14 @@ mod tests {
         let env = t(Kind::Xterm, Colors::True).env();
         assert_eq!(env[1], ("COLORTERM".to_string(), "truecolor".to_string()));
         assert_eq!(t(Kind::Linux, Colors::Ansi256).env().len(), 1);
+    }
+
+    #[test]
+    fn backspace_bytes() {
+        assert_eq!(Backspace::Del.byte(false), 0x7f);
+        assert_eq!(Backspace::Del.byte(true), 0x08);
+        assert_eq!(Backspace::Ctrl.byte(false), 0x08);
+        assert_eq!(Backspace::Ctrl.byte(true), 0x7f);
     }
 
     #[test]
@@ -151,6 +185,7 @@ mod tests {
             kind: Kind::Ansi,
             colors: Colors::True,
             scrollback: Some(500),
+            backspace: Backspace::Ctrl,
         };
         let back: Term = toml::from_str(&toml::to_string(&t).unwrap()).unwrap();
         assert_eq!(back, t);

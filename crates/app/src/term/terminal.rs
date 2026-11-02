@@ -200,6 +200,8 @@ pub struct Terminal {
     zoom_adj: i8,
     /// Lines kept above the screen (Session Options → Terminal → Emulation).
     history: usize,
+    /// What the Backspace key sends (Session Options → Terminal → Emulation).
+    pub backspace: shagshell_core::term_env::Backspace,
 }
 
 /// The words of the keyword rules in `text` painted over what the cells already say.
@@ -334,6 +336,7 @@ impl Terminal {
             use_bright_bold,
             zoom_adj: Default::default(),
             history,
+            backspace: Default::default(),
             locked: false,
             is_focused: true,
         })

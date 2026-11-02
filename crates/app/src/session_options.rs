@@ -26,7 +26,7 @@ pub enum Target {
     Default,
 }
 
-use shagshell_core::term_env::{Colors, Kind};
+use shagshell_core::term_env::{Backspace, Colors, Kind};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Category {
@@ -100,6 +100,7 @@ pub enum SoMsg {
     Scheme(usize),
     TermKind(usize),
     TermColors(usize),
+    Backspace(usize),
     /// The icon: 0 = by protocol, else the n-th of `tab_icon::PICKABLE`.
     Icon(usize),
     /// «Забыть»: the session's saved secrets removed.
@@ -280,6 +281,7 @@ impl SessionOptions {
                     .map_or(String::new(), |(n, _)| n.to_string());
             }
             SoMsg::TermKind(i) => f.term_kind = Kind::ALL.get(i).copied().unwrap_or_default(),
+            SoMsg::Backspace(i) => f.backspace = Backspace::ALL.get(i).copied().unwrap_or_default(),
             SoMsg::TermColors(i) => f.term_colors = Colors::ALL.get(i).copied().unwrap_or_default(),
             SoMsg::Scheme(i) => {
                 f.color_scheme = match i {
@@ -501,6 +503,8 @@ impl SessionOptions {
                     fl!("so-colors-256"),
                     fl!("so-colors-true"),
                 ];
+                let backspaces = vec![fl!("so-backspace-del"), fl!("so-backspace-ctrl")];
+                let backspace_at = Backspace::ALL.iter().position(|b| *b == f.backspace);
                 let kind_at = Kind::ALL.iter().position(|k| *k == f.term_kind);
                 let colors_at = Colors::ALL.iter().position(|c| *c == f.term_colors);
                 vec![
@@ -512,6 +516,11 @@ impl SessionOptions {
                     labelled(
                         fl!("so-term-colors"),
                         widget::dropdown(colors, colors_at, move |i| m(SoMsg::TermColors(i)))
+                            .into(),
+                    ),
+                    labelled(
+                        fl!("so-backspace"),
+                        widget::dropdown(backspaces, backspace_at, move |i| m(SoMsg::Backspace(i)))
                             .into(),
                     ),
                     field(

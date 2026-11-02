@@ -2,6 +2,9 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.113.0 — 2026-11-02
+- feat: Session Options → Emulation — «Backspace sends» Delete (^?) or Ctrl+H (^H); Ctrl+Backspace sends the other one
+
 ## 0.112.0 — 2026-11-02
 - feat: Session Options → Emulation — the `TERM` the server is told (Xterm / VT100 / VT220 / Linux / ANSI), colour depth (mono / 16 / 256 / true colour → `TERM` / `COLORTERM`) and scrollback lines (100–1 000 000); size, Modes and key mapping are not done yet
 
