@@ -125,6 +125,7 @@ options-log-hint = %S сессия · %H хост · %P порт · %U поль�
 options-colours = Цвета терминала
 options-scheme = Цветовая схема
 options-highlight = Подсветка ключевых слов
+options-builder-stacked = Конструктор скриптов: каждое поле блока с новой строки
 options-hl-word = слово
 options-hl-fill = заливка
 options-hl-add = Добавить слово

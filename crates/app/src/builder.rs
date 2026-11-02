@@ -226,6 +226,8 @@ pub struct BuilderView {
     /// ⚙: light the blocks up while running; stop at breakpoints / steps.
     trace: bool,
     stops: bool,
+    /// `Config.builder_stacked`, taken at every draw.
+    stacked: std::cell::Cell<bool>,
     settings_open: bool,
     /// «⋯»: the bar's buttons, ticked and moved.
     bar_open: bool,
@@ -321,6 +323,7 @@ impl BuilderView {
             lines: Default::default(),
             trace: true,
             stops: true,
+            stacked: Default::default(),
             settings_open: false,
             bar_open: false,
             uid: NEXT_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
@@ -979,7 +982,9 @@ impl BuilderView {
         id: TabId,
         targets: &[(TabId, String)],
         buttons: &[String],
+        stacked: bool,
     ) -> Element<'a, Message> {
+        self.stacked.set(stacked);
         let m = move |x| Message::Builder(id, x);
         {
             let mut lines = self.lines.borrow_mut();
@@ -1797,12 +1802,18 @@ impl BuilderView {
             .spacing(6)
             .align_y(Alignment::Center)
             .push(number)
-            .push(
-                widget::flex_row(head)
+            .push(match self.stacked.get() {
+                true => Element::from(
+                    widget::column::with_children(head)
+                        .spacing(6)
+                        .width(Length::Fill),
+                ),
+                false => widget::flex_row(head)
                     .spacing(6)
                     .align_items(Alignment::Center)
-                    .width(Length::Fill),
-            );
+                    .width(Length::Fill)
+                    .into(),
+            });
         if self.stops {
             let on = self.breaks.contains(&pos);
             let dot = widget::text::body(if on { "●" } else { "○" }).class(match on {

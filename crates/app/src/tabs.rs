@@ -491,6 +491,7 @@ pub struct Tabs {
     pub look: shagshell_core::tab_icon::Look,
     /// The Script Builder bar (`Config.builder_buttons`, made sound).
     pub builder_buttons: Vec<String>,
+    pub builder_stacked: bool,
     /// Config: the notes' font family ("" = the system's monospace) and size.
     note_font: (String, f32),
     /// `crt.Session.Lock`: tab → the script run that locked it.
@@ -1811,6 +1812,7 @@ impl Tabs {
                 id.unwrap_or_default(),
                 &self.terminal_list(),
                 &self.builder_buttons,
+                self.builder_stacked,
             ),
             Some(
                 tab @ Tab {
