@@ -204,6 +204,8 @@ pub struct Terminal {
     pub backspace: shagshell_core::term_env::Backspace,
     /// What the Delete key sends.
     pub delete: shagshell_core::term_env::Delete,
+    /// Alt+key sends the key without the ESC prefix.
+    pub alt_plain: bool,
     /// What a window change does (Session Options → Terminal → Emulation) and the logical size.
     pub fit: shagshell_core::term_env::Fit,
     pub cells: (u16, u16),
@@ -345,6 +347,7 @@ impl Terminal {
             fit: Default::default(),
             cells: (80, 24),
             delete: Default::default(),
+            alt_plain: false,
             locked: false,
             is_focused: true,
         })

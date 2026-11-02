@@ -133,6 +133,9 @@ pub struct Term {
     pub cols: Option<u16>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rows: Option<u16>,
+    /// Alt+key sends the key alone instead of ESC + key (SecureCRT: Emacs → «Use Alt as Meta» off).
+    #[serde(skip_serializing_if = "is_default")]
+    pub alt_plain: bool,
     #[serde(skip_serializing_if = "is_default")]
     pub delete: Delete,
     #[serde(skip_serializing_if = "is_default")]
@@ -276,6 +279,7 @@ mod tests {
             scrollback: Some(500),
             backspace: Backspace::Ctrl,
             delete: Delete::Del,
+            alt_plain: true,
             fit: Fit::Font,
             cols: Some(100),
             rows: Some(30),

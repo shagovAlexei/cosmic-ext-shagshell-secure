@@ -105,6 +105,7 @@ pub enum SoMsg {
     Backspace(usize),
     Fit(usize),
     Delete(usize),
+    AltMeta(bool),
     /// The icon: 0 = by protocol, else the n-th of `tab_icon::PICKABLE`.
     Icon(usize),
     /// «Забыть»: the session's saved secrets removed.
@@ -289,6 +290,7 @@ impl SessionOptions {
             }
             SoMsg::TermKind(i) => f.term_kind = Kind::ALL.get(i).copied().unwrap_or_default(),
             SoMsg::Fit(i) => f.fit = Fit::ALL.get(i).copied().unwrap_or_default(),
+            SoMsg::AltMeta(v) => f.alt_plain = !v,
             SoMsg::Delete(i) => f.delete = Delete::ALL.get(i).copied().unwrap_or_default(),
             SoMsg::Backspace(i) => f.backspace = Backspace::ALL.get(i).copied().unwrap_or_default(),
             SoMsg::TermColors(i) => f.term_colors = Colors::ALL.get(i).copied().unwrap_or_default(),
@@ -540,6 +542,10 @@ impl SessionOptions {
                         fl!("so-delete"),
                         widget::dropdown(deletes, delete_at, move |i| m(SoMsg::Delete(i))).into(),
                     ),
+                    widget::checkbox(!f.alt_plain)
+                        .label(fl!("so-alt-meta"))
+                        .on_toggle(move |v| m(SoMsg::AltMeta(v)))
+                        .into(),
                     field(fl!("so-cols"), Field::Cols, &f.cols, false),
                     field(fl!("so-rows"), Field::Rows, &f.rows, false),
                     widget::text::caption(fl!("so-size-hint")).into(),

@@ -2,6 +2,9 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.116.0 — 2026-11-02
+- feat: Session Options → Emulation — «Alt как Meta» checkbox: off makes Alt+key send the key alone (no ESC prefix)
+
 ## 0.115.0 — 2026-11-02
 - feat: Session Options → Emulation — logical size (columns × rows) and «On window change»: resize the terminal / scale the font to fit / keep size and font
 

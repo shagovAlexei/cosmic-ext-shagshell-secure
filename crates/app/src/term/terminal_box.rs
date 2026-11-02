@@ -1269,12 +1269,13 @@ where
                     (false, false, true, _) => {
                         if !character.is_control() {
                             // Handle alt for non-control characters
-                            let mut buf = [0x1B, 0, 0, 0, 0];
+                            let mut buf = [if terminal.alt_plain { 0 } else { 0x1B }, 0, 0, 0, 0];
                             let len = {
                                 let str = character.encode_utf8(&mut buf[1..]);
                                 str.len() + 1
                             };
-                            terminal.input_scroll(buf[..len].to_vec());
+                            let from = usize::from(terminal.alt_plain);
+                            terminal.input_scroll(buf[from..len].to_vec());
                             shell.capture_event();
                         }
                     }
