@@ -202,6 +202,8 @@ pub struct Terminal {
     history: usize,
     /// What the Backspace key sends (Session Options → Terminal → Emulation).
     pub backspace: shagshell_core::term_env::Backspace,
+    /// What the Delete key sends.
+    pub delete: shagshell_core::term_env::Delete,
 }
 
 /// The words of the keyword rules in `text` painted over what the cells already say.
@@ -337,6 +339,7 @@ impl Terminal {
             zoom_adj: Default::default(),
             history,
             backspace: Default::default(),
+            delete: Default::default(),
             locked: false,
             is_focused: true,
         })

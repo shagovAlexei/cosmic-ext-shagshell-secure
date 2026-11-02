@@ -75,9 +75,31 @@ impl Backspace {
     }
 }
 
+/// What the Delete key sends (SecureCRT: Modes → «Delete sends»).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Delete {
+    /// `ESC [ 3 ~`, what xterm and Linux expect.
+    #[default]
+    Escape,
+    /// `^?` (DEL), for gear that wants a plain byte.
+    Del,
+}
+
+impl Delete {
+    pub const ALL: [Delete; 2] = [Delete::Escape, Delete::Del];
+
+    /// The bytes for Delete without modifiers; with modifiers it is always the escape form.
+    pub fn plain(self) -> Option<&'static [u8]> {
+        (self == Delete::Del).then_some(b"\x7f")
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Term {
+    #[serde(skip_serializing_if = "is_default")]
+    pub delete: Delete,
     #[serde(skip_serializing_if = "is_default")]
     pub backspace: Backspace,
     #[serde(skip_serializing_if = "is_default")]
@@ -157,6 +179,12 @@ mod tests {
     }
 
     #[test]
+    fn delete_bytes() {
+        assert_eq!(Delete::Escape.plain(), None);
+        assert_eq!(Delete::Del.plain(), Some(&b"\x7f"[..]));
+    }
+
+    #[test]
     fn backspace_bytes() {
         assert_eq!(Backspace::Del.byte(false), 0x7f);
         assert_eq!(Backspace::Del.byte(true), 0x08);
@@ -186,6 +214,7 @@ mod tests {
             colors: Colors::True,
             scrollback: Some(500),
             backspace: Backspace::Ctrl,
+            delete: Delete::Del,
         };
         let back: Term = toml::from_str(&toml::to_string(&t).unwrap()).unwrap();
         assert_eq!(back, t);

@@ -47,6 +47,7 @@ pub struct Form {
     pub term_kind: crate::term_env::Kind,
     pub term_colors: crate::term_env::Colors,
     pub backspace: crate::term_env::Backspace,
+    pub delete: crate::term_env::Delete,
     /// Lines, "" = the default.
     pub scrollback: String,
     pub label: String,
@@ -151,6 +152,7 @@ impl Form {
             term_kind: s.term.kind,
             term_colors: s.term.colors,
             backspace: s.term.backspace,
+            delete: s.term.delete,
             scrollback: s.term.scrollback.map(|n| n.to_string()).unwrap_or_default(),
             device: s.serial.device.clone(),
             baud: s.serial.baud.map(|n| n.to_string()).unwrap_or_default(),
@@ -277,6 +279,7 @@ impl Form {
                 kind: self.term_kind,
                 colors: self.term_colors,
                 backspace: self.backspace,
+                delete: self.delete,
                 scrollback,
             },
             label: self.label.trim().to_string(),
@@ -515,6 +518,15 @@ mod tests {
         assert_eq!(
             Form::from_session("n", &s).backspace,
             crate::term_env::Backspace::Ctrl
+        );
+        let f = Form {
+            delete: crate::term_env::Delete::Del,
+            ..form("d")
+        };
+        let s = f.apply(&Session::default(), true).unwrap();
+        assert_eq!(
+            Form::from_session("n", &s).delete,
+            crate::term_env::Delete::Del
         );
         assert_eq!(
             bad(Form {
