@@ -1,4 +1,5 @@
 mod about;
+mod active_sessions;
 mod app;
 mod askpass;
 mod bar_picker;

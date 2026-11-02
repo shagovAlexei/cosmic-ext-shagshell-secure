@@ -2,6 +2,9 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.109.0 — 2026-11-02
+- feat: Active Sessions — the Session Manager pane has a second page, «Активные» / «Active»: every open tab (Sessions / Editors) with its state icon, a filter, click to bring a tab forward, × to close it, «Close all tabs»
+
 ## 0.108.0 — 2026-11-01
 - feat: session groups — a session names its groups in Session Options → Groups (none: «Default»); Window → Session Groups… opens a group (one tab per session, tabs marked `[group]`), closes its tabs, or deletes it (the sessions stay); groups and their colours are in `groups.toml`
 

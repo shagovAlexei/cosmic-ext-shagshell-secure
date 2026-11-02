@@ -856,6 +856,46 @@ impl Tabs {
         (self.tabs.values()).any(|t| t.live() && !matches!(t.body, Body::Builder(_)))
     }
 
+    /// Active Sessions: every open tab, in the order they were opened, with its state icon.
+    pub fn active_rows(&self) -> Vec<(shagshell_core::active_tabs::Row, widget::Icon)> {
+        use shagshell_core::active_tabs::{Kind, Row};
+        let mut ids: Vec<&TabId> = self.tabs.keys().collect();
+        ids.sort();
+        (ids.into_iter())
+            .map(|id| {
+                let t = &self.tabs[id];
+                let kind = match t.body {
+                    Body::Terminal(_) | Body::Sftp(_) => Kind::Session,
+                    Body::Note(_) | Body::Builder(_) | Body::Console => Kind::Editor,
+                };
+                let row = Row {
+                    id: *id,
+                    kind,
+                    title: t.title(),
+                };
+                (row, t.icon())
+            })
+            .collect()
+    }
+
+    /// Close tab `id` (asks first if it is live).
+    pub fn close_tab(&mut self, id: TabId, look: &Look) -> Task<Message> {
+        if self.window_of(id).is_some() {
+            return self.cmd_in_window(TabCmd::Close, id, look);
+        }
+        let found = (self.grid.iter().flat_map(|g| g.iter()))
+            .find_map(|(pane, g)| entity_of(&g.model, id).map(|e| (*pane, e)));
+        match found {
+            Some((pane, e)) => self.update(TabsMsg::Close(pane, e), look),
+            None => Task::none(),
+        }
+    }
+
+    /// Close every tab (asks first if one is live; a locked one stays).
+    pub fn close_all(&mut self) -> Task<Message> {
+        self.close_many(None)
+    }
+
     /// The terminal tabs, by title (where the Script Builder runs its script).
     pub fn terminal_list(&self) -> Vec<(TabId, String)> {
         let mut l: Vec<(TabId, String)> = (self.tabs.iter())

@@ -43,6 +43,8 @@ pub struct App {
     drawer: Option<Drawer>,
     tabs: Tabs,
     sessions: SessionManager,
+    /// Active Sessions: the filter box.
+    active_filter: String,
     quick: Option<QuickConnect>,
     /// Tools → Create / Upload Public Key…, while its dialog is open.
     keys: Option<Keys>,
@@ -160,6 +162,7 @@ pub enum Message {
     ScriptsFolder(Option<std::path::PathBuf>),
     CloseDrawer,
     Tabs(TabsMsg),
+    Active(crate::active_sessions::ActiveMsg),
     /// Reconnect / Clone of a saved session's tab: its pre-script runs first.
     PreGate(tabs::TabCmd, crate::term::TabId),
     TermTx(crate::term::Events),
@@ -334,6 +337,7 @@ impl Application for App {
             drawer: None,
             tabs,
             sessions,
+            active_filter: String::new(),
             quick: None,
             keys: None,
             commands: crate::command_manager::CommandManager::new(),
@@ -1130,7 +1134,12 @@ impl App {
             let mut pane = widget::column::with_capacity(2).push(head);
             if !collapsed {
                 pane = pane.push(match p {
-                    Panel::Sessions => self.sessions.view(window),
+                    Panel::Sessions => crate::active_sessions::view(
+                        self.config.active_sessions,
+                        &self.active_filter,
+                        &self.tabs,
+                        || self.sessions.view(window),
+                    ),
                     Panel::Commands => self.commands.view(),
                 });
             }
@@ -1283,6 +1292,20 @@ impl App {
                 self.sessions.focused = false; // a terminal is used: Enter is its again
                 let task = self.tabs.update(m, &look(&self.config));
                 return Task::batch([task, self.prune_asks()]);
+            }
+            Message::Active(m) => {
+                use crate::active_sessions::ActiveMsg::*;
+                match m {
+                    Filter(f) => self.active_filter = f,
+                    Show(id) => self.tabs.show(id),
+                    Close(id) => return self.tabs.close_tab(id, &look(&self.config)),
+                    CloseAll => return self.tabs.close_all(),
+                    Mode(on) => {
+                        let mut c = self.config.clone();
+                        c.active_sessions = on;
+                        return self.handle(Message::SetConfig(c));
+                    }
+                }
             }
             Message::TermTx(tx) => {
                 self.tabs.set_sender(tx);
