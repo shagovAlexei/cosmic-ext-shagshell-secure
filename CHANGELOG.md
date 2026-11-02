@@ -2,6 +2,9 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.117.1 — 2026-11-02
+- fix: Script Builder — block fields stacked one per line since the line numbers appeared (a Fill flex_row inside the row got min width = max); now in a row again
+
 ## 0.117.0 — 2026-11-02
 - feat: Global Options — «Script Builder: each field of a block on its own line» (off by default: fields in a wrapping row)
 

@@ -1808,11 +1808,15 @@ impl BuilderView {
                         .spacing(6)
                         .width(Length::Fill),
                 ),
-                false => widget::flex_row(head)
-                    .spacing(6)
-                    .align_items(Alignment::Center)
-                    .width(Length::Fill)
-                    .into(),
+                // In a Fill container: a Fill `flex_row` straight in the row gets min width =
+                // max, so every field is laid out full width and wraps onto its own line.
+                false => widget::container(
+                    widget::flex_row(head)
+                        .spacing(6)
+                        .align_items(Alignment::Center),
+                )
+                .width(Length::Fill)
+                .into(),
             });
         if self.stops {
             let on = self.breaks.contains(&pos);
