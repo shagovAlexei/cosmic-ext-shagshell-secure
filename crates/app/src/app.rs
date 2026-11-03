@@ -437,7 +437,8 @@ impl Application for App {
                 note_tasks.push(app.open_note(std::path::Path::new(&f)));
             }
         }
-        let check = match app.config.update_check {
+        // A flatpak is updated by flatpak, not by our .deb.
+        let check = match app.config.update_check && !shagshell_core::flatpak::inside() {
             true => check_updates(false),
             false => Task::none(),
         };
@@ -2105,6 +2106,8 @@ impl App {
                 )
             })
             .collect();
+        use shagshell_core::flatpak;
+        let words = flatpak::host(words, flatpak::inside());
         match std::process::Command::new(&words[0])
             .args(&words[1..])
             .spawn()
@@ -2369,6 +2372,9 @@ impl App {
             Action::Changelog => {
                 self.changelog = !self.changelog;
                 self.about = false;
+            }
+            Action::CheckUpdates if shagshell_core::flatpak::inside() => {
+                self.sessions.notice = Some(fl!("up-flatpak"));
             }
             Action::CheckUpdates => return check_updates(true),
             Action::ToggleRecording => {

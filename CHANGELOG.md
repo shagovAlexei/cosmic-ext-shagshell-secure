@@ -2,6 +2,9 @@
 
 Every release, newest first, rebuilt from the merged pull requests. GitHub keeps only the last 5 releases (see `release.yml`), so this file is the permanent history. Versions follow `Cargo.toml`: a feature bumps minor, a fix bumps patch. Add an entry for each PR when it is merged.
 
+## 0.129.0 — 2026-11-03
+- feat: flatpak build (`just prefix=/app install-flatpak`, `flatpak/`): ssh, SFTP, ssh-keygen and scripts run inside the sandbox with the runtime's OpenSSH and python3; telnet, picocom, lrzsz (ZMODEM), the local shell (the login shell) and «Launch App» programs run on the host through `flatpak-spawn --host`; sessions and settings are the same as the `.deb`'s (`~/.config`); a group-writable `~/.ssh/config` (Pop!_OS's umask 002), which the runtime's ssh refuses, is passed with `-F`; the update check is off there (flatpak updates it)
+
 ## 0.128.0 — 2026-11-03
 - feat: «For each host» calls its function as `func(host, tab)` (the Builder writes `def _host_1(host, tab):`); a function written before as `(tab, host)` still gets the right values and still opens as the block; `activate(tab=None)`, `upload(local, remote='', tab=None)`, `download(remote, local='', tab=None)`: every short block takes `tab` last, `None` = the script's tab (SFTP on any tab, e.g. inside «For each host»)
 

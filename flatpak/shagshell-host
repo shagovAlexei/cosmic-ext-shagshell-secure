@@ -1,0 +1,22 @@
+#!/bin/sh
+# From the flatpak sandbox, runs a host program in the same terminal (its pty goes along):
+# called by a symlink's name (telnet, picocom, the lrzsz tools) or as `shagshell-host program args…`
+# (the local shell, «Launch App»). --watch-bus: it ends when the app does.
+name=${0##*/}
+[ "$name" = shagshell-host ] || set -- "$name" "$@"
+set -- flatpak-spawn --host --watch-bus --directory="$PWD" \
+    --env=TERM="${TERM:-xterm-256color}" --env=COLORTERM="${COLORTERM:-truecolor}" "$@"
+[ -t 0 ] || exec "$@"
+# The host side makes the pty its controlling terminal (Ctrl+C, resize, job control) only if no
+# session in the sandbox holds it (flatpak/flatpak#3285): let go of it first. The SIGHUP that
+# sends to us as the session leader is ignored.
+exec python3 -c '
+import fcntl, os, signal, sys, termios
+signal.signal(signal.SIGHUP, signal.SIG_IGN)
+try:
+    fcntl.ioctl(0, termios.TIOCNOTTY)
+except OSError:
+    pass
+signal.signal(signal.SIGHUP, signal.SIG_DFL)
+os.execvp(sys.argv[1], sys.argv[1:])
+' "$@"
