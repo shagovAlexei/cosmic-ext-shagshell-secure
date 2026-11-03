@@ -13,6 +13,7 @@ pub mod connect_bar;
 pub mod credentials;
 pub mod debugger;
 pub mod find;
+pub mod flatpak;
 pub mod groups;
 pub mod highlight;
 pub mod icons;

@@ -538,6 +538,7 @@ up-skip = Skip this version
 up-donate = Support the project
 up-latest = You have the latest version
 up-failed = Could not check for updates: { $error }
+up-flatpak = This is the flatpak: it is updated with `flatpak update` or in COSMIC Store
 options-updates = Updates
 options-update-check = Check for updates at startup
 

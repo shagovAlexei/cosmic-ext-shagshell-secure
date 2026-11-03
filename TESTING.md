@@ -1641,6 +1641,20 @@ done = True
   4. В конструкторе: «Открыть…» и выберите `host_tab.py`.
   Должно быть: в шаге 2 окно со строками `new router1: <имя хоста>` и `old router1: <пользователь>`, на сервере в домашней папке появился `up_from_shagshell.txt`; в шаге 3 в коде `def _host_1(host, tab):`; в шаге 4 скрипт открылся без ошибок.
 
+### Flatpak (v0.129.0)
+
+- [ ] **Сборка и запуск flatpak-версии (v0.129.0)**
+  1. Подготовка: установлены `org.flatpak.Builder`, `org.freedesktop.Sdk//25.08`, `org.freedesktop.Sdk.Extension.rust-stable//25.08`, `com.system76.Cosmic.BaseApp//stable`. Манифест `io.github.shagovalexei.ShagShellSecure.json` и `cargo-sources.json` лежат в одной папке в домашнем каталоге (не в `/tmp`: сборщик его не видит).
+  2. Соберите и установите: `flatpak run org.flatpak.Builder --user --install --force-clean builddir io.github.shagovalexei.ShagShellSecure.json`.
+  3. Запустите: `flatpak run io.github.shagovalexei.ShagShellSecure`.
+  4. Откройте сохранённую SSH-сессию с паролем (пароль не сохранён в связке ключей).
+  5. На этой вкладке «Передача → Открыть вкладку SFTP».
+  6. «Файл → Новый локальный shell» (Ctrl+Shift+T), выполните `echo $SHELL; which picocom; cat /etc/os-release | head -1`.
+  7. Откройте Telnet-сессию (или «Быстрое подключение» → Telnet к любому хосту).
+  8. На кнопочной панели создайте кнопку типа «Запустить программу» с командой `cosmic-term` и нажмите её.
+  9. «Справка → Проверить обновления…».
+  Должно быть: в шаге 3 видны те же сессии, что и у `.deb`-версии (общая `~/.config/shagshell`), тема как у системы; в шаге 4 окно запроса пароля приложения, после ввода вход на сервер (и при `~/.ssh/config` с правами 664 — нет ошибки «Bad owner or permissions»); в шаге 5 SFTP открывается без второго запроса пароля; в шаге 6 shell — ваш (например `/usr/bin/zsh`), `os-release` — Pop!_OS, а не Freedesktop SDK; в шаге 7 работает хостовый `telnet`; в шаге 8 открывается COSMIC Terminal; в шаге 9 сообщение «Это flatpak-версия: она обновляется через `flatpak update` или в COSMIC Store», при запуске автоматическая проверка обновлений не происходит.
+
 ### Импорт Button Bar из SecureCRT (v0.123.1)
 
 - [ ] **Скрипты кнопок RUN с диска Windows, выбранная панель после импорта (v0.123.1)**

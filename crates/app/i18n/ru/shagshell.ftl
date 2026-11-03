@@ -539,6 +539,7 @@ up-skip = Пропустить версию
 up-donate = Поддержать проект
 up-latest = У вас последняя версия
 up-failed = Не удалось проверить обновления: { $error }
+up-flatpak = Это flatpak-версия: она обновляется через `flatpak update` или в COSMIC Store
 options-updates = Обновления
 options-update-check = Проверять обновления при запуске
 

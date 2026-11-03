@@ -10,9 +10,11 @@ pub enum LaunchError {
     BadExtra,
 }
 
-/// `ssh [-p] [-l] [-i] [-o ServerAliveInterval] -o ControlMaster… [extra…] host`.
+/// `ssh [-F] [-p] [-l] [-i] [-o ServerAliveInterval] -o ControlMaster… [extra…] host` (-F: from a
+/// flatpak, see `flatpak::ssh_config`).
 pub fn ssh_argv(s: &Session, control_dir: &Path, home: &Path) -> Result<Vec<String>, LaunchError> {
     let mut a = vec!["ssh".to_string()];
+    a.extend(crate::flatpak::ssh_config(home, crate::flatpak::inside()));
     let mut opt = |flag: &str, v: String| a.extend([flag.to_string(), v]);
     if let Some(p) = s.port {
         opt("-p", p.to_string());

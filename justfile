@@ -32,6 +32,12 @@ install:
     install -Dm0644 res/{{appid}}.metainfo.xml {{dest}}/share/metainfo/{{appid}}.metainfo.xml
     install -Dm0644 res/icons/{{appid}}.svg {{dest}}/share/icons/hicolor/scalable/apps/{{appid}}.svg
 
+# Inside the flatpak build (`just prefix=/app install-flatpak`): the entry script; telnet, picocom and lrzsz are the host's
+install-flatpak: install
+    install -Dm0755 flatpak/launch.sh {{dest}}/bin/launch.sh
+    install -Dm0755 flatpak/shagshell-host {{dest}}/bin/shagshell-host
+    for p in telnet picocom sz rz sb rb sx rx; do ln -sf shagshell-host {{dest}}/bin/$p; done
+
 uninstall:
     rm -rf {{dest}}/share/shagshell; rm -f {{dest}}/bin/{{name}} {{dest}}/share/applications/{{appid}}.desktop {{dest}}/share/metainfo/{{appid}}.metainfo.xml {{dest}}/share/icons/hicolor/scalable/apps/{{appid}}.svg
 

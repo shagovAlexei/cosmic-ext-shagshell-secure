@@ -145,10 +145,12 @@ pub struct Launch {
 
 impl Launch {
     pub fn local_shell() -> Self {
-        let shell = shagshell_core::shell::pick(std::env::var_os("SHELL").as_deref());
+        use shagshell_core::flatpak;
+        let mut argv =
+            flatpak::local_shell(std::env::var_os("SHELL").as_deref(), flatpak::inside());
         Self {
-            program: shell.to_string_lossy().into_owned(),
-            args: Vec::new(),
+            program: argv.remove(0),
+            args: argv,
             env: Vec::new(),
             title: fl!("tab-local-shell"),
             protocol: Protocol::Local,
