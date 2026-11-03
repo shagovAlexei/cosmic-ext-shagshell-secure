@@ -1,7 +1,7 @@
 target/
-.claude/settings.local.json
+.claude/
 .superpowers/
 .agents/
 AGENTS.md
 __pycache__/
-.claude/local/
+CLAUDE.md
